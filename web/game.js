@@ -905,6 +905,65 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
   var beaconWood = (lvl) => 0.04 + 0.04 * lvl;
   var DAMM = 52;
+  var _T = { L: 11, H: 5, K: 8, HE: 6, KA: 9, W: 10, R: 7, TH: 1, MU: 2, RE: 3, TA: 4 };
+  var LAYOUT = [
+    0,
+    // Ring 1 (Stadtkern, Plätze 1–12, im Uhrzeigersinn ab Norden; 7 = Torseite)
+    _T.L,
+    _T.TH,
+    _T.MU,
+    _T.RE,
+    _T.H,
+    _T.HE,
+    _T.KA,
+    _T.W,
+    _T.H,
+    _T.TA,
+    _T.K,
+    _T.H,
+    // Ring 2 (ab Gezeitenturm 3)
+    _T.TH,
+    _T.MU,
+    _T.RE,
+    _T.H,
+    _T.R,
+    _T.KA,
+    _T.W,
+    _T.H,
+    _T.TA,
+    _T.L,
+    _T.H,
+    _T.TH,
+    // Ring 3 (Warft, wächst mit)
+    _T.TH,
+    _T.MU,
+    _T.RE,
+    _T.TA,
+    _T.H,
+    _T.L,
+    _T.H,
+    _T.W,
+    _T.KA,
+    _T.W,
+    _T.H,
+    _T.TA,
+    _T.RE,
+    _T.MU,
+    _T.TH,
+    _T.H,
+    _T.TH,
+    _T.MU,
+    12,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    13,
+    14
+  ];
   var PLOTS = 53;
   var INNER = 13;
   var RING3 = 25;
@@ -1198,12 +1257,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     buildBlocker(plot, t) {
       if (plot === 0 || t === T.TURM) return "Nicht m\xF6glich";
       if (this.s.plots[plot].type >= 0) return "Platz belegt";
-      if (plot === DAMM && t !== T.DAMM) return "Hier entsteht der Damm";
-      if (plot !== DAMM && t === T.DAMM) return "Nur am Dammplatz";
-      if (plot === WALL && t !== T.MAUER) return "Hier steht die Festungsmauer";
-      if (plot !== WALL && t === T.MAUER) return "Nur am Mauerplatz";
-      if (plot >= TOWERS && plot < DAMM && t !== T.ABWEHR) return "Hier passen nur Abwehrt\xFCrme";
-      if (plot < TOWERS && t === T.ABWEHR) return "Nur auf der Mauer";
+      if (LAYOUT[plot] !== t) return `Dieser Platz ist f\xFCr: ${DEFS[LAYOUT[plot]].name}`;
       if (plot >= TOWERS && plot < DAMM && this.levels(T.MAUER) <= 0) return "Erst die Festungsmauer bauen";
       if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `\xC4u\xDFerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
       if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gel\xE4nde zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Geb\xE4ude bauen`;
@@ -1442,6 +1496,32 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     get raidIn() {
       return this.s.days >= 2 ? this.s.raidTimer : null;
     }
+    /// Alte Spielstände: Gebäude auf die festen Plätze umziehen (Stufe bleibt erhalten)
+    relayout() {
+      const s = this.s, moved = [];
+      for (let i = 1; i < PLOTS; i++) {
+        const p = s.plots[i];
+        if (p.type >= 0 && p.type !== LAYOUT[i]) {
+          moved.push(p);
+          s.plots[i] = { type: -1, level: 0, buildLeft: 0, buildTotal: 0 };
+        }
+      }
+      moved.sort((a, b) => b.level - a.level);
+      for (const p of moved) {
+        let j = -1;
+        for (let i = 1; i < PLOTS; i++) if (LAYOUT[i] === p.type && s.plots[i].type < 0) {
+          j = i;
+          break;
+        }
+        if (j < 0) {
+          for (let i = 1; i < WALL; i++) if (s.plots[i].type < 0) {
+            j = i;
+            break;
+          }
+        }
+        if (j >= 0) s.plots[j] = p;
+      }
+    }
     ensureMilitary() {
       const s = this.s;
       if (!s.nodes) s.nodes = [];
@@ -1456,6 +1536,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.raidTimer === void 0) s.raidTimer = 480;
       if (s.counterTimer === void 0) s.counterTimer = 420;
       while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
+      if (!s.layoutV) {
+        this.relayout();
+        s.layoutV = 1;
+      }
       if (!s.nodes.length && !s.gath.length) {
         for (let k = 0; k < 4; k++) {
           this.spawnNodeAt(k);
@@ -1642,16 +1726,17 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const empty = () => ({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
       const plots = Array.from({ length: PLOTS }, empty);
       plots[0] = { type: T.TURM, level: 1, buildLeft: 0, buildTotal: 0 };
-      plots[1] = { type: T.TREIBHOLZ, level: 1, buildLeft: 0, buildTotal: 0 };
-      plots[4] = { type: T.MUSCHEL, level: 1, buildLeft: 0, buildTotal: 0 };
-      plots[7] = { type: T.REGEN, level: 1, buildLeft: 0, buildTotal: 0 };
-      plots[10] = { type: T.HAUS, level: 1, buildLeft: 0, buildTotal: 0 };
+      plots[2] = { type: T.TREIBHOLZ, level: 1, buildLeft: 0, buildTotal: 0 };
+      plots[3] = { type: T.MUSCHEL, level: 1, buildLeft: 0, buildTotal: 0 };
+      plots[4] = { type: T.REGEN, level: 1, buildLeft: 0, buildTotal: 0 };
+      plots[5] = { type: T.HAUS, level: 1, buildLeft: 0, buildTotal: 0 };
       this.s = {
         res: [250, 160, 120, 30],
         survivors: 6,
         sick: 0,
         beaconOn: true,
         plots,
+        layoutV: 1,
         lastSave: Date.now(),
         dayTime: 0.3,
         days: 1,
@@ -3599,7 +3684,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const items = [];
       for (let i = 0; i < PLOTS; i++) {
         const p = s.plots[i], el = this.labelEls[i];
-        if (p.type < 0 || this.w.dist > 120 && p.buildLeft <= 0 && i !== 0) {
+        const ghost = p.type < 0 && i !== DAMM && this.w.dist < 75 && !c.buildBlocker(i, LAYOUT[i])?.match(/^(Äußerer|Gelände|Erst)/);
+        if (p.type < 0 && !ghost || this.w.dist > 120 && p.buildLeft <= 0 && i !== 0) {
           el.style.display = "none";
           continue;
         }
@@ -3611,7 +3697,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           continue;
         }
         const near = this.w.dist < 50 || i === this.selected;
-        const txt = `<span class="li">${B_IC[p.type]}</span>${near ? " " + DEFS[p.type].name : ""}${p.level > 0 ? ` <i>${p.level}</i>` : ""}` + (p.buildLeft > 0 ? `<div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div><small>${fmtTime(p.buildLeft)}</small>` : "");
+        const txt = ghost ? `<span class="gh">\uFF0B ${B_IC[LAYOUT[i]]}</span>` : `<span class="li">${B_IC[p.type]}</span>${near ? " " + DEFS[p.type].name : ""}${p.level > 0 ? ` <i>${p.level}</i>` : ""}` + (p.buildLeft > 0 ? `<div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div><small>${fmtTime(p.buildLeft)}</small>` : "");
         if (el._t !== txt) {
           el._t = txt;
           el.innerHTML = txt;
@@ -3619,7 +3705,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           el._w = el.offsetWidth;
           el._h = el.offsetHeight;
         }
-        const prio = (i === this.selected ? 0 : p.buildLeft > 0 ? 1 : 2) * 1e6 + sp[2];
+        const prio = (i === this.selected ? 0 : p.buildLeft > 0 ? 1 : ghost ? 3 : 2) * 1e6 + sp[2];
         items.push({ el, x: sp[0], y: sp[1], w: el._w || 60, h: el._h || 22, prio });
       }
       items.sort((a, b) => a.prio - b.prio);
@@ -3730,7 +3816,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return this.head("\xC4u\xDFerer Bauplatz") + `<div class="desc">Dieser Platz liegt im \xE4u\xDFeren Ring. Er wird frei, sobald dein Gezeitenturm Stufe ${OUTER_LEVEL} erreicht.</div>`;
         if (i >= RING3 && i < WALL && c.builtCount < c.ring3Needed(i))
           return this.head("Gel\xE4nde (noch nicht erschlossen)") + `<div class="desc">Deine Warft w\xE4chst mit jedem Neubau. Dieser Platz wird frei, wenn du noch <b>${c.ring3Needed(i) - c.builtCount}</b> Geb\xE4ude baust. Gel\xE4nderadius jetzt: ${Math.round(c.areaRadius)} m.</div>`;
-        const types = i === DAMM ? [T.DAMM] : i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
+        const types = [LAYOUT[i]];
         let rows = "";
         for (const t of types) {
           const d2 = DEFS[t], blk = c.buildBlocker(i, t);
@@ -3739,7 +3825,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           ${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div>
           <button class="btn" data-a="build" data-v="${t}" ${blk ? "disabled" : ""}>Bauen</button></div>`;
         }
-        const title = i === DAMM ? "Dammplatz" : i === WALL ? "Festung" : i >= TOWERS ? "Turmplatz auf der Mauer" : i >= RING3 ? "Bauplatz auf der Warft" : i >= INNER ? "Freier Bauplatz (au\xDFen)" : "Freier Bauplatz";
+        const zone = i === DAMM ? "ganz au\xDFen" : i === WALL ? "Festung" : i >= TOWERS ? "auf der Mauer" : i >= RING3 ? "Warft" : i >= INNER ? "Ring 2" : "Stadtkern";
+        const title = `${B_IC[LAYOUT[i]]} Bauplatz \xB7 ${zone}`;
         const intro = i === WALL ? '<div class="desc">Baue eine Mauer mit Tor rund um dein ganzes Gel\xE4nde. Sie w\xE4chst mit, wenn die Warft gr\xF6\xDFer wird.</div>' : "";
         return this.head(title) + intro + `<div class="list">${rows}</div>`;
       }
@@ -3997,6 +4084,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           for (const t of list) {
             if (!types.includes(t)) continue;
             const d = DEFS[t], free = this.freePlotFor(t);
+            const slots = LAYOUT.filter((x) => x === t).length, have = c.s.plots.filter((p) => p.type === t).length;
             let why = "";
             if (free < 0) {
               if (c.activeBuilds >= 2) why = "Alle Bautrupps besch\xE4ftigt";
@@ -4004,9 +4092,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
               else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? "Schon gebaut \u2013 Ausbau unter \u201EMeine Geb\xE4ude\u201C" : "Nicht m\xF6glich";
               else if (t === T.DAMM) why = c.s.plots[DAMM].type >= 0 ? "Schon gebaut \u2013 Ausbau unter \u201EMeine Geb\xE4ude\u201C" : "Nicht m\xF6glich";
               else if (t === T.ABWEHR && c.levels(T.MAUER) <= 0) why = "Erst die Festungsmauer bauen";
-              else why = "Kein freier Platz \u2013 baue mehr, dann w\xE4chst dein Gel\xE4nde";
+              else if (have >= slots) why = "Alle Pl\xE4tze bebaut \u2013 baue die vorhandenen aus";
+              else why = c.towerLevel < OUTER_LEVEL ? `N\xE4chster Platz ab Gezeitenturm Stufe ${OUTER_LEVEL} bzw. wenn die Warft w\xE4chst` : "N\xE4chster Platz wird frei, wenn die Warft w\xE4chst";
             }
-            body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${d.short}</span></div>
+            body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${have}/${slots} \xB7 ${d.short}</span></div>
             <div class="sm">${this.costStr(costFor(t, 1))} \xB7 ${fmtTime(buildTime(t, 1))}</div>${why ? `<div class="warn">${why}</div>` : ""}</div>
             <button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? "disabled" : ""}>Bauen</button></div>`;
           }
@@ -4037,7 +4126,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         });
         if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join("");
       }
-      const free = s.plots.findIndex((p, i) => i > 0 && i < WALL && p.type < 0 && !c.buildBlocker(i, T.HAUS)?.startsWith("Gel\xE4nde") && !c.buildBlocker(i, T.HAUS)?.startsWith("\xC4u\xDFerer"));
+      const free = s.plots.findIndex((p, i) => i > 0 && i < WALL && p.type < 0 && !c.buildBlocker(i, LAYOUT[i])?.startsWith("Gel\xE4nde") && !c.buildBlocker(i, LAYOUT[i])?.startsWith("\xC4u\xDFerer"));
       out += `<div class="sm" style="margin-top:10px">Neu bauen: Reiter \u201ENeu bauen\u201C oder in der Stadt auf eine freie Plattform tippen.${free > 0 ? "" : " Gerade ist kein Platz frei."}</div>`;
       if (free > 0) out += `<div class="btns"><button class="btn ghost" data-a="goto" data-i="${free}">Freien Bauplatz zeigen</button></div>`;
       return out;

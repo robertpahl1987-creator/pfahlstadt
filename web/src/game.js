@@ -63,6 +63,17 @@ export const deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
 export const beaconWood = (lvl) => 0.04 + 0.04 * lvl;
 
 export const DAMM = 52;
+// Feste Bauplätze: jeder Platz hat sein Gebäude. Kern mit Versorgung, Militär zum Tor (Süden),
+// Rohstoffbetriebe nach außen zum Wasser, Mauer + Abwehrtürme + Damm ganz außen.
+const _T = { L: 11, H: 5, K: 8, HE: 6, KA: 9, W: 10, R: 7, TH: 1, MU: 2, RE: 3, TA: 4 };
+export const LAYOUT = [0,
+  // Ring 1 (Stadtkern, Plätze 1–12, im Uhrzeigersinn ab Norden; 7 = Torseite)
+  _T.L, _T.TH, _T.MU, _T.RE, _T.H, _T.HE, _T.KA, _T.W, _T.H, _T.TA, _T.K, _T.H,
+  // Ring 2 (ab Gezeitenturm 3)
+  _T.TH, _T.MU, _T.RE, _T.H, _T.R, _T.KA, _T.W, _T.H, _T.TA, _T.L, _T.H, _T.TH,
+  // Ring 3 (Warft, wächst mit)
+  _T.TH, _T.MU, _T.RE, _T.TA, _T.H, _T.L, _T.H, _T.W, _T.KA, _T.W, _T.H, _T.TA, _T.RE, _T.MU, _T.TH, _T.H, _T.TH, _T.MU,
+  12, 13, 13, 13, 13, 13, 13, 13, 13, 14];
 export const PLOTS = 53, INNER = 13, RING3 = 25, WALL = 43, TOWERS = 44, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
 const KEY = 'pfahlstadt_save_v1';
 
@@ -265,12 +276,7 @@ export class Colony {
   buildBlocker(plot, t) {
     if (plot === 0 || t === T.TURM) return 'Nicht möglich';
     if (this.s.plots[plot].type >= 0) return 'Platz belegt';
-    if (plot === DAMM && t !== T.DAMM) return 'Hier entsteht der Damm';
-    if (plot !== DAMM && t === T.DAMM) return 'Nur am Dammplatz';
-    if (plot === WALL && t !== T.MAUER) return 'Hier steht die Festungsmauer';
-    if (plot !== WALL && t === T.MAUER) return 'Nur am Mauerplatz';
-    if (plot >= TOWERS && plot < DAMM && t !== T.ABWEHR) return 'Hier passen nur Abwehrtürme';
-    if (plot < TOWERS && t === T.ABWEHR) return 'Nur auf der Mauer';
+    if (LAYOUT[plot] !== t) return `Dieser Platz ist für: ${DEFS[LAYOUT[plot]].name}`;
     if (plot >= TOWERS && plot < DAMM && this.levels(T.MAUER) <= 0) return 'Erst die Festungsmauer bauen';
     if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `Äußerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
     if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gelände zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Gebäude bauen`;
@@ -501,6 +507,22 @@ export class Colony {
 
   get raidIn() { return this.s.days >= 2 ? this.s.raidTimer : null; }
 
+  /// Alte Spielstände: Gebäude auf die festen Plätze umziehen (Stufe bleibt erhalten)
+  relayout() {
+    const s = this.s, moved = [];
+    for (let i = 1; i < PLOTS; i++) {
+      const p = s.plots[i];
+      if (p.type >= 0 && p.type !== LAYOUT[i]) { moved.push(p); s.plots[i] = { type: -1, level: 0, buildLeft: 0, buildTotal: 0 }; }
+    }
+    moved.sort((a, b) => b.level - a.level);
+    for (const p of moved) {
+      let j = -1;
+      for (let i = 1; i < PLOTS; i++) if (LAYOUT[i] === p.type && s.plots[i].type < 0) { j = i; break; }
+      if (j < 0) for (let i = 1; i < WALL; i++) if (s.plots[i].type < 0) { j = i; break; } // kein Platz mehr: irgendwo behalten
+      if (j >= 0) s.plots[j] = p;
+    }
+  }
+
   ensureMilitary() {
     const s = this.s;
     if (!s.nodes) s.nodes = [];
@@ -515,6 +537,7 @@ export class Colony {
     if (s.raidTimer === undefined) s.raidTimer = 480;
     if (s.counterTimer === undefined) s.counterTimer = 420;
     while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
+    if (!s.layoutV) { this.relayout(); s.layoutV = 1; }
     if (!s.nodes.length && !s.gath.length) { for (let k = 0; k < 4; k++) { this.spawnNodeAt(k); } }
   }
 
@@ -641,12 +664,12 @@ export class Colony {
     const empty = () => ({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
     const plots = Array.from({ length: PLOTS }, empty);
     plots[0] = { type: T.TURM, level: 1, buildLeft: 0, buildTotal: 0 };
-    plots[1] = { type: T.TREIBHOLZ, level: 1, buildLeft: 0, buildTotal: 0 };
-    plots[4] = { type: T.MUSCHEL, level: 1, buildLeft: 0, buildTotal: 0 };
-    plots[7] = { type: T.REGEN, level: 1, buildLeft: 0, buildTotal: 0 };
-    plots[10] = { type: T.HAUS, level: 1, buildLeft: 0, buildTotal: 0 };
+    plots[2] = { type: T.TREIBHOLZ, level: 1, buildLeft: 0, buildTotal: 0 };
+    plots[3] = { type: T.MUSCHEL, level: 1, buildLeft: 0, buildTotal: 0 };
+    plots[4] = { type: T.REGEN, level: 1, buildLeft: 0, buildTotal: 0 };
+    plots[5] = { type: T.HAUS, level: 1, buildLeft: 0, buildTotal: 0 };
     this.s = {
-      res: [250, 160, 120, 30], survivors: 6, sick: 0, beaconOn: true, plots,
+      res: [250, 160, 120, 30], survivors: 6, sick: 0, beaconOn: true, plots, layoutV: 1,
       lastSave: Date.now(), dayTime: 0.3, days: 1, stormTimer: 360, stormLeft: 0,
       expLeft: 0, expSurprised: false, sickProg: 0, deathProg: 0, healProg: 0, arriveProg: 0,
     };

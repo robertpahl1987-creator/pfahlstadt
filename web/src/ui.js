@@ -1,5 +1,5 @@
 // Oberfläche (HTML über der 3D-Ansicht) inkl. Seekarte, Kaserne und Berichten
-import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
+import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, LAYOUT, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
 import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
 import { TIERS } from './gfx.js';
@@ -295,17 +295,18 @@ export class UI {
     const items = [];
     for (let i = 0; i < PLOTS; i++) {
       const p = s.plots[i], el = this.labelEls[i];
-      if (p.type < 0 || (this.w.dist > 120 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
+      const ghost = p.type < 0 && i !== DAMM && this.w.dist < 75 && !c.buildBlocker(i, LAYOUT[i])?.match(/^(Äußerer|Gelände|Erst)/);
+      if ((p.type < 0 && !ghost) || (this.w.dist > 120 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
       const pp = plotPos(i);
       const tall = i === DAMM ? c.damTop - deck + 3 : i === 0 ? towerHeight(Math.max(1, p.level)) + 5 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
       const sp = this.w.screenPos([pp[0], deck + tall, pp[2]], cw, ch);
       if (!sp || sp[0] < -40 || sp[0] > cw + 40 || sp[1] < 60 || sp[1] > ch - 60) { el.style.display = 'none'; continue; }
       const near = this.w.dist < 50 || i === this.selected;
-      const txt = `<span class="li">${B_IC[p.type]}</span>${near ? ' ' + DEFS[p.type].name : ''}${p.level > 0 ? ` <i>${p.level}</i>` : ''}` +
+      const txt = ghost ? `<span class="gh">＋ ${B_IC[LAYOUT[i]]}</span>` : `<span class="li">${B_IC[p.type]}</span>${near ? ' ' + DEFS[p.type].name : ''}${p.level > 0 ? ` <i>${p.level}</i>` : ''}` +
         (p.buildLeft > 0 ? `<div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div><small>${fmtTime(p.buildLeft)}</small>` : '');
       if (el._t !== txt) { el._t = txt; el.innerHTML = txt; el.style.display = ''; el._w = el.offsetWidth; el._h = el.offsetHeight; }
       // Priorität: ausgewählt > im Bau > nah an der Kamera
-      const prio = (i === this.selected ? 0 : p.buildLeft > 0 ? 1 : 2) * 1e6 + sp[2];
+      const prio = (i === this.selected ? 0 : p.buildLeft > 0 ? 1 : ghost ? 3 : 2) * 1e6 + sp[2];
       items.push({ el, x: sp[0], y: sp[1], w: el._w || 60, h: el._h || 22, prio });
     }
     items.sort((a, b) => a.prio - b.prio);
@@ -410,7 +411,7 @@ export class UI {
         return this.head('Äußerer Bauplatz') + `<div class="desc">Dieser Platz liegt im äußeren Ring. Er wird frei, sobald dein Gezeitenturm Stufe ${OUTER_LEVEL} erreicht.</div>`;
       if (i >= RING3 && i < WALL && c.builtCount < c.ring3Needed(i))
         return this.head('Gelände (noch nicht erschlossen)') + `<div class="desc">Deine Warft wächst mit jedem Neubau. Dieser Platz wird frei, wenn du noch <b>${c.ring3Needed(i) - c.builtCount}</b> Gebäude baust. Geländeradius jetzt: ${Math.round(c.areaRadius)} m.</div>`;
-      const types = i === DAMM ? [T.DAMM] : i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
+      const types = [LAYOUT[i]];
       let rows = '';
       for (const t of types) {
         const d = DEFS[t], blk = c.buildBlocker(i, t);
@@ -419,7 +420,8 @@ export class UI {
           ${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>
           <button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button></div>`;
       }
-      const title = i === DAMM ? 'Dammplatz' : i === WALL ? 'Festung' : i >= TOWERS ? 'Turmplatz auf der Mauer' : i >= RING3 ? 'Bauplatz auf der Warft' : i >= INNER ? 'Freier Bauplatz (außen)' : 'Freier Bauplatz';
+      const zone = i === DAMM ? 'ganz außen' : i === WALL ? 'Festung' : i >= TOWERS ? 'auf der Mauer' : i >= RING3 ? 'Warft' : i >= INNER ? 'Ring 2' : 'Stadtkern';
+      const title = `${B_IC[LAYOUT[i]]} Bauplatz · ${zone}`;
       const intro = i === WALL ? '<div class="desc">Baue eine Mauer mit Tor rund um dein ganzes Gelände. Sie wächst mit, wenn die Warft größer wird.</div>' : '';
       return this.head(title) + intro + `<div class="list">${rows}</div>`;
     }
@@ -686,6 +688,7 @@ export class UI {
         for (const t of list) {
           if (!types.includes(t)) continue;
           const d = DEFS[t], free = this.freePlotFor(t);
+          const slots = LAYOUT.filter((x) => x === t).length, have = c.s.plots.filter((p) => p.type === t).length;
           let why = '';
           if (free < 0) {
             if (c.activeBuilds >= 2) why = 'Alle Bautrupps beschäftigt';
@@ -693,9 +696,10 @@ export class UI {
             else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
             else if (t === T.DAMM) why = c.s.plots[DAMM].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
             else if (t === T.ABWEHR && c.levels(T.MAUER) <= 0) why = 'Erst die Festungsmauer bauen';
-            else why = 'Kein freier Platz – baue mehr, dann wächst dein Gelände';
+            else if (have >= slots) why = 'Alle Plätze bebaut – baue die vorhandenen aus';
+            else why = c.towerLevel < OUTER_LEVEL ? `Nächster Platz ab Gezeitenturm Stufe ${OUTER_LEVEL} bzw. wenn die Warft wächst` : 'Nächster Platz wird frei, wenn die Warft wächst';
           }
-          body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${d.short}</span></div>
+          body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${have}/${slots} · ${d.short}</span></div>
             <div class="sm">${this.costStr(costFor(t, 1))} · ${fmtTime(buildTime(t, 1))}</div>${why ? `<div class="warn">${why}</div>` : ''}</div>
             <button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? 'disabled' : ''}>Bauen</button></div>`;
         }
@@ -727,7 +731,7 @@ export class UI {
       });
       if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join('');
     }
-    const free = s.plots.findIndex((p, i) => i > 0 && i < WALL && p.type < 0 && !c.buildBlocker(i, T.HAUS)?.startsWith('Gelände') && !c.buildBlocker(i, T.HAUS)?.startsWith('Äußerer'));
+    const free = s.plots.findIndex((p, i) => i > 0 && i < WALL && p.type < 0 && !c.buildBlocker(i, LAYOUT[i])?.startsWith('Gelände') && !c.buildBlocker(i, LAYOUT[i])?.startsWith('Äußerer'));
     out += `<div class="sm" style="margin-top:10px">Neu bauen: Reiter „Neu bauen“ oder in der Stadt auf eine freie Plattform tippen.${free > 0 ? '' : ' Gerade ist kein Platz frei.'}</div>`;
     if (free > 0) out += `<div class="btns"><button class="btn ghost" data-a="goto" data-i="${free}">Freien Bauplatz zeigen</button></div>`;
     return out;
