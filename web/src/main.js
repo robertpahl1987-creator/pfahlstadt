@@ -53,7 +53,7 @@ function start() {
     if (ptrs.size === 0 && moved <= 10 && e.type === 'pointerup') {
       const rect = canvas.getBoundingClientRect();
       const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1, ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
-      ui.select(world.pick(nx, ny));
+      if (ui.view === 'city') ui.select(world.pick(nx, ny));
     }
     if (ptrs.size === 1) moved = 999;
   };
@@ -81,7 +81,7 @@ function start() {
     const [w, h] = gfx.size(cw, ch);
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     r.render(world.scene(cw / Math.max(1, ch)));
-    ui.update(cw, ch);
+    ui.update(cw, ch, dt);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

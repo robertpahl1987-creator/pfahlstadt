@@ -21,6 +21,12 @@
   #toasts { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top) + 142px); width: min(94vw, 640px); pointer-events: none; display: flex; flex-direction: column; gap: 6px; }
   .toast { background: rgba(8, 40, 48, 0.93); border: 1px solid rgba(127, 211, 240, .25); border-radius: 10px; padding: 8px 12px; text-align: center; font-size: 14px; animation: tin .25s ease-out; }
   @keyframes tin { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  #map { position: fixed; inset: 0; z-index: 1; }
+  #mapc { width: 100%; height: 100%; display: block; touch-action: none; }
+  #top, #bottom { z-index: 3; } #toasts { z-index: 4; } #panel { z-index: 5; } #badge { z-index: 4; }
+  .sub2 { font-weight: 800; margin: 10px 0 2px; }
+  .btn.sm2 { min-width: 44px; padding: 10px 8px; font-size: 14px; }
+  .rep.win { border-left: 4px solid #4fd18b; } .rep.loss { border-left: 4px solid #e0524a; }
   #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
   .lbl { position: absolute; left: 0; top: 0; background: rgba(0, 12, 16, .62); padding: 3px 9px; border-radius: 8px; font-size: 13px; font-weight: 700; white-space: nowrap; text-align: center; }
   .lbl i { font-style: normal; color: #7fd3f0; margin-left: 3px; }
@@ -61,6 +67,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="labels"></div>
+<div id="map" style="display:none"><canvas id="mapc"></canvas></div>
 <div id="top"><div class="res"></div><div class="l1"></div><div class="l2"></div></div>
 <div id="toasts"></div>
 <div id="badge" style="display:none"></div>
@@ -68,7 +75,7 @@
 <div id="bottom"><div class="row4">
   <button class="bb" id="bBeacon"></button>
   <button class="bb" id="bExp"></button>
-  <button class="bb" id="bGfx"></button>
+  <button class="bb" id="bMap"></button>
   <button class="bb" id="bMenu"><b>Menü</b></button>
 </div></div>
 <div id="loading"><div class="logo">Pfahlstadt</div><div class="sub">Ebbe &amp; Flut</div></div>

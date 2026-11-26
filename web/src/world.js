@@ -2,16 +2,17 @@
 import { Builder } from './geo.js';
 import * as M from './models.js';
 import { C } from './models.js';
-import { PLOTS, deckFor } from './game.js';
+import { PLOTS, INNER, deckFor } from './game.js';
 import { trs, mul, perspective, lookAt, invert, normalMat, clamp, clamp01, lerp, lerpC, mulC, moveTowards, rng, noise1, D2R, project } from './math.js';
 
-export const RING = 20;
+export const RING = 20, RING2 = 34;
 const COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
 
+export function plotAngle(i) { return i < INNER ? ((i - 1) * Math.PI * 2) / 12 : ((i - INNER + 0.5) * Math.PI * 2) / 12; }
 export function plotPos(i) {
   if (i === 0) return [0, 0, 0];
-  const a = ((i - 1) * Math.PI * 2) / 12;
-  return [Math.sin(a) * RING, 0, Math.cos(a) * RING];
+  const a = plotAngle(i), r = i < INNER ? RING : RING2;
+  return [Math.sin(a) * r, 0, Math.cos(a) * r];
 }
 /// Drehung so, dass die Vorderseite (+z) zur Mitte zeigt
 export function plotYaw(i) {
@@ -140,16 +141,18 @@ export class World {
         B.add('cylinder', [lx, postY, lz], [0.42, postLen / 2, 0.42], post, { g: 0.35 });
         B.add('cylinder', [lx, 0.4, lz], [0.48, 0.6, 0.48], algae, { g: 0.6 });
       }
-      B.add('cube', [0, deck - 0.1, 7.5], [2.2, 0.2, 7.2], plank, { g: 0.2 });
-      for (let k = 0; k < 2; k++) {
-        const z = 6 + k * 3;
+      const outer = i >= INNER;
+      const wl = outer ? 21.4 : 7.2, wz = outer ? 14.7 : 7.5, ww = outer ? 1.8 : 2.2;
+      B.add('cube', [0, deck - 0.1, wz], [ww, 0.2, wl], plank, { g: 0.2 });
+      for (let k = 0; k < (outer ? 6 : 2); k++) {
+        const z = (outer ? 6 : 6) + k * 3;
         B.add('cylinder', [-1, postY, z], [0.3, postLen / 2, 0.3], post);
         B.add('cylinder', [1, postY, z], [0.3, postLen / 2, 0.3], post);
         B.add('cube', [-1.1, deck + 0.3, z], [0.1, 0.6, 0.1], post);
         B.add('cube', [1.1, deck + 0.3, z], [0.1, 0.6, 0.1], post);
       }
-      B.add('cube', [-1.1, deck + 0.6, 7.5], [0.08, 0.08, 7.2], post);
-      B.add('cube', [1.1, deck + 0.6, 7.5], [0.08, 0.08, 7.2], post);
+      B.add('cube', [-ww / 2, deck + 0.6, wz], [0.08, 0.08, wl], post);
+      B.add('cube', [ww / 2, deck + 0.6, wz], [0.08, 0.08, wl], post);
       B.pop();
     }
     // Pegel-Latte mit roter Marke auf Deckhöhe
@@ -208,14 +211,15 @@ export class World {
   // ---- Siedler laufen über die Stege ----
   updateVillagers(dt) {
     const c = this.c;
-    const want = Math.min(c.s.survivors, 30);
+    const want = Math.min(c.s.survivors, 36);
     while (this.villagers.length < want) {
       const a = Math.random() * 6.28, d = 3 + Math.random() * 4.5;
       this.villagers.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, yaw: 0, path: [], spoke: -1, wait: Math.random() * 2, speed: 1.5 + Math.random() * 0.6, phase: Math.random() * 10, mesh: Math.floor(Math.random() * COATS.length) });
     }
     this.villagers.length = want;
+    // Soldaten (sichtbar als rote Figuren auf der Mittelplattform)
     const polar = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
-    const spokeA = (i) => ((i - 1) * Math.PI * 2) / 12;
+    const spokeA = (i) => plotAngle(i);
     this.villagers.forEach((v, idx) => {
       v.sick = idx < c.s.sick;
       if (!v.path.length) {
@@ -232,7 +236,8 @@ export class World {
         if (target > 0) {
           const a = spokeA(target);
           v.path.push(polar(a, 8));
-          const off = polar(a + Math.PI / 2, (Math.random() - 0.5) * 1.2), base = polar(a, 10 + Math.random() * 5.5);
+          const far = target >= INNER;
+          const off = polar(a + Math.PI / 2, (Math.random() - 0.5) * (far ? 0.6 : 1.2)), base = polar(a, far ? 24 + Math.random() * 5.5 : 10 + Math.random() * 5.5);
           v.path.push([base[0] + off[0], base[1] + off[1]]);
           v.spoke = target;
         } else {
@@ -381,7 +386,8 @@ export class World {
     fog = lerpC(fog, mulC([0.45, 0.5, 0.55], lerp(0.3, 1, day)), sb);
     const zenith = lerpC(lerpC([0.02, 0.03, 0.08], [0.32, 0.52, 0.78], day), mulC([0.35, 0.38, 0.42], lerp(0.25, 1, day)), sb);
     const horizon = lerpC(lerpC([0.08, 0.1, 0.17], [0.78, 0.83, 0.88], day), fog, sb);
-    const water = lerpC([0.02, 0.05, 0.07], [0.14, 0.3, 0.34], day);
+    const waterDeep = lerpC([0.01, 0.03, 0.08], [0.02, 0.17, 0.38], day);
+    const waterShallow = lerpC([0.02, 0.06, 0.1], [0.08, 0.5, 0.58], day);
 
     const burn = c.beaconBurning;
     const flick = noise1(this.time * 2.5);
@@ -448,7 +454,7 @@ export class World {
       fogCol: fog, fogDen: lerp(0.0045, 0.022, sb), zenith, horizon, cloud: sb, night: 1 - day,
       cloudCol: lerpC(lerpC([0.12, 0.13, 0.18], [0.95, 0.95, 0.97], day), mulC([0.4, 0.42, 0.46], lerp(0.3, 1, day)), sb),
       plPos: this.lampPos || [0, 15, 0], plCol, plRange: 38 + 4 * c.towerLevel,
-      draws, waterY: wy, waterCol: water, storm: sb,
+      draws, waterY: wy, waterDeep: lerpC(waterDeep, [0.12, 0.17, 0.2], sb * 0.6), waterShallow: lerpC(waterShallow, [0.2, 0.26, 0.28], sb * 0.6), storm: sb,
       smoke: this.smoke, smokeCount: this.smokeCount, smokeCol: mulC(lerpC([0.25, 0.27, 0.32], [0.82, 0.82, 0.85], day), 1),
       rain: this.rain, rainCount: this.rainCount, beams,
       shadowSize: day > 0.05 ? this.shadowSize : 0, shadowCenter: [this.target[0], deck, this.target[2]], shadowRadius: 55 + this.dist * 0.25,

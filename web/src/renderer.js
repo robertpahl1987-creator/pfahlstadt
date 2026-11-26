@@ -84,35 +84,67 @@ void main(){
 
 const WATER_VS = HEAD + `layout(location=0) in vec3 aPos; uniform mat4 uVP; uniform float uY; out vec3 vPos;
 void main(){ vPos = vec3(aPos.x * 140.0, uY, aPos.z * 140.0); gl_Position = uVP * vec4(vPos, 1.0); }`;
-const WATER_FS = HEAD + `in vec3 vPos; uniform vec3 uCam, uSunDir, uSunCol, uFogCol, uDeep, uZenith, uHorizon, uPLPos, uPLCol;
-uniform float uFogDen, uTime, uStorm, uPLRange; out vec4 o;
+const WATER_FS = HEAD + `in vec3 vPos; uniform vec3 uCam, uSunDir, uSunCol, uFogCol, uDeep, uShallow, uZenith, uHorizon, uPLPos, uPLCol;
+uniform float uFogDen, uTime, uStorm, uPLRange, uY; out vec4 o;
 ` + GAMMA + `
-vec2 wave(vec2 p){
-  float t = uTime; vec2 g = vec2(0.0); float a = 0.05 + 0.14 * uStorm;
-  vec2 d1 = normalize(vec2(1.0, 0.3)), d2 = normalize(vec2(-0.4, 1.0)), d3 = normalize(vec2(0.7, -0.8)), d4 = normalize(vec2(-1.0, -0.2)), d5 = normalize(vec2(0.2, 1.0));
-  g += d1 * cos(dot(d1, p) * 0.55 + t * 1.1) * 0.55 * a;
-  g += d2 * cos(dot(d2, p) * 1.1 + t * 1.6) * 1.1 * a * 0.6;
-  g += d3 * cos(dot(d3, p) * 2.3 + t * 2.4) * 2.3 * a * 0.3;
-  g += d4 * cos(dot(d4, p) * 4.7 + t * 3.3) * 4.7 * a * 0.12;
-  g += d5 * cos(dot(d5, p) * 9.1 + t * 4.1) * 9.1 * a * 0.05;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+  return mix(mix(hash(i), hash(i+vec2(1,0)), u.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y); }
+float ripples(vec2 p){
+  float t = uTime;
+  float h = vnoise(p * 0.9 + vec2(t * 0.35, t * 0.2)) * 0.5;
+  h += vnoise(p * 2.1 - vec2(t * 0.5, -t * 0.3)) * 0.25;
+  h += vnoise(p * 4.7 + vec2(-t * 0.8, t * 0.6)) * 0.12;
+  return h;
+}
+vec2 swell(vec2 p){
+  float t = uTime; vec2 g = vec2(0.0); float a = 0.045 + 0.16 * uStorm;
+  vec2 d1 = normalize(vec2(1.0, 0.3)), d2 = normalize(vec2(-0.4, 1.0)), d3 = normalize(vec2(0.7, -0.8));
+  g += d1 * cos(dot(d1, p) * 0.45 + t * 1.0) * 0.45 * a;
+  g += d2 * cos(dot(d2, p) * 0.9 + t * 1.4) * 0.9 * a * 0.6;
+  g += d3 * cos(dot(d3, p) * 1.9 + t * 2.1) * 1.9 * a * 0.3;
   return g;
 }
 void main(){
-  vec2 g = wave(vPos.xz);
-  vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
   vec3 v = normalize(uCam - vPos);
-  float fres = 0.06 + 0.9 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
-  vec3 r = reflect(-v, n);
-  vec3 sky = mix(uHorizon, uZenith, pow(clamp(r.y, 0.0, 1.0), 0.5));
-  vec3 col = mix(uDeep, sky, fres);
-  col += uSunCol * pow(max(dot(r, uSunDir), 0.0), 260.0) * 4.0;
-  vec3 lv = uPLPos - vPos; float d = length(lv);
-  col += uPLCol * pow(max(dot(r, lv / d), 0.0), 60.0) * clamp(1.0 - d / (uPLRange * 2.5), 0.0, 1.0) * 1.5;
-  float foam = smoothstep(0.32, 0.6, length(g)) * uStorm * 0.55;
-  col = mix(col, vec3(0.85), foam);
   float dist = length(uCam - vPos);
+  // feine Kräuselung, zur Ferne hin ausblenden (verhindert Flimmern)
+  float e = 0.08;
+  float r0 = ripples(vPos.xz);
+  vec2 rg = vec2(ripples(vPos.xz + vec2(e, 0.0)) - r0, ripples(vPos.xz + vec2(0.0, e)) - r0) / e;
+  float fade = 1.0 - smoothstep(30.0, 160.0, dist);
+  vec2 g = swell(vPos.xz) + rg * (0.06 + 0.2 * uStorm) * fade;
+  vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
+
+  float ndv = max(dot(n, v), 0.0);
+  float fres = 0.02 + 0.6 * pow(1.0 - ndv, 5.0);
+  vec3 r = reflect(-v, n);
+  vec3 sky = mix(uHorizon, uZenith, pow(clamp(r.y, 0.0, 1.0), 0.55)) * 0.8;
+
+  // Wasserfarbe: flach = türkis, tief = dunkelblau
+  float depth = max(uY, 0.0);
+  vec3 body = mix(uShallow, uDeep, smoothstep(0.2, 4.5, depth));
+  // Licht scheint durch die Wellenkämme (Streulicht)
+  float sss = pow(max(dot(v, -uSunDir + vec3(0.0, 0.6, 0.0)), 0.0), 3.0) * max(g.x + g.y + 0.2, 0.0);
+  body += uShallow * sss * 0.25 * length(uSunCol);
+  body *= 0.7 + 0.35 * max(dot(n, uSunDir), 0.0) * min(length(uSunCol), 1.2);
+
+  vec3 col = mix(body, sky, fres);
+  // Sonnenglitzern
+  float sp = pow(max(dot(r, uSunDir), 0.0), 900.0) * 3.5 + pow(max(dot(r, uSunDir), 0.0), 200.0) * 0.15;
+  col += uSunCol * sp;
+  // Leuchtturm spiegelt sich
+  vec3 lv = uPLPos - vPos; float d = length(lv);
+  col += uPLCol * pow(max(dot(r, lv / d), 0.0), 140.0) * clamp(1.0 - d / (uPLRange * 2.5), 0.0, 1.0) * 0.5;
+  // Gischt bei Sturm
+  float foam = smoothstep(0.30, 0.55, length(swell(vPos.xz))) * uStorm;
+  foam *= 0.5 + 0.5 * vnoise(vPos.xz * 1.5 + uTime);
+  col = mix(col, vec3(0.88, 0.92, 0.95), foam * 0.7);
+
   col = mix(col, uFogCol, 1.0 - exp(-pow(dist * uFogDen, 2.0)));
-  o = vec4(toOut(col), mix(0.74, 0.96, fres));
+  float alpha = mix(0.55, 0.93, smoothstep(0.0, 2.5, depth));
+  alpha = max(alpha, fres);
+  o = vec4(toOut(col), alpha);
 }`;
 
 const BEAM_VS = HEAD + `layout(location=0) in vec3 aPos; uniform mat4 uVP, uModel; out vec3 vPos;
@@ -337,7 +369,7 @@ export class Renderer {
     gl.uniform1f(wu.uY, s.waterY);
     gl.uniform3fv(wu.uCam, s.camPos); gl.uniform3fv(wu.uSunDir, s.sunDir); gl.uniform3fv(wu.uSunCol, sunL);
     gl.uniform3fv(wu.uFogCol, fogL); gl.uniform1f(wu.uFogDen, s.fogDen);
-    gl.uniform3fv(wu.uDeep, L(s.waterCol)); gl.uniform3fv(wu.uZenith, zen); gl.uniform3fv(wu.uHorizon, hor);
+    gl.uniform3fv(wu.uDeep, L(s.waterDeep)); gl.uniform3fv(wu.uShallow, L(s.waterShallow)); gl.uniform3fv(wu.uZenith, zen); gl.uniform3fv(wu.uHorizon, hor);
     gl.uniform3fv(wu.uPLPos, s.plPos); gl.uniform3fv(wu.uPLCol, s.plCol); gl.uniform1f(wu.uPLRange, s.plRange);
     gl.uniform1f(wu.uTime, s.time); gl.uniform1f(wu.uStorm, s.storm);
     gl.bindVertexArray(this.waterVao);

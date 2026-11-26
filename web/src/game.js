@@ -3,7 +3,7 @@ export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
 export const RES_COL = ['#E2B477', '#F2A08C', '#7FD3F0', '#C7CCD6'];
 export const HOLZ = 0, MUSCHELN = 1, WASSER = 2, METALL = 3;
 
-export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7 };
+export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11 };
 
 export const DEFS = [
   { name: 'Gezeitenturm', short: 'Herz der Stadt', desc: 'Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt höher über das Wasser.', cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
@@ -11,10 +11,44 @@ export const DEFS = [
   { name: 'Muschelzucht', short: '+Muscheln, stark bei Ebbe', desc: 'Muschelpfähle im Watt. Bei Ebbe wird viel geerntet, bei Flut wenig.', cost: [60, 0, 0, 0], prod: MUSCHELN, rate: 0.75, workers: 2, build: 6 },
   { name: 'Regenfänger', short: '+Wasser, stark bei Sturm', desc: 'Segeltrichter und Fässer sammeln Regen. Bei Sturmflut fällt besonders viel.', cost: [70, 0, 0, 5], prod: WASSER, rate: 0.6, workers: 1, build: 6 },
   { name: 'Wracktaucher', short: '+Altmetall, stark bei Flut', desc: 'Taucher bergen Metall aus alten Wracks. Bei hohem Wasser kommen sie besser heran.', cost: [120, 40, 0, 0], prod: METALL, rate: 0.25, workers: 3, build: 6 },
-  { name: 'Pfahlhaus', short: '+6 Plätze', desc: 'Wohnraum für neue Siedler (6 pro Stufe).', cost: [70, 0, 0, 0], prod: -1, rate: 0, workers: 0, build: 6 },
+  { name: 'Unterkunft', short: '+6 Plätze', desc: 'Pfahlhaus mit Kojen: Wohnraum für neue Siedler (6 pro Stufe).', cost: [70, 0, 0, 0], prod: -1, rate: 0, workers: 0, build: 6 },
   { name: 'Heilerhütte', short: 'heilt Kranke', desc: 'Kräuter und trockene Decken. Kranke werden deutlich schneller gesund.', cost: [140, 30, 0, 20], prod: -1, rate: 0, workers: 1, build: 6 },
   { name: 'Räucherei', short: '−Muschelverbrauch', desc: 'Räuchert Vorräte haltbar. Senkt den Muschelverbrauch um 8 % pro Stufe (max. 50 %).', cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 1, build: 6 },
+  { name: 'Küche', short: '+6 % Produktion je Stufe', desc: 'Warme Mahlzeiten aus dem großen Kessel: Alle Siedler arbeiten besser (+6 % Produktion pro Stufe, max. 60 %).', cost: [120, 40, 0, 10], prod: -1, rate: 0, workers: 1, build: 7 },
+  { name: 'Kaserne', short: 'bildet Truppen aus', desc: 'Bildet Harpuniere (Angriff) und Wachen (Verteidigung) aus. Höhere Stufe: schneller und größere Ausbildungsschlange.', cost: [150, 60, 0, 30], prod: -1, rate: 0, workers: 2, build: 8 },
+  { name: 'Wachturm', short: '+12 % Verteidigung je Stufe', desc: 'Späher und Signalhörner: Deine Stadt verteidigt sich besser gegen Überfälle (+12 % pro Stufe).', cost: [130, 0, 0, 40], prod: -1, rate: 0, workers: 1, build: 8 },
+  { name: 'Lager', short: '+1500 Lagerplatz je Stufe', desc: 'Schuppen, Kisten und Fässer: mehr Platz für jeden Rohstoff (+1500 pro Stufe).', cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 0, build: 6 },
 ];
+
+// ---------- Militär ----------
+export const UNITS = [
+  { name: 'Harpunier', att: 10, def: 5, cost: [25, 15, 0, 4], time: 6 },
+  { name: 'Wache', att: 3, def: 12, cost: [20, 10, 0, 6], time: 5 },
+];
+export const unitCost = (u, n) => UNITS[u].cost.map((c) => c * n);
+const UPKEEP = 0.004; // Muscheln pro Sekunde und Soldat
+
+const TERR_NAMES = ['Möwenbank', 'Krabbensand', 'Seehundsplate', 'Bernsteinriff', 'Nebelhallig', 'Priel-Insel', 'Austernbank', 'Sturmwarft',
+  'Robbeneck', 'Muschelplate', 'Tangfeld', 'Dünenhallig', 'Schlickwall', 'Wrackbucht', 'Leuchtsand', 'Graue Plate', 'Salzwiese', 'Kormoranriff'];
+const TERR_KIND = ['Sandbank', 'Hallig', 'Riff'];
+export function makeTerritories() {
+  let seed = 1234567;
+  const R = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const list = [];
+  for (let ring = 1; ring <= 3; ring++)
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2 + ring * 0.5 + (R() - 0.5) * 0.4;
+      const d = ring * 1.15 + (R() - 0.5) * 0.35;
+      const base = [0, 60, 220, 700][ring] * (0.8 + R() * 0.5);
+      list.push({
+        id: list.length, name: TERR_NAMES[list.length], ring, kind: TERR_KIND[Math.floor(R() * 3)],
+        x: Math.cos(a) * d, y: Math.sin(a) * d, res: Math.floor(R() * 4), pct: [0, 10, 18, 30][ring],
+        base: Math.round(base), pirates: Math.round(base), owner: 0, gh: 0, gw: 0, seed: Math.floor(R() * 1e6),
+      });
+    }
+  return list;
+}
+export const travelTime = (t) => 20 + Math.hypot(t.x, t.y) * 22;
 export const MAX_LEVEL = 10;
 
 export const costFor = (t, lvl) => DEFS[t].cost.map((c) => Math.round(c * Math.pow(1.65, lvl - 1)));
@@ -23,7 +57,7 @@ export const rateAt = (t, lvl) => (lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 
 export const deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
 export const beaconWood = (lvl) => 0.04 + 0.04 * lvl;
 
-export const PLOTS = 13, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
+export const PLOTS = 25, INNER = 13, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
 const KEY = 'pfahlstadt_save_v1';
 
 export function fmtTime(s) {
@@ -47,6 +81,11 @@ export class Colony {
   msg(text) { this.log.push({ text, t: this.time }); if (this.log.length > 30) this.log.shift(); }
 
   get towerLevel() { return this.s.plots[0].level; }
+  levels(t) { let n = 0; for (const p of this.s.plots) if (p.type === t) n += p.level; return n; }
+  get storage() { return 1500 + 1500 * this.levels(T.LAGER); }
+  get troopsAway() { let h = 0, w = 0; for (const m of this.s.marches) { h += m.h; w += m.w; } for (const t of this.s.terr) { h += t.gh; w += t.gw; } return { h, w }; }
+  get troopTotal() { const a = this.troopsAway; return this.s.troops[0] + this.s.troops[1] + a.h + a.w; }
+  get defense() { return Math.round((this.s.troops[0] * UNITS[0].def + this.s.troops[1] * UNITS[1].def + this.healthy * 2) * (1 + 0.12 * this.levels(T.WACHTURM))); }
   get deck() { return deckFor(this.towerLevel); }
   get freeboard() { return this.deck - this.water; }
   get storm() { return this.s.stormLeft > 0; }
@@ -80,6 +119,7 @@ export class Colony {
     this.advanceBuild(dt);
     this.population(dt);
     this.expedition(dt);
+    this.military(dt, false);
   }
 
   updateWater() {
@@ -120,6 +160,11 @@ export class Colony {
       if (p.type === T.REGEN && this.storm && !offline) f = 2.5;
       r[d.prod] += rateAt(p.type, p.level) * this.efficiency * flood * f;
     }
+    const kitchen = 1 + Math.min(0.6, 0.06 * this.levels(T.KUECHE));
+    const terrBonus = [1, 1, 1, 1];
+    for (const t of s.terr) if (t.owner === 1) terrBonus[t.res] += t.pct / 100;
+    for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i];
+    r[MUSCHELN] -= this.troopTotal * UPKEEP;
     r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
     r[WASSER] -= s.survivors * 0.03;
     if (s.beaconOn) r[HOLZ] -= beaconWood(this.towerLevel);
@@ -127,7 +172,14 @@ export class Colony {
     return r;
   }
 
-  applyRates(r, dt) { for (let i = 0; i < 4; i++) this.s.res[i] = Math.max(0, this.s.res[i] + r[i] * dt); }
+  applyRates(r, dt) {
+    const cap = this.storage;
+    for (let i = 0; i < 4; i++) {
+      const v = this.s.res[i] + r[i] * dt;
+      this.s.res[i] = Math.max(0, r[i] > 0 ? Math.min(v, Math.max(cap, this.s.res[i])) : v);
+    }
+  }
+  addRes(i, v) { this.s.res[i] = Math.max(0, Math.min(this.storage, this.s.res[i] + v)); }
 
   advanceBuild(dt) {
     this.s.plots.forEach((p, i) => {
@@ -187,6 +239,7 @@ export class Colony {
   buildBlocker(plot, t) {
     if (plot === 0 || t === T.TURM) return 'Nicht möglich';
     if (this.s.plots[plot].type >= 0) return 'Platz belegt';
+    if (plot >= INNER && this.towerLevel < OUTER_LEVEL) return `Äußerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
     if (this.activeBuilds >= MAX_BUILDS) return 'Alle Bautrupps beschäftigt';
     if (!this.canAfford(costFor(t, 1))) return 'Zu wenig Rohstoffe';
     return null;
@@ -256,7 +309,7 @@ export class Colony {
     const m = (0.8 + 0.4 * this.towerLevel) * (s.expSurprised ? 0.4 : 1);
     const r = (a, b) => Math.round((a + Math.random() * (b - a)) * m);
     const holz = r(40, 90), mu = r(30, 70), me = r(6, 22);
-    s.res[HOLZ] += holz; s.res[MUSCHELN] += mu; s.res[METALL] += me;
+    this.addRes(HOLZ, holz); this.addRes(MUSCHELN, mu); this.addRes(METALL, me);
     this.msg(`Wattwanderung zurück: +${holz} Holz, +${mu} Muscheln, +${me} Altmetall`);
     if (!s.expSurprised && Math.random() < 0.3 && s.survivors < this.capacity) {
       s.survivors++;
@@ -264,12 +317,174 @@ export class Colony {
     }
   }
 
+
+  // ---------- Militär: Ausbildung, Märsche, Kämpfe, Überfälle ----------
+  report(text, win) {
+    const s = this.s;
+    s.reports.unshift({ text, win, day: s.days, time: s.dayTime });
+    if (s.reports.length > 25) s.reports.length = 25;
+    this.msg(text);
+  }
+
+  trainSlots() { return 10 * this.levels(T.KASERNE); }
+  queued() { return this.s.train.reduce((a, q) => a + q.n, 0); }
+  trainBlocker(u, n) {
+    if (this.levels(T.KASERNE) <= 0) return 'Erst eine Kaserne bauen';
+    if (this.queued() + n > this.trainSlots()) return `Schlange voll (max. ${this.trainSlots()})`;
+    if (!this.canAfford(unitCost(u, n))) return 'Zu wenig Rohstoffe';
+    return null;
+  }
+  startTrain(u, n) {
+    if (this.trainBlocker(u, n)) return false;
+    this.pay(unitCost(u, n));
+    const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1));
+    this.s.train.push({ u, n, per, left: per });
+    this.msg(`${n}× ${UNITS[u].name} in Ausbildung.`);
+    return true;
+  }
+
+  attackBlocker(id, h, w) {
+    const t = this.s.terr[id];
+    if (!t) return 'Unbekanntes Ziel';
+    if (h + w <= 0) return 'Keine Truppen ausgewählt';
+    if (h > this.s.troops[0] || w > this.s.troops[1]) return 'So viele Truppen hast du nicht zu Hause';
+    if (this.s.marches.some((m) => m.target === id && m.phase === 'out')) return 'Dorthin ist schon ein Trupp unterwegs';
+    return null;
+  }
+  sendTroops(id, h, w) {
+    if (this.attackBlocker(id, h, w)) return false;
+    const t = this.s.terr[id], tt = travelTime(t);
+    this.s.troops[0] -= h; this.s.troops[1] -= w;
+    this.s.marches.push({ target: id, h, w, left: tt, total: tt, phase: 'out', kind: t.owner === 1 ? 'reinforce' : 'attack' });
+    this.msg(t.owner === 1 ? `Verstärkung nach ${t.name} unterwegs.` : `Angriff auf ${t.name} gestartet!`);
+    return true;
+  }
+  withdraw(id) {
+    const t = this.s.terr[id];
+    if (!t || t.owner !== 1 || t.gh + t.gw === 0) return false;
+    const tt = travelTime(t);
+    this.s.marches.push({ target: id, h: t.gh, w: t.gw, left: tt, total: tt, phase: 'back', kind: 'return' });
+    t.gh = 0; t.gw = 0;
+    this.msg(`Besatzung von ${t.name} kehrt heim.`);
+    return true;
+  }
+  winChance(id, h, w) {
+    const t = this.s.terr[id];
+    const att = h * UNITS[0].att + w * UNITS[1].att;
+    if (att <= 0) return 0;
+    const r = att / Math.max(1, t.pirates); // Zufall ±15 %
+    return Math.max(0, Math.min(1, (r - 0.85) / 0.3));
+  }
+
+  battle(m, t) {
+    const att = (m.h * UNITS[0].att + m.w * UNITS[1].att) * (0.85 + Math.random() * 0.3);
+    if (att > t.pirates) {
+      const loss = Math.min(0.9, Math.pow(t.pirates / att, 1.3) * 0.6);
+      const lh = Math.round(m.h * loss), lw = Math.round(m.w * loss);
+      t.owner = 1; t.pirates = 0;
+      t.gh += m.h - lh; t.gw += m.w - lw;
+      this.report(`Sieg! ${t.name} erobert. Verluste: ${lh} Harpuniere, ${lw} Wachen. Bonus: +${t.pct} % ${RES[t.res]}.`, true);
+    } else {
+      const lh = Math.round(m.h * 0.8), lw = Math.round(m.w * 0.8);
+      t.pirates = Math.max(Math.round(t.base * 0.3), Math.round(t.pirates - att * 0.5));
+      const rh = m.h - lh, rw = m.w - lw;
+      if (rh + rw > 0) { const tt = travelTime(t); this.s.marches.push({ target: t.id, h: rh, w: rw, left: tt, total: tt, phase: 'back', kind: 'return' }); }
+      this.report(`Niederlage bei ${t.name}. Verluste: ${lh} Harpuniere, ${lw} Wachen. Die Piraten sind geschwächt.`, false);
+    }
+  }
+
+  military(dt, offline) {
+    const s = this.s;
+    // Ausbildung
+    if (s.train.length) {
+      const q = s.train[0];
+      q.left -= dt;
+      while (q.left <= 0 && q.n > 0) {
+        q.n--; s.troops[q.u]++;
+        q.left += q.per;
+      }
+      if (q.n <= 0) { s.train.shift(); this.msg(`Ausbildung fertig: ${UNITS[q.u].name}.`); }
+    }
+    // Märsche
+    for (let i = s.marches.length - 1; i >= 0; i--) {
+      const m = s.marches[i];
+      m.left -= dt;
+      if (m.left > 0) continue;
+      s.marches.splice(i, 1);
+      const t = s.terr[m.target];
+      if (m.phase === 'back') { s.troops[0] += m.h; s.troops[1] += m.w; this.msg(`${m.h + m.w} Soldaten sind heimgekehrt.`); }
+      else if (t.owner === 1) { t.gh += m.h; t.gw += m.w; this.msg(`Verstärkung in ${t.name} angekommen.`); }
+      else this.battle(m, t);
+    }
+    // Piraten erholen sich langsam
+    for (const t of s.terr) if (t.owner === 0 && t.pirates < t.base) t.pirates = Math.min(t.base, t.pirates + t.base * dt / 600);
+    if (offline) return;
+
+    // Piraten-Gegenangriffe auf eroberte Gebiete
+    const owned = s.terr.filter((t) => t.owner === 1);
+    if (owned.length) {
+      s.counterTimer -= dt;
+      if (s.counterTimer <= 0) {
+        s.counterTimer = 360 + Math.random() * 300;
+        const t = owned[Math.floor(Math.random() * owned.length)];
+        const str = t.base * (0.5 + Math.random() * 0.5);
+        const def = (t.gh * UNITS[0].def + t.gw * UNITS[1].def) * (0.85 + Math.random() * 0.3);
+        if (def > str) {
+          const loss = Math.min(0.9, Math.pow(str / def, 1.3) * 0.5);
+          const lh = Math.round(t.gh * loss), lw = Math.round(t.gw * loss);
+          t.gh -= lh; t.gw -= lw;
+          this.report(`Piraten griffen ${t.name} an und wurden zurückgeschlagen! Verluste: ${lh + lw}.`, true);
+        } else {
+          t.owner = 0; t.gh = 0; t.gw = 0; t.pirates = t.base;
+          this.report(`${t.name} ist an die Piraten gefallen! Die Besatzung ist verloren.`, false);
+        }
+      }
+    }
+
+    // Überfälle auf die Stadt (ab Tag 2)
+    if (s.days >= 2) {
+      const before = s.raidTimer;
+      s.raidTimer -= dt;
+      if (before >= 30 && s.raidTimer < 30) this.msg('Späher melden: Piratenboote nähern sich der Stadt!');
+      if (s.raidTimer <= 0) {
+        s.raidTimer = 420 + Math.random() * 300;
+        const str = (25 + 18 * (s.days - 1) + 10 * this.towerLevel) * (0.8 + Math.random() * 0.4);
+        const def = this.defense * (0.85 + Math.random() * 0.3);
+        if (def > str) {
+          const loss = Math.min(0.8, Math.pow(str / def, 1.3) * 0.5);
+          const lh = Math.round(s.troops[0] * loss), lw = Math.round(s.troops[1] * loss);
+          s.troops[0] -= lh; s.troops[1] -= lw;
+          this.report(`Piratenüberfall abgewehrt! (Stärke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${lh + lw}.`, true);
+        } else {
+          const lost = s.res.map((v) => Math.round(v * 0.2));
+          lost.forEach((v, i) => (s.res[i] -= v));
+          s.troops[0] = Math.round(s.troops[0] * 0.4); s.troops[1] = Math.round(s.troops[1] * 0.4);
+          this.report(`Piraten haben die Stadt geplündert! (Stärke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + ' ' + RES[i]).join(', ')}.`, false);
+        }
+      }
+    }
+  }
+
+  get raidIn() { return this.s.days >= 2 ? this.s.raidTimer : null; }
+
+  ensureMilitary() {
+    const s = this.s;
+    if (!s.troops) s.troops = [0, 0];
+    if (!s.train) s.train = [];
+    if (!s.marches) s.marches = [];
+    if (!s.reports) s.reports = [];
+    if (!s.terr || s.terr.length !== 18) s.terr = makeTerritories();
+    if (s.raidTimer === undefined) s.raidTimer = 480;
+    if (s.counterTimer === undefined) s.counterTimer = 420;
+    while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
+  }
+
   // ---------- Speichern ----------
   load() {
     let s = null;
     try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
-    if (!s || !Array.isArray(s.plots) || s.plots.length !== PLOTS || !Array.isArray(s.res)) this.newGame();
-    else { this.s = s; this.msg('Willkommen zurück in der Pfahlstadt!'); this.catchUp(); }
+    if (!s || !Array.isArray(s.plots) || s.plots.length < 13 || !Array.isArray(s.res)) this.newGame();
+    else { this.s = s; this.ensureMilitary(); this.msg('Willkommen zurück in der Pfahlstadt!'); this.catchUp(); }
     this.updateWater();
     this.computeRates(false);
   }
@@ -293,6 +508,7 @@ export class Colony {
       lastSave: Date.now(), dayTime: 0.3, days: 1, stormTimer: 360, stormLeft: 0,
       expLeft: 0, expSurprised: false, sickProg: 0, deathProg: 0, healProg: 0, arriveProg: 0,
     };
+    this.ensureMilitary();
     this.log = [];
     this.msg('Willkommen in der Pfahlstadt! Bau den Gezeitenturm aus, bevor die große Flut kommt.');
     this.save();
@@ -312,6 +528,7 @@ export class Colony {
       this.applyRates(this.computeRates(true), dt);
       this.advanceBuild(dt);
       if (s.expLeft > 0) { s.expLeft -= dt; if (s.expLeft <= 0) { s.expLeft = 0; this.finishExpedition(); } }
+      this.military(dt, true);
     }
     const gains = s.res.map((v, i) => v - before[i]).map((g, i) => (Math.abs(g) >= 1 ? `${g > 0 ? '+' : ''}${Math.round(g)} ${RES[i]}` : '')).filter(Boolean).join('  ');
     this.msg(`Während du weg warst (${fmtTime(sec)}): ${gains}`);
