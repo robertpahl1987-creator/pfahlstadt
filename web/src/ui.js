@@ -113,6 +113,14 @@ export class UI {
     }
   }
 
+  openMenu(tab) {
+    if (this.view === 'map') this.setView('city');
+    this.select(-1, true); this.mode = null; this.o.wantChat = false;
+    this.menu = true; this.menuTab = tab; this.confirm = null; this.panelKey = null;
+    if (tab === 'rank') this.o.loadRanking();
+    if (tab === 'reports' && this.o.active) this.o.sync();
+  }
+
   openMode(m) {
     if (this.view === 'map') this.setView('city');
     this.select(-1); this.menu = false;
@@ -147,9 +155,12 @@ export class UI {
     else if (a === 'gfx') this.g.cycle();
     else if (a === 'map') this.setView(this.view === 'map' ? 'city' : 'map');
     else if (a === 'ally') this.openMode('ally');
-    else if (a === 'rank') this.openMode('rank');
-    else if (a === 'account') this.openMode('account');
-    else if (a === 'menu') { if (this.view === 'map') this.setView('city'); this.mode = null; this.menu = !this.menu; this.confirm = null; if (this.menu) this.select(-1, true); }
+    else if (a === 'rank') this.openMenu('rank');
+    else if (a === 'account') this.openMenu('settings');
+    else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu(this.menuTab || 'stadt'); }
+    else if (a === 'tab') this.openMenu(ds.t);
+    else if (a === 'goto') { const i = +ds.i; this.menu = false; const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.w.dist = Math.min(this.w.dist, 45); this.select(i); }
+    else if (a === 'upq') c.startUpgrade(+ds.i);
     else if (a === 'close') {
       if (this.view === 'map') { if (this.mapSel || this.showReports) { this.mapSel = null; this.showReports = false; } else this.setView('city'); }
       else { this.select(-1); this.menu = false; this.mode = null; this.o.wantChat = false; }
@@ -560,16 +571,74 @@ export class UI {
   }
 
   menuHtml() {
-    const g = this.g;
-    return this.head('Pfahlstadt – Menü') +
-      `<div class="inf">Grafikstufe: <b>${g.auto ? 'Automatisch → ' : ''}${TIERS[g.tier]}</b> · ${g.res[0]} × ${g.res[1]} · ${Math.round(g.fpsShown)} FPS</div>
-       <div class="inf">Version: <b>${this.version.name}</b>${this.version.channel === 'public' ? '' : ' (Testversion)'}</div>
-       <div class="btns col">
-       <button class="btn" data-a="account">Online-Konto${this.o.active ? ': ' + (this.o.name || '') : ' (offline)'}</button>
-       <button class="btn" data-a="rank">Rangliste</button>
-       <button class="btn" data-a="gfx">Grafik umschalten (${g.auto ? 'Auto' : TIERS[g.tier]})</button>
-       <button class="btn" data-a="save">Spiel speichern</button>
-       <button class="btn ${this.confirm === 'new' ? 'danger' : 'ghost'}" data-a="new">${this.confirm === 'new' ? '<b>Wirklich neu anfangen? Alles geht verloren</b>' : 'Neues Spiel'}</button></div>
-       <div class="sm">Tipps: Wattwandern geht nur bei Ebbe. Steigt das Wasser über das Deck, werden Siedler krank. Ab Tag 2 greifen Piraten an – Kaserne, Wachturm, Festungsmauer und Abwehrtürme schützen die Stadt.</div>`;
+    const tab = this.menuTab || 'stadt';
+    const tabs = [['stadt', '🏘️', 'Stadt'], ['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rang'], ['settings', '⚙️', 'Einstell.']];
+    const bar = `<div class="tabs">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="tab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
+    let body = '';
+    if (tab === 'stadt') body = this.cityOverviewHtml();
+    else if (tab === 'truppen') body = this.troopsTabHtml();
+    else if (tab === 'reports') body = this.reportsHtml().replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
+    else if (tab === 'rank') body = this.rankHtml().replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
+    else body = this.settingsHtml();
+    return `<div class="ph"><div class="pt">Menü</div><button class="x" data-a="close">✕</button></div>${bar}<div class="tabbody">${body}</div>`;
   }
+
+  cityOverviewHtml() {
+    const c = this.c, s = c.s;
+    const groups = [
+      ['Herz der Stadt', [T.TURM]],
+      ['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]],
+      ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
+      ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]],
+    ];
+    let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt · Gelände ${Math.round(c.areaRadius)} m · freie Bewohner ${c.freeVillagers}</div>`;
+    for (const [title, types] of groups) {
+      const rows = [];
+      s.plots.forEach((p, i) => {
+        if (p.type < 0 || !types.includes(p.type)) return;
+        const blk = c.upgradeBlocker(i);
+        const state = p.buildLeft > 0 ? `<span class="sh">🔨 ${fmtTime(p.buildLeft)}</span>` : '';
+        rows.push(`<div class="row"><div class="ri"><b>${B_IC[p.type]} ${DEFS[p.type].name}</b> <i class="lv">${p.level || '–'}</i> ${state}
+          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? `<div class="sm">→ ${p.level + 1}: ${this.costStr(costFor(p.type, p.level + 1))}</div>` : ''}</div>
+          <button class="btn sm2 ghost" data-a="goto" data-i="${i}">Zeigen</button>
+          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? 'disabled' : ''}>⬆</button>` : ''}</div>`);
+      });
+      if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join('');
+    }
+    const free = s.plots.findIndex((p, i) => i > 0 && i < WALL && p.type < 0 && !c.buildBlocker(i, T.HAUS)?.startsWith('Gelände') && !c.buildBlocker(i, T.HAUS)?.startsWith('Äußerer'));
+    out += `<div class="sm" style="margin-top:10px">Neu bauen: tippe in der Stadt auf eine freie Holzplattform.${free > 0 ? '' : ' Gerade ist kein Platz frei.'}</div>`;
+    if (free > 0) out += `<div class="btns"><button class="btn ghost" data-a="goto" data-i="${free}">Freien Bauplatz zeigen</button></div>`;
+    return out;
+  }
+
+  troopsTabHtml() {
+    const c = this.c, s = c.s, away = c.troopsAway;
+    let out = `<div class="inf">Verteidigung der Stadt: <b>${c.defense}</b> · Macht ⚔ <b>${c.power}</b></div>
+      <div class="inf">Unterwegs/Besatzung: <b>${away.h + away.w}</b> Soldaten</div>`;
+    if (c.levels(T.KASERNE) <= 0) out += `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>`;
+    if (c.raidIn !== null) out += `<div class="sm">Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}</div>`;
+    if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
+    else out += '<div class="desc">Für Truppen brauchst du eine <b>Kaserne</b>. Tippe in der Stadt auf eine freie Plattform und baue sie.</div>';
+    out += '<div class="btns"><button class="btn" data-a="map">🗺️ Seekarte öffnen</button></div>';
+    return out;
+  }
+
+  settingsHtml() {
+    const g = this.g, o = this.o;
+    const acc = !o.active
+      ? `<div class="inf">Online-Konto: <b>offline</b></div><div class="btns"><button class="btn" data-a="goOnline">Online gehen</button></div>`
+      : `<div class="inf">Online als <b>${o.name || '…'}</b> · ${o.status === 'online' ? '<span style="color:#8ef0a0">verbunden</span>' : '<span style="color:#ffb070">' + o.status + '</span>'}</div>
+         ${this.confirm === 'code' ? `<div class="code">${o.token}</div><div class="sm">Gib den Code niemandem – damit holst du dein Konto auf ein neues Handy.</div>` : ''}
+         <div class="btns"><button class="btn ghost" data-a="showCode">${this.confirm === 'code' ? 'Code verbergen' : 'Umzugscode'}</button>
+         <button class="btn ${this.confirm === 'logout' ? 'danger' : 'ghost'}" data-a="logout">${this.confirm === 'logout' ? '<b>Wirklich abmelden?</b>' : 'Abmelden'}</button></div>`;
+    return `<div class="sub2">Grafik</div>
+       <div class="inf">${g.auto ? 'Automatisch → ' : ''}<b>${TIERS[g.tier]}</b> · ${g.res[0]} × ${g.res[1]} · ${Math.round(g.fpsShown)} FPS</div>
+       <div class="btns"><button class="btn" data-a="gfx">Grafik umschalten</button></div>
+       <div class="sub2">Konto</div>${acc}
+       <div class="sub2">Spielstand</div>
+       <div class="btns"><button class="btn ghost" data-a="save">Speichern</button>
+       <button class="btn ${this.confirm === 'new' ? 'danger' : 'ghost'}" data-a="new">${this.confirm === 'new' ? '<b>Wirklich neu anfangen?</b>' : 'Neues Spiel'}</button></div>
+       <div class="sm" style="margin-top:10px">Version ${this.version.name}${this.version.channel === 'public' ? '' : ' (Testversion)'} · Updates werden beim Start automatisch geladen.</div>`;
+  }
+
 }
