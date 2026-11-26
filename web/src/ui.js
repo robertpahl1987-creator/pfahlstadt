@@ -393,8 +393,9 @@ export class UI {
     if (!list.length || bigPanel) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
     if (el.style.display === 'none') el.style.display = '';
     const open = this.tasksOpen !== false;
-    let html = `<div class="th" data-a="tasks"><span>⏳ AUFTRÄGE (${list.length})</span><span>${open ? '▾' : '▸'}</span></div>`;
-    if (open) html += list.slice(0, 7).map((t) => `<button class="tk ${t.red ? 'red' : ''}" ${t.a}><div class="tr"><span class="tn">${t.ic} ${t.t}</span>${t.left !== null ? `<b>${t.pre || ''}${fmtTime(t.left)}</b>` : ''}</div>${t.pct !== null && t.pct !== undefined ? `<div class="bar"><div style="width:${t.pct.toFixed(0)}%"></div></div>` : ''}</button>`).join('');
+    el.classList.toggle('shut', !open);
+    const rows = list.slice(0, 7).map((t) => `<button class="tk ${t.red ? 'red' : ''}" ${t.a}><div class="tr"><span class="tn">${t.ic} ${t.t}</span>${t.left !== null ? `<b>${t.pre || ''}${fmtTime(t.left)}</b>` : ''}</div>${t.pct !== null && t.pct !== undefined ? `<div class="bar"><div style="width:${t.pct.toFixed(0)}%"></div></div>` : ''}</button>`).join('');
+    const html = `<div class="tb"><div class="th">⏳ AUFTRÄGE</div>${rows}</div><div class="hd" data-a="tasks"><span>⏳</span><b>${list.length}</b><span>${open ? '◂' : '▸'}</span></div>`;
     setHTML(el, html);
   }
 

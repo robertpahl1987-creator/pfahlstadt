@@ -3570,8 +3570,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
       if (el.style.display === "none") el.style.display = "";
       const open = this.tasksOpen !== false;
-      let html = `<div class="th" data-a="tasks"><span>\u23F3 AUFTR\xC4GE (${list.length})</span><span>${open ? "\u25BE" : "\u25B8"}</span></div>`;
-      if (open) html += list.slice(0, 7).map((t) => `<button class="tk ${t.red ? "red" : ""}" ${t.a}><div class="tr"><span class="tn">${t.ic} ${t.t}</span>${t.left !== null ? `<b>${t.pre || ""}${fmtTime(t.left)}</b>` : ""}</div>${t.pct !== null && t.pct !== void 0 ? `<div class="bar"><div style="width:${t.pct.toFixed(0)}%"></div></div>` : ""}</button>`).join("");
+      el.classList.toggle("shut", !open);
+      const rows = list.slice(0, 7).map((t) => `<button class="tk ${t.red ? "red" : ""}" ${t.a}><div class="tr"><span class="tn">${t.ic} ${t.t}</span>${t.left !== null ? `<b>${t.pre || ""}${fmtTime(t.left)}</b>` : ""}</div>${t.pct !== null && t.pct !== void 0 ? `<div class="bar"><div style="width:${t.pct.toFixed(0)}%"></div></div>` : ""}</button>`).join("");
+      const html = `<div class="tb"><div class="th">\u23F3 AUFTR\xC4GE</div>${rows}</div><div class="hd" data-a="tasks"><span>\u23F3</span><b>${list.length}</b><span>${open ? "\u25C2" : "\u25B8"}</span></div>`;
       setHTML(el, html);
     }
     head(title) {
