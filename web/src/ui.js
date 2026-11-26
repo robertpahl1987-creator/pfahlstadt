@@ -1,5 +1,5 @@
 // Oberfläche (HTML über der 3D-Ansicht) inkl. Seekarte, Kaserne und Berichten
-import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EBB, PLOTS, INNER, OUTER_LEVEL, UNITS, unitCost, travelTime } from './game.js';
+import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EBB, PLOTS, INNER, RING3, WALL, TOWERS, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
 import { plotPos } from './world.js';
 import { TIERS } from './gfx.js';
 import { SeaMap } from './map.js';
@@ -12,10 +12,12 @@ const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML
 const clock = (d) => { const m = Math.floor(d * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 
 export class UI {
-  constructor(colony, world, gfx) {
-    this.c = colony; this.w = world; this.g = gfx;
+  constructor(colony, world, gfx, online) {
+    this.c = colony; this.w = world; this.g = gfx; this.o = online;
     this.selected = -1; this.menu = false; this.confirm = null; this.panelKey = null;
-    this.view = 'city'; this.mapSel = -1; this.form = [0, 0]; this.showReports = false;
+    this.view = 'city'; this.mapSel = null; this.form = [0, 0]; this.showReports = false;
+    this.mode = null; // 'ally' | 'rank' | 'account'
+    this.busy = false;
     this.build();
   }
 
@@ -32,10 +34,19 @@ export class UI {
     this.labelEls = Array.from({ length: PLOTS }, () => { const e = h('div', 'lbl'); this.labels.appendChild(e); return e; });
     this.panel = $('#panel');
     this.mapEl = $('#map');
-    this.sea = new SeaMap($('#mapc'), this.c);
+    this.sea = new SeaMap($('#mapc'), this.c, this.o);
 
-    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bMenu = $('#bMenu');
-    this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bMap.dataset.a = 'map'; this.bMenu.dataset.a = 'menu';
+    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu');
+    this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bMap.dataset.a = 'map'; this.bAlly.dataset.a = 'ally'; this.bMenu.dataset.a = 'menu';
+    this.login = $('#login');
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !e.target || e.target.tagName !== 'INPUT') return;
+      const id = e.target.id;
+      if (id === 'chatIn') this.action('chat', {});
+      if (id === 'loginName') this.action('register', {});
+      if (id === 'loginCode') this.action('restore', {});
+    });
+    if (!this.o.active && !localStorage.getItem('pf_offline')) this.showLogin(true);
 
     // Eigene Tipp-Erkennung: Finger runter + Finger hoch auf demselben Knopf, wenig Bewegung.
     this.down = null;
@@ -74,8 +85,8 @@ export class UI {
       if (!md || md.moved > 15) { md = null; return; }
       md = null;
       const r = mc.getBoundingClientRect();
-      const id = this.sea.pick(e.clientX - r.left, e.clientY - r.top);
-      this.mapSel = id; this.form = [0, 0]; this.showReports = false; this.panelKey = null;
+      this.mapSel = this.sea.pick(e.clientX - r.left, e.clientY - r.top);
+      this.form = [0, 0]; this.showReports = false; this.panelKey = null; this.confirm = null;
     });
 
     const v = window.APP_VERSION || { name: 'dev', channel: 'test' };
@@ -86,27 +97,58 @@ export class UI {
   select(i, keepMenu) {
     if (this.view === 'map' && i >= 0) return;
     this.selected = i; this.w.selected = i; this.confirm = null; this.panelKey = null;
-    if (i >= 0 && !keepMenu) this.menu = false;
+    if (i >= 0 && !keepMenu) { this.menu = false; this.mode = null; this.o.wantChat = false; }
+  }
+
+  showLogin(on, codeMode) {
+    this.login.style.display = on ? 'flex' : 'none';
+    if (on) {
+      $('#loginCodeBox').style.display = codeMode ? '' : 'none';
+      $('#loginNameBox').style.display = codeMode ? 'none' : '';
+      $('#loginErr').textContent = '';
+    }
+  }
+
+  openMode(m) {
+    if (this.view === 'map') this.setView('city');
+    this.select(-1); this.menu = false;
+    this.mode = this.mode === m ? null : m; this.confirm = null; this.panelKey = null;
+    this.o.wantChat = this.mode === 'ally';
+    if (this.mode === 'ally') { this.o.loadAlliances(); this.o.loadChat(); }
+    if (this.mode === 'rank') this.o.loadRanking();
+  }
+
+  async run(fn) {
+    if (this.busy) return;
+    this.busy = true; this.panelKey = null;
+    try { await fn(); } catch (e) { this.c.msg(e.message || 'Fehler'); }
+    this.busy = false; this.panelKey = null;
   }
 
   setView(v) {
-    this.view = v; this.mapSel = -1; this.form = [0, 0]; this.showReports = false;
+    this.view = v; this.mapSel = null; this.form = [0, 0]; this.showReports = false;
     this.mapEl.style.display = v === 'map' ? '' : 'none';
     this.labels.style.display = v === 'map' ? 'none' : '';
-    if (v === 'map') { this.select(-1); this.menu = false; }
+    if (v === 'map') { this.select(-1); this.menu = false; this.mode = null; this.o.wantChat = false; }
+    this.o.wantWorld = v === 'map';
+    if (v === 'map' && this.o.active) { this.o.loadWorld(); this.o.sync(); }
     this.panelKey = null;
   }
 
   action(a, ds) {
-    const c = this.c, v = +(ds.v || 0);
+    const c = this.c, o = this.o, v = +(ds.v || 0);
+    const val = (id) => { const e = $('#' + id); return e ? e.value.trim() : ''; };
     if (a === 'beacon') c.toggleBeacon();
     else if (a === 'exp') c.startExpedition();
     else if (a === 'gfx') this.g.cycle();
     else if (a === 'map') this.setView(this.view === 'map' ? 'city' : 'map');
-    else if (a === 'menu') { if (this.view === 'map') this.setView('city'); this.menu = !this.menu; this.confirm = null; if (this.menu) this.select(-1, true); }
+    else if (a === 'ally') this.openMode('ally');
+    else if (a === 'rank') this.openMode('rank');
+    else if (a === 'account') this.openMode('account');
+    else if (a === 'menu') { if (this.view === 'map') this.setView('city'); this.mode = null; this.menu = !this.menu; this.confirm = null; if (this.menu) this.select(-1, true); }
     else if (a === 'close') {
-      if (this.view === 'map') { if (this.mapSel >= 0 || this.showReports) { this.mapSel = -1; this.showReports = false; } else this.setView('city'); }
-      else { this.select(-1); this.menu = false; }
+      if (this.view === 'map') { if (this.mapSel || this.showReports) { this.mapSel = null; this.showReports = false; } else this.setView('city'); }
+      else { this.select(-1); this.menu = false; this.mode = null; this.o.wantChat = false; }
     }
     else if (a === 'build') c.startBuild(this.selected, v);
     else if (a === 'up') c.startUpgrade(this.selected);
@@ -117,9 +159,44 @@ export class UI {
     else if (a === 'f') { const u = +ds.u; this.form[u] = Math.max(0, Math.min(c.s.troops[u], this.form[u] + +ds.d)); }
     else if (a === 'fall') { this.form = [c.s.troops[0], c.s.troops[1]]; }
     else if (a === 'f0') { this.form = [0, 0]; }
-    else if (a === 'send') { if (c.sendTroops(this.mapSel, this.form[0], this.form[1])) { this.form = [0, 0]; this.mapSel = -1; } }
-    else if (a === 'withdraw') c.withdraw(this.mapSel);
-    else if (a === 'reports') { this.showReports = !this.showReports; this.mapSel = -1; }
+    else if (a === 'send') {
+      const sel = this.mapSel, f = this.form.slice();
+      if (!sel) return;
+      if (this.sea.isOnline) this.run(async () => { await o.sendMarch(sel.type, sel.id, f[0], f[1]); this.form = [0, 0]; this.mapSel = null; c.msg(sel.type === 'player' ? 'Angriff gestartet!' : 'Trupp ist unterwegs.'); await o.loadWorld(); });
+      else if (c.sendTroops(sel.id, f[0], f[1])) { this.form = [0, 0]; this.mapSel = null; }
+    }
+    else if (a === 'withdraw') {
+      const sel = this.mapSel; if (!sel) return;
+      if (this.sea.isOnline) this.run(async () => { await o.withdraw(sel.id); c.msg('Besatzung kehrt heim.'); });
+      else c.withdraw(sel.id);
+    }
+    else if (a === 'reports') { this.showReports = !this.showReports; this.mapSel = null; }
+    // ---- online
+    else if (a === 'register') {
+      const name = val('loginName');
+      this.run(async () => {
+        try { await o.register(name); this.showLogin(false); localStorage.removeItem('pf_offline'); }
+        catch (e) { $('#loginErr').textContent = e.message || 'Keine Verbindung zum Server.'; }
+      });
+    }
+    else if (a === 'restore') {
+      const code = val('loginCode');
+      this.run(async () => {
+        try { await o.restore(code); this.showLogin(false); localStorage.removeItem('pf_offline'); }
+        catch (e) { $('#loginErr').textContent = e.message || 'Keine Verbindung zum Server.'; }
+      });
+    }
+    else if (a === 'loginCode') this.showLogin(true, true);
+    else if (a === 'loginName') this.showLogin(true, false);
+    else if (a === 'offline') { localStorage.setItem('pf_offline', '1'); this.showLogin(false); }
+    else if (a === 'goOnline') { this.menu = false; this.mode = null; this.showLogin(true); }
+    else if (a === 'showCode') this.confirm = this.confirm === 'code' ? null : 'code';
+    else if (a === 'logout') { if (this.confirm === 'logout') { o.logout(); this.mode = null; this.confirm = null; c.msg('Abgemeldet. Dein Spielstand bleibt auf dem Handy.'); } else this.confirm = 'logout'; }
+    else if (a === 'allyCreate') { const n = val('alName'), t = val('alTag'); this.run(async () => { await o.createAlliance(n, t); c.msg(`Allianz ${n} gegründet!`); }); }
+    else if (a === 'allyJoin') { const id = ds.id; this.run(async () => { await o.joinAlliance(id); c.msg('Allianz beigetreten!'); }); }
+    else if (a === 'allyLeave') { if (this.confirm === 'leave') { this.confirm = null; this.run(async () => { await o.leaveAlliance(); c.msg('Allianz verlassen.'); }); } else this.confirm = 'leave'; }
+    else if (a === 'kick') { const id = ds.id; this.run(async () => { await o.kick(id); }); }
+    else if (a === 'chat') { const t = val('chatIn'); if (!t) return; const inp = $('#chatIn'); if (inp) inp.value = ''; this.run(async () => { await o.sendChat(t); }); }
     this.panelKey = null;
   }
 
@@ -144,6 +221,7 @@ export class UI {
     if (c.storm) l2 += ' &nbsp; <b style="color:#ff6060">STURMFLUT!</b>';
     else if (c.stormWarning) l2 += ` &nbsp; <span style="color:#ffc060">Sturm in ${Math.ceil(s.stormTimer)}s</span>`;
     if (c.raidIn !== null && c.raidIn < 30) l2 += ` &nbsp; <b style="color:#ff6060">Piraten in ${Math.ceil(c.raidIn)}s!</b>`;
+    if (this.o.active) l2 += this.o.incoming ? ` &nbsp; <b style="color:#ff6060">⚠ ${this.o.incoming} Angriff${this.o.incoming > 1 ? 'e' : ''} unterwegs!</b>` : this.o.status === 'online' ? ' &nbsp; <span style="color:#8ef0a0">● online</span>' : ' &nbsp; <span style="color:#ffb070">● offline</span>';
     setHTML(this.line2, l2);
 
     const now = c.time;
@@ -160,7 +238,10 @@ export class UI {
     if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
     setHTML(this.bExp, s.expLeft > 0 ? `<b>Im Watt</b><span>${fmtTime(s.expLeft)}</span>`
       : blk === 'Wartet auf Ebbe' ? '<b>Wattwandern</b><span>wartet auf Ebbe</span>' : `<b>Wattwandern</b><span>${EXP_FOOD} Muscheln</span>`);
-    setHTML(this.bMap, this.view === 'map' ? '<b>Stadt</b><span>zurück</span>' : `<b>Seekarte</b><span>${s.marches.length ? s.marches.length + ' unterwegs' : 'Gebiete'}</span>`);
+    const nm = this.o.active ? this.o.marches.length : s.marches.length;
+    setHTML(this.bMap, this.view === 'map' ? '<b>Stadt</b><span>zurück</span>' : `<b>Seekarte</b><span>${nm ? nm + ' unterwegs' : 'Gebiete'}</span>`);
+    const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
+    setHTML(this.bAlly, `<b>Allianz</b><span>${!this.o.active ? 'offline' : al ? '[' + al.tag + ']' : this.o.me && this.o.me.alliance_id ? 'Mitglied' : 'keine'}</span>`);
 
     if (this.view === 'map') this.sea.draw(dt, this.mapSel);
     else this.cityLabels(cw, ch);
@@ -171,9 +252,9 @@ export class UI {
     const c = this.c, s = c.s, deck = c.deck;
     for (let i = 0; i < PLOTS; i++) {
       const p = s.plots[i], el = this.labelEls[i];
-      if (p.type < 0) { el.style.display = 'none'; continue; }
+      if (p.type < 0 || (this.w.dist > 105 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
       const pp = plotPos(i);
-      const tall = i === 0 ? 16 : p.type === T.WACHTURM ? 11.5 : 6.5;
+      const tall = i === 0 ? 16 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
       const sp = this.w.screenPos([pp[0], deck + tall, pp[2]], cw, ch);
       if (!sp) { el.style.display = 'none'; continue; }
       el.style.display = '';
@@ -185,14 +266,22 @@ export class UI {
   }
 
   renderPanel() {
+    // Während getippt wird nicht neu zeichnen (sonst verliert das Eingabefeld den Fokus)
+    const ae = document.activeElement;
+    if (ae && ae.tagName === 'INPUT' && this.panel.contains(ae)) return;
     let html = '';
-    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel >= 0 ? this.terrHtml() : this.mapHtml();
+    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.terrHtml()) : this.mapHtml();
+    else if (this.mode === 'ally') html = this.allyHtml();
+    else if (this.mode === 'rank') html = this.rankHtml();
+    else if (this.mode === 'account') html = this.accountHtml();
     else if (this.menu) html = this.menuHtml();
     else if (this.selected >= 0) html = this.plotHtml();
     if (html === this.panelKey || this.holding) return;
     this.panelKey = html;
     this.panel.innerHTML = html;
     this.panel.style.display = html ? '' : 'none';
+    const cb = document.getElementById('chatBox');
+    if (cb) cb.scrollTop = cb.scrollHeight;
   }
 
   head(title) { return `<div class="ph"><div class="pt">${title}</div><button class="x" data-a="close">✕</button></div>`; }
@@ -201,17 +290,22 @@ export class UI {
   plotHtml() {
     const c = this.c, i = this.selected, p = c.s.plots[i];
     if (p.type < 0) {
-      if (i >= INNER && c.towerLevel < OUTER_LEVEL)
+      if (i >= INNER && i < RING3 && c.towerLevel < OUTER_LEVEL)
         return this.head('Äußerer Bauplatz') + `<div class="desc">Dieser Platz liegt im äußeren Ring. Er wird frei, sobald dein Gezeitenturm Stufe ${OUTER_LEVEL} erreicht.</div>`;
+      if (i >= RING3 && i < WALL && c.builtCount < c.ring3Needed(i))
+        return this.head('Gelände (noch nicht erschlossen)') + `<div class="desc">Deine Warft wächst mit jedem Neubau. Dieser Platz wird frei, wenn du noch <b>${c.ring3Needed(i) - c.builtCount}</b> Gebäude baust. Geländeradius jetzt: ${Math.round(c.areaRadius)} m.</div>`;
+      const types = i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
       let rows = '';
-      for (let t = 1; t < DEFS.length; t++) {
+      for (const t of types) {
         const d = DEFS[t], blk = c.buildBlocker(i, t);
         rows += `<div class="row"><div class="ri"><div><b>${d.name}</b> <span class="sh">${d.short}</span></div>
           <div class="sm">${this.costStr(costFor(t, 1))} &nbsp;·&nbsp; ${fmtTime(buildTime(t, 1))}</div>
           ${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>
           <button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button></div>`;
       }
-      return this.head(i >= INNER ? 'Freier Bauplatz (außen)' : 'Freier Bauplatz') + `<div class="list">${rows}</div>`;
+      const title = i === WALL ? 'Festung' : i >= TOWERS ? 'Turmplatz auf der Mauer' : i >= RING3 ? 'Bauplatz auf der Warft' : i >= INNER ? 'Freier Bauplatz (außen)' : 'Freier Bauplatz';
+      const intro = i === WALL ? '<div class="desc">Baue eine Mauer mit Tor rund um dein ganzes Gelände. Sie wächst mit, wenn die Warft größer wird.</div>' : '';
+      return this.head(title) + intro + `<div class="list">${rows}</div>`;
     }
     const d = DEFS[p.type], L = p.level;
     let out = this.head(L > 0 ? `${d.name} · Stufe ${L}` : `${d.name} (im Bau)`) + `<div class="desc">${d.desc}</div>`;
@@ -259,6 +353,8 @@ export class UI {
       case T.KASERNE: return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller · Schlange bis ${10 * L}`];
       case T.WACHTURM: return [`Verteidigung der Stadt <b>+${12 * L} %</b>`, `Aktuelle Verteidigung: <b>${c.defense}</b>`, c.raidIn !== null ? `Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}` : 'Piraten greifen ab Tag 2 an'];
       case T.LAGER: return [`Lagerplatz je Rohstoff: <b>${c.storage}</b>`];
+      case T.MAUER: return [`${L <= 3 ? 'Holzpalisade' : L <= 7 ? 'Steinwall' : 'Festungswall'} · Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Geländeradius: ${Math.round(c.areaRadius)} m`];
+      case T.ABWEHR: return [`Verteidigung <b>+${40 * L}</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`];
       default:
         return [`Produktion: <b>${Math.round(rateAt(t, L) * 60 * c.efficiency)}</b>/min ${RES[d.prod]} (Arbeit ${Math.round(c.efficiency * 100)} %)`,
           `Arbeiter: ${d.workers * L} &nbsp;·&nbsp; Stufe ${L + 1}: ${Math.round(rateAt(t, L + 1) * 60)}/min`];
@@ -266,63 +362,172 @@ export class UI {
   }
 
   // ---------- Seekarte ----------
-  mapHtml() {
-    const c = this.c, s = c.s, away = c.troopsAway;
-    const owned = s.terr.filter((t) => t.owner === 1).length;
-    const marches = s.marches.map((m) => `<div class="sm">⛵ ${m.h + m.w} Soldaten → ${s.terr[m.target].name} (${m.phase === 'back' ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärkung'}) · ${fmtTime(m.left)}</div>`).join('');
-    return this.head('Seekarte') +
-      `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>
-       <div class="inf">Unterwegs/Besatzung: <b>${away.h}</b> · <b>${away.w}</b> &nbsp; Gebiete: <b>${owned}/${s.terr.length}</b></div>
-       ${marches}
-       <div class="sm">Tippe auf eine Insel, um sie anzugreifen oder zu verstärken. Eroberte Gebiete geben Produktionsbonus.</div>
-       <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${s.reports.length})</button></div>`;
-  }
-
-  terrHtml() {
-    const c = this.c, s = c.s, t = s.terr[this.mapSel];
-    const tt = travelTime(t);
-    let out = this.head(t.name) + `<div class="desc">${t.kind} · Ring ${t.ring} · Bonus <b>+${t.pct} % ${RES[t.res]}</b> · Fahrt ${fmtTime(tt)}</div>`;
-    if (t.owner === 1) {
-      out += `<div class="inf">🚩 Dein Gebiet. Besatzung: <b>${t.gh}</b> Harpuniere · <b>${t.gw}</b> Wachen</div>
-        <div class="sm">Piraten versuchen ab und zu, Gebiete zurückzuerobern. Wachen verteidigen besonders gut.</div>`;
-    } else {
-      out += `<div class="inf">☠ Piraten, Stärke etwa <b>${Math.round(t.pirates)}</b></div>`;
-    }
-    const f = this.form;
-    out += `<div class="sub2">${t.owner === 1 ? 'Verstärkung schicken' : 'Angriffstrupp'}</div>`;
+  troopForm(sendLabel, danger, blk, extra) {
+    const s = this.c.s, f = this.form;
+    let out = '';
     UNITS.forEach((u, k) => {
       out += `<div class="row"><div class="ri"><b>${u.name}</b> <span class="sh">${f[k]} / ${s.troops[k]}</span></div>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="-5">−5</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="-1">−1</button>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="1">+1</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="5">+5</button></div>`;
     });
-    const blk = c.attackBlocker(t.id, f[0], f[1]);
-    if (t.owner !== 1) {
-      const att = f[0] * UNITS[0].att + f[1] * UNITS[1].att, ch = Math.round(c.winChance(t.id, f[0], f[1]) * 100);
-      out += `<div class="sm">Angriffskraft: <b>${att}</b> gegen ~${Math.round(t.pirates)} · Siegchance: <b style="color:${ch >= 70 ? '#8ef0a0' : ch >= 30 ? '#ffd27a' : '#ff7a7a'}">${ch} %</b></div>`;
-    }
+    if (extra) out += extra;
     if (blk && blk !== 'Keine Truppen ausgewählt') out += `<div class="warn">${blk}</div>`;
     out += `<div class="btns"><button class="btn ghost" data-a="fall">Alle</button><button class="btn ghost" data-a="f0">Keine</button>
-      <button class="btn ${t.owner === 1 ? '' : 'danger'}" data-a="send" ${blk ? 'disabled' : ''}><b>${t.owner === 1 ? 'Verstärken' : 'Angreifen!'}</b></button>
-      ${t.owner === 1 && t.gh + t.gw > 0 ? '<button class="btn ghost" data-a="withdraw">Besatzung abziehen</button>' : ''}</div>`;
+      <button class="btn ${danger ? 'danger' : ''}" data-a="send" ${blk || this.busy ? 'disabled' : ''}><b>${sendLabel}</b></button></div>`;
+    return out;
+  }
+
+  attackInfo(att, def) {
+    if (def == null) return `<div class="sm">Angriffskraft: <b>${att}</b> · Verteidigung des Gegners unbekannt</div>`;
+    const ch = att <= 0 ? 0 : Math.round(Math.max(0, Math.min(1, (att / Math.max(1, def) - 0.85) / 0.3)) * 100);
+    return `<div class="sm">Angriffskraft: <b>${att}</b> gegen ~${Math.round(def)} · Siegchance: <b style="color:${ch >= 70 ? '#8ef0a0' : ch >= 30 ? '#ffd27a' : '#ff7a7a'}">${ch} %</b></div>`;
+  }
+
+  homeTroops(c, s, away) {
+    return `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>
+       <div class="inf">Unterwegs/Besatzung: <b>${away.h}</b> · <b>${away.w}</b></div>`;
+  }
+
+  mapHtml() {
+    const c = this.c, s = c.s, away = c.troopsAway, o = this.o;
+    if (this.sea.isOnline) {
+      const now = o.serverNow();
+      const tname = (m) => m.target_player ? ((o.world.players.find((p) => p.id === m.target_player) || {}).name || 'Stadt') : ((o.world.territories.find((t) => t.id === m.target_terr) || {}).name || 'Gebiet');
+      const marches = o.marches.map((m) => {
+        const left = m.status === 'out' ? Date.parse(m.arrive) - now : Date.parse(m.back_at) - now;
+        return `<div class="sm">⛵ ${m.h + m.w} Soldaten → ${tname(m)} (${m.status === 'back' ? 'Heimweg' : m.kind === 'player' ? 'Angriff auf Stadt' : 'Gebiet'}) · ${fmtTime(Math.max(0, left / 1000))}</div>`;
+      }).join('');
+      return this.head('Seekarte (online)') + this.homeTroops(c, s, away) +
+        `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches}
+         <div class="sm">Ziehen zum Verschieben. Tippe auf Inseln oder fremde Städte (🏰). Grün = deins, blau = Verbündete, orange = Gegner.</div>
+         <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${o.reports.length})</button></div>`;
+    }
+    if (o.active) return this.head('Seekarte') + '<div class="inf">Lade Weltkarte …</div>' + (o.error ? `<div class="warn">${o.error}</div>` : '');
+    const owned = s.terr.filter((t) => t.owner === 1).length;
+    const marches = s.marches.map((m) => `<div class="sm">⛵ ${m.h + m.w} Soldaten → ${s.terr[m.target].name} (${m.phase === 'back' ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärkung'}) · ${fmtTime(m.left)}</div>`).join('');
+    return this.head('Seekarte (offline)') + this.homeTroops(c, s, away) +
+      `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
+       <div class="sm">Offline kämpfst du gegen Piraten. Für Mitspieler und Allianzen: Menü → Online-Konto.</div>
+       <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${s.reports.length})</button></div>`;
+  }
+
+  terrHtml() {
+    const c = this.c, s = c.s, o = this.o, f = this.form, att = f[0] * UNITS[0].att + f[1] * UNITS[1].att;
+    if (this.sea.isOnline) {
+      const t = o.world.territories.find((x) => x.id === this.mapSel.id);
+      if (!t) return this.head('Gebiet') + '<div class="sm">Nicht gefunden.</div>';
+      const me = o.me, mine = t.owner === me.id, ally = !mine && t.owner && me.alliance_id && t.owner_alliance === me.alliance_id;
+      const dist = Math.hypot(t.x - me.x, t.y - me.y), tt = 20 + dist * 22;
+      let out = this.head(t.name) + `<div class="desc">${t.kind} · Bonus <b>+${t.pct} % ${RES[t.res]}</b> · Fahrt ${fmtTime(tt)}</div>`;
+      if (mine) {
+        out += `<div class="inf">🚩 Dein Gebiet. Besatzung: <b>${t.gh || 0}</b> Harpuniere · <b>${t.gw || 0}</b> Wachen</div><div class="sm">Andere Spieler können es dir abnehmen – Wachen verteidigen am besten.</div>`;
+        out += `<div class="sub2">Verstärkung schicken</div>` + this.troopForm('Verstärken', false, this.busy ? 'Bitte warten …' : null);
+        if ((t.gh || 0) + (t.gw || 0) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+        return out;
+      }
+      if (ally) return out + `<div class="inf">🚩 Gehört deinem Verbündeten <b>${t.owner_name}</b>.</div>`;
+      out += t.owner ? `<div class="inf">🚩 Gehört <b>${t.owner_name}</b> – Besatzung unbekannt</div>` : `<div class="inf">☠ Piraten, Stärke etwa <b>${t.strength}</b></div>`;
+      out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm('Angreifen!', true, null, this.attackInfo(att, t.owner ? null : t.strength));
+      return out;
+    }
+    const t = s.terr[this.mapSel.id], tt = travelTime(t);
+    let out = this.head(t.name) + `<div class="desc">${t.kind} · Ring ${t.ring} · Bonus <b>+${t.pct} % ${RES[t.res]}</b> · Fahrt ${fmtTime(tt)}</div>`;
+    out += t.owner === 1 ? `<div class="inf">🚩 Dein Gebiet. Besatzung: <b>${t.gh}</b> Harpuniere · <b>${t.gw}</b> Wachen</div>
+        <div class="sm">Piraten versuchen ab und zu, Gebiete zurückzuerobern. Wachen verteidigen besonders gut.</div>` : `<div class="inf">☠ Piraten, Stärke etwa <b>${Math.round(t.pirates)}</b></div>`;
+    out += `<div class="sub2">${t.owner === 1 ? 'Verstärkung schicken' : 'Angriffstrupp'}</div>`;
+    out += this.troopForm(t.owner === 1 ? 'Verstärken' : 'Angreifen!', t.owner !== 1, c.attackBlocker(t.id, f[0], f[1]), t.owner === 1 ? '' : this.attackInfo(att, t.pirates));
+    if (t.owner === 1 && t.gh + t.gw > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+    return out;
+  }
+
+  playerHtml() {
+    const o = this.o, f = this.form, att = f[0] * UNITS[0].att + f[1] * UNITS[1].att;
+    const p = o.world.players.find((x) => x.id === this.mapSel.id);
+    if (!p) return this.head('Stadt') + '<div class="sm">Nicht gefunden.</div>';
+    const me = o.me, ally = me.alliance_id && p.alliance_id === me.alliance_id;
+    const dist = Math.hypot(p.x - me.x, p.y - me.y), tt = 20 + dist * 22;
+    let out = this.head(`🏰 ${p.tag ? '[' + p.tag + '] ' : ''}${p.name}`) +
+      `<div class="desc">Macht ⚔ <b>${p.power}</b> · Gezeitenturm Stufe ${p.tower} · ${p.online ? '<span style="color:#8ef0a0">online</span>' : 'offline'} · Fahrt ${fmtTime(tt)}</div>`;
+    if (ally) return out + '<div class="inf">Verbündeter – gemeinsam seid ihr stärker!</div>';
+    if (p.shield) return out + '<div class="inf">🛡 Diese Stadt steht unter Schutz (neue Spieler 12 Std., nach einer Plünderung 30 Min.).</div>';
+    out += '<div class="sm">Siegst du, plündern deine Truppen bis zu 20 % der Vorräte (Harpuniere tragen 30, Wachen 15). Wer angreift, verliert seinen eigenen Schutz.</div>';
+    out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm('Stadt angreifen!', true, null, this.attackInfo(att, null));
     return out;
   }
 
   reportsHtml() {
+    if (this.o.active && this.o.reports) {
+      const rows = this.o.reports.length ? this.o.reports.map((r) => {
+        const d = new Date(r.at);
+        return `<div class="row rep ${r.win === true ? 'win' : r.win === false ? 'loss' : ''}"><div class="ri"><div class="sm">${d.toLocaleDateString('de-DE')} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>${r.text}</div></div>`;
+      }).join('') : '<div class="sm">Noch keine Kämpfe.</div>';
+      return this.head('Kampfberichte') + rows;
+    }
     const s = this.c.s;
     const rows = s.reports.length ? s.reports.map((r) => `<div class="row rep ${r.win ? 'win' : 'loss'}"><div class="ri"><div class="sm">Tag ${r.day} · ${clock(r.time)}</div>${r.text}</div></div>`).join('') : '<div class="sm">Noch keine Kämpfe.</div>';
     return this.head('Kampfberichte') + rows;
   }
 
+  // ---------- Allianz ----------
+  allyHtml() {
+    const o = this.o;
+    if (!o.active) return this.head('Allianz') + '<div class="desc">Allianzen gibt es im Online-Spiel. Erstelle dir ein Konto – nur ein Spielername ist nötig.</div><div class="btns"><button class="btn" data-a="goOnline">Online gehen</button></div>';
+    const A = o.alliances;
+    if (!A) return this.head('Allianz') + '<div class="inf">Lade …</div>';
+    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    if (!o.me || !o.me.alliance_id) {
+      const list = (A.list || []).map((a) => `<div class="row"><div class="ri"><b>[${esc(a.tag)}] ${esc(a.name)}</b><div class="sm">${a.members}/20 Mitglieder · Macht ${a.power}</div></div>
+        <button class="btn sm2" data-a="allyJoin" data-id="${a.id}" ${a.members >= 20 || this.busy ? 'disabled' : ''}>Beitreten</button></div>`).join('') || '<div class="sm">Noch keine Allianzen – gründe die erste!</div>';
+      return this.head('Allianz') +
+        `<div class="desc">Verbündete greifen sich nicht an, sehen ihre Gebiete und haben einen gemeinsamen Chat.</div>
+         <div class="sub2">Neue Allianz gründen</div>
+         <div class="form"><input id="alName" maxlength="24" placeholder="Name (3–24 Zeichen)"><input id="alTag" maxlength="4" placeholder="Kürzel" class="short"></div>
+         <div class="btns"><button class="btn" data-a="allyCreate" ${this.busy ? 'disabled' : ''}>Gründen</button></div>
+         <div class="sub2">Allianzen</div>${list}`;
+    }
+    const mine = (A.list || []).find((a) => a.id === o.me.alliance_id) || { name: 'Allianz', tag: '?', leader: null };
+    const leader = mine.leader === o.me.id;
+    const members = (A.members || []).map((m) => `<div class="row"><div class="ri">${m.id === mine.leader ? '👑 ' : ''}<b>${esc(m.name)}</b> <span class="sh">⚔ ${m.power}${m.online ? ' · online' : ''}</span></div>
+      ${leader && m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="kick" data-id="${m.id}">Entfernen</button>` : ''}</div>`).join('');
+    const chat = o.chat.slice(-30).map((m) => `<div class="msg ${m.me ? 'me' : ''} ${m.name === 'System' ? 'sys' : ''}"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join('') || '<div class="sm">Noch keine Nachrichten.</div>';
+    return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) +
+      `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
+       <div class="form"><input id="chatIn" maxlength="200" placeholder="Nachricht an die Allianz …"><button class="btn sm2" data-a="chat">Senden</button></div>
+       <div class="sub2">Mitglieder (${(A.members || []).length}/20)</div>${members}
+       <div class="btns"><button class="btn ${this.confirm === 'leave' ? 'danger' : 'ghost'}" data-a="allyLeave">${this.confirm === 'leave' ? '<b>Wirklich verlassen?</b>' : 'Allianz verlassen'}</button></div>`;
+  }
+
+  rankHtml() {
+    const r = this.o.ranking;
+    if (!this.o.active) return this.head('Rangliste') + '<div class="desc">Die Rangliste gibt es im Online-Spiel.</div>';
+    if (!r) return this.head('Rangliste') + '<div class="inf">Lade …</div>';
+    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    return this.head('Rangliste') + r.map((p, i) => `<div class="row ${p.me ? 'meRow' : ''}"><div class="ri"><b>${i + 1}. ${p.tag ? '[' + esc(p.tag) + '] ' : ''}${esc(p.name)}</b><div class="sm">Macht ⚔ ${p.power} · ${p.terr} Gebiete</div></div></div>`).join('');
+  }
+
+  accountHtml() {
+    const o = this.o;
+    if (!o.active) return this.head('Online-Konto') + '<div class="desc">Du spielst gerade offline. Mit einem Konto spielst du mit Freunden: Allianzen, Angriffe, gemeinsame Seekarte.</div><div class="btns"><button class="btn" data-a="goOnline">Online gehen</button></div>';
+    return this.head('Online-Konto') +
+      `<div class="inf">Spielername: <b>${o.name || '…'}</b></div>
+       <div class="inf">Status: <b>${o.status}</b>${o.error ? ` <span class="warn">${o.error}</span>` : ''}</div>
+       <div class="desc">Mit dem <b>Umzugscode</b> holst du dein Konto auf ein neues Handy. Gib ihn niemandem – wer ihn hat, kann mit deiner Stadt spielen.</div>
+       ${this.confirm === 'code' ? `<div class="code">${o.token}</div>` : ''}
+       <div class="btns col"><button class="btn ghost" data-a="showCode">${this.confirm === 'code' ? 'Code verbergen' : 'Umzugscode anzeigen'}</button>
+       <button class="btn ${this.confirm === 'logout' ? 'danger' : 'ghost'}" data-a="logout">${this.confirm === 'logout' ? '<b>Wirklich abmelden? Ohne Umzugscode ist das Konto weg</b>' : 'Abmelden'}</button></div>`;
+  }
+
   menuHtml() {
     const g = this.g;
     return this.head('Pfahlstadt – Menü') +
-      `<div class="inf">Grafikstufe: <b>${g.auto ? 'Automatisch → ' : ''}${TIERS[g.tier]}</b></div>
-       <div class="inf">Auflösung: <b>${g.res[0]} × ${g.res[1]}</b> (Ultra: Supersampling, max. 8K)</div>
-       <div class="inf">Bildrate: <b>${Math.round(g.fpsShown)} FPS</b></div>
+      `<div class="inf">Grafikstufe: <b>${g.auto ? 'Automatisch → ' : ''}${TIERS[g.tier]}</b> · ${g.res[0]} × ${g.res[1]} · ${Math.round(g.fpsShown)} FPS</div>
        <div class="inf">Version: <b>${this.version.name}</b>${this.version.channel === 'public' ? '' : ' (Testversion)'}</div>
-       <div class="btns col"><button class="btn" data-a="gfx">Grafik umschalten (${g.auto ? 'Auto' : TIERS[g.tier]})</button>
+       <div class="btns col">
+       <button class="btn" data-a="account">Online-Konto${this.o.active ? ': ' + (this.o.name || '') : ' (offline)'}</button>
+       <button class="btn" data-a="rank">Rangliste</button>
+       <button class="btn" data-a="gfx">Grafik umschalten (${g.auto ? 'Auto' : TIERS[g.tier]})</button>
        <button class="btn" data-a="save">Spiel speichern</button>
        <button class="btn ${this.confirm === 'new' ? 'danger' : 'ghost'}" data-a="new">${this.confirm === 'new' ? '<b>Wirklich neu anfangen? Alles geht verloren</b>' : 'Neues Spiel'}</button></div>
-       <div class="sm">Tipps: Wattwandern geht nur bei Ebbe. Muscheln wachsen bei Ebbe, Taucher arbeiten bei Flut. Steigt das Wasser über das Deck, werden Siedler krank. Ab Tag 2 greifen Piraten an – Kaserne und Wachturm schützen die Stadt.</div>`;
+       <div class="sm">Tipps: Wattwandern geht nur bei Ebbe. Steigt das Wasser über das Deck, werden Siedler krank. Ab Tag 2 greifen Piraten an – Kaserne, Wachturm, Festungsmauer und Abwehrtürme schützen die Stadt.</div>`;
   }
 }

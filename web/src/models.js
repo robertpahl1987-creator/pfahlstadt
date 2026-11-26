@@ -193,6 +193,74 @@ export function building(B, t, level) {
   B.pop();
 }
 
+/// Abwehrturm auf der Mauer (Fuß auf der Warft, 0.9 m unter Deckhöhe)
+export function defenseTower(B, level) {
+  const stone = level >= 4 ? [0.5, 0.5, 0.52] : [0.56, 0.5, 0.44];
+  const H = 7 + 0.3 * level;
+  B.add('cylinder', [0, -0.9 + H / 2, 0], [3.4, H / 2, 3.4], stone, { g: 0.15 });
+  B.add('cylinder', [0, -0.9 + H + 0.2, 0], [3.9, 0.2, 3.9], [0.36, 0.36, 0.38]);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    B.add('cube', [Math.sin(a) * 1.75, -0.9 + H + 0.75, Math.cos(a) * 1.75], [0.8, 0.9, 0.5], stone, { rot: [0, a / (Math.PI / 180), 0] });
+  }
+  // Harpunen-Schleuder
+  B.add('cube', [0, -0.9 + H + 0.8, 0], [0.5, 0.8, 0.5], C.tar);
+  B.add('cube', [0, -0.9 + H + 1.3, 0.4], [1.8, 0.15, 0.15], [0.45, 0.32, 0.2]);
+  B.add('cube', [0, -0.9 + H + 1.35, 0.6], [0.12, 0.12, 2.2], [0.55, 0.45, 0.3]);
+  B.add('cone', [0, -0.9 + H + 1.35, 1.75], [0.25, 0.5, 0.25], [0.75, 0.77, 0.8], { rot: [90, 0, 0], g: 0.7 });
+  // Schießscharten mit Licht
+  for (let k = 0; k < 3; k++) B.add('cube', [0, -0.9 + 2 + k * 1.8, 1.72], [0.25, 0.6, 0.06], C.window, { e: 1.6 });
+  // Fahne
+  B.add('cylinder', [0, -0.9 + H + 2.6, -0.9], [0.06, 1.6, 0.06], C.tar);
+  B.add('cube', [0.45, -0.9 + H + 3.7, -0.9], [0.9, 0.55, 0.03], [0.15, 0.45, 0.6]);
+}
+
+/// Mauerring um das Gelände. level 0 = nur Markierungssteine
+export function wall(B, level, R, base) {
+  const seg = Math.ceil((2 * Math.PI * R) / 3);
+  const gateHalf = 5 / R;
+  const kind = level <= 0 ? 0 : level <= 3 ? 1 : level <= 7 ? 2 : 3;
+  const stone = kind === 3 ? [0.42, 0.42, 0.45] : [0.55, 0.53, 0.5];
+  const H = kind === 1 ? 3 + 0.3 * level : kind === 2 ? 4 + 0.3 * (level - 4) : 6 + 0.3 * (level - 8);
+  for (let k = 0; k < seg; k++) {
+    const a = (k / seg) * Math.PI * 2;
+    let d = Math.abs(a - Math.PI); if (d < gateHalf) continue;
+    B.push([Math.sin(a) * R, base, Math.cos(a) * R], [0, a / (Math.PI / 180), 0]);
+    if (kind === 0) {
+      if (k % 2 === 0) B.add('cube', [0, 0.15, 0], [0.6, 0.3, 0.6], [0.6, 0.6, 0.6]);
+    } else if (kind === 1) {
+      for (let j = 0; j < 6; j++) {
+        const x = -1.25 + j * 0.5, hh = H + ((j * 7 + k) % 3) * 0.2;
+        B.add('cylinder', [x, hh / 2, 0], [0.42, hh / 2, 0.42], [0.45, 0.33, 0.21], { g: 0.1 });
+        B.add('cone', [x, hh, 0], [0.42, 0.5, 0.42], [0.4, 0.3, 0.2]);
+      }
+      B.add('cube', [0, H * 0.7, -0.3], [3.05, 0.2, 0.15], [0.35, 0.25, 0.16]);
+    } else {
+      const th = kind === 3 ? 2.2 : 1.3;
+      B.add('cube', [0, H / 2, 0], [3.05, H, th], stone, { g: 0.1 });
+      B.add('cube', [0, H + 0.05, 0], [3.1, 0.1, th + 0.2], [0.35, 0.35, 0.37]);
+      for (const x of [-0.75, 0.75]) B.add('cube', [x, H + 0.4, th / 2 - 0.2], [0.75, 0.7, 0.4], stone);
+      if (kind === 3 && k % 4 === 0) B.add('cube', [0, H * 0.4, th / 2 + 0.4], [0.9, H * 0.8, 0.8], stone);
+    }
+    B.pop();
+  }
+  // Tor
+  if (kind > 0) {
+    B.push([0, base, -R], [0, 180, 0]);
+    const tw = kind === 1 ? [0.45, 0.33, 0.21] : stone, th = H + 2;
+    for (const x of [-3.6, 3.6]) {
+      B.add('cube', [x, th / 2, 0], [2.4, th, 2.8], tw, { g: 0.1 });
+      B.add('prism', [x, th, 0], [2.9, 1.8, 3.2], [0.4, 0.2, 0.15], { rot: [0, 90, 0] });
+      B.add('cube', [x, th * 0.6, 1.42], [0.3, 0.6, 0.05], C.window, { e: 2 });
+    }
+    B.add('cube', [0, H + 0.5, 0], [4.8, 1.2, 2.0], tw);
+    B.add('cube', [-1.05, H * 0.42, 0.2], [2.0, H * 0.84, 0.3], [0.3, 0.2, 0.12], { rot: [0, -35, 0] });
+    B.add('cube', [1.05, H * 0.42, 0.2], [2.0, H * 0.84, 0.3], [0.3, 0.2, 0.12], { rot: [0, 35, 0] });
+    B.add('cube', [0, H + 1.6, 1.05], [1.4, 0.9, 0.05], [0.15, 0.45, 0.6]);
+    B.pop();
+  }
+}
+
 export const towerHeight = (level) => 9 + 0.5 * level;
 
 /// Leuchtturm (ohne Laterne – die wird dynamisch gezeichnet)

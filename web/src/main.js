@@ -4,6 +4,7 @@ import { Colony } from './game.js';
 import { World } from './world.js';
 import { UI } from './ui.js';
 import { Graphics } from './gfx.js';
+import { Online } from './online.js';
 
 function fail(msg) {
   const e = document.getElementById('err');
@@ -16,10 +17,12 @@ function start() {
   let r;
   try { r = new Renderer(canvas); } catch (e) { fail(e.message); return; }
   const colony = new Colony();
+  const online = new Online(colony);
+  colony.online = online;
   const world = new World(r, colony);
   const gfx = new Graphics(world, r.gl.getParameter(r.gl.MAX_TEXTURE_SIZE));
-  const ui = new UI(colony, world, gfx);
-  window.__game = { colony, world, gfx, ui };
+  const ui = new UI(colony, world, gfx, online);
+  window.__game = { colony, world, gfx, ui, online };
   window.__save = () => colony.save();
 
   // ---- Steuerung: 1 Finger verschieben, 2 Finger zoomen, Tippen wählen ----
@@ -63,8 +66,8 @@ function start() {
 
   // ---- Speichern & Offline-Fortschritt ----
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) colony.save();
-    else { colony.catchUp(); last = performance.now(); }
+    if (document.hidden) { colony.save(); online.sync(); }
+    else { colony.catchUp(); last = performance.now(); online.sync(); }
   });
   window.addEventListener('pagehide', () => colony.save());
   setInterval(() => colony.save(), 30000);
@@ -77,6 +80,7 @@ function start() {
     colony.tick(dt);
     world.update(dt);
     gfx.update(dt, colony);
+    online.update(dt);
     const cw = canvas.clientWidth, ch = canvas.clientHeight;
     const [w, h] = gfx.size(cw, ch);
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }

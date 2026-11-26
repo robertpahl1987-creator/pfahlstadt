@@ -3,7 +3,7 @@ export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
 export const RES_COL = ['#E2B477', '#F2A08C', '#7FD3F0', '#C7CCD6'];
 export const HOLZ = 0, MUSCHELN = 1, WASSER = 2, METALL = 3;
 
-export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11 };
+export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13 };
 
 export const DEFS = [
   { name: 'Gezeitenturm', short: 'Herz der Stadt', desc: 'Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt höher über das Wasser.', cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
@@ -18,7 +18,10 @@ export const DEFS = [
   { name: 'Kaserne', short: 'bildet Truppen aus', desc: 'Bildet Harpuniere (Angriff) und Wachen (Verteidigung) aus. Höhere Stufe: schneller und größere Ausbildungsschlange.', cost: [150, 60, 0, 30], prod: -1, rate: 0, workers: 2, build: 8 },
   { name: 'Wachturm', short: '+12 % Verteidigung je Stufe', desc: 'Späher und Signalhörner: Deine Stadt verteidigt sich besser gegen Überfälle (+12 % pro Stufe).', cost: [130, 0, 0, 40], prod: -1, rate: 0, workers: 1, build: 8 },
   { name: 'Lager', short: '+1500 Lagerplatz je Stufe', desc: 'Schuppen, Kisten und Fässer: mehr Platz für jeden Rohstoff (+1500 pro Stufe).', cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 0, build: 6 },
+  { name: 'Festungsmauer', short: 'Mauer mit Tor', desc: 'Umschließt dein ganzes Gelände. Stufe 1–3 Holzpalisade, 4–7 Steinwall, 8–10 Festungswall. +15 % Verteidigung pro Stufe.', cost: [200, 0, 0, 40], prod: -1, rate: 0, workers: 0, build: 12 },
+  { name: 'Abwehrturm', short: 'Turm auf der Mauer', desc: 'Steinturm mit Harpunen-Schleuder auf der Festungsmauer. +40 Verteidigung pro Stufe.', cost: [160, 0, 0, 50], prod: -1, rate: 0, workers: 1, build: 10 },
 ];
+export const CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 // ---------- Militär ----------
 export const UNITS = [
@@ -57,7 +60,7 @@ export const rateAt = (t, lvl) => (lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 
 export const deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
 export const beaconWood = (lvl) => 0.04 + 0.04 * lvl;
 
-export const PLOTS = 25, INNER = 13, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
+export const PLOTS = 52, INNER = 13, RING3 = 25, WALL = 43, TOWERS = 44, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
 const KEY = 'pfahlstadt_save_v1';
 
 export function fmtTime(s) {
@@ -82,10 +85,24 @@ export class Colony {
 
   get towerLevel() { return this.s.plots[0].level; }
   levels(t) { let n = 0; for (const p of this.s.plots) if (p.type === t) n += p.level; return n; }
+  /// Gebäude auf dem Gelände (ohne Turm, Mauer, Abwehrtürme)
+  get builtCount() { let n = 0; this.s.plots.forEach((p, i) => { if (i > 0 && i < WALL && p.type >= 0 && p.level > 0) n++; }); return n; }
+  get areaRadius() { return Math.min(66, 40 + 1.4 * this.builtCount); }
+  ring3Needed(i) { return 8 + (i - RING3); }
   get storage() { return 1500 + 1500 * this.levels(T.LAGER); }
-  get troopsAway() { let h = 0, w = 0; for (const m of this.s.marches) { h += m.h; w += m.w; } for (const t of this.s.terr) { h += t.gh; w += t.gw; } return { h, w }; }
+  get troopsAway() {
+    if (this.online && this.online.active) return this.online.troopsAway();
+    let h = 0, w = 0; for (const m of this.s.marches) { h += m.h; w += m.w; } for (const t of this.s.terr) { h += t.gh; w += t.gw; } return { h, w };
+  }
   get troopTotal() { const a = this.troopsAway; return this.s.troops[0] + this.s.troops[1] + a.h + a.w; }
-  get defense() { return Math.round((this.s.troops[0] * UNITS[0].def + this.s.troops[1] * UNITS[1].def + this.healthy * 2) * (1 + 0.12 * this.levels(T.WACHTURM))); }
+  get defense() {
+    const base = this.s.troops[0] * UNITS[0].def + this.s.troops[1] * UNITS[1].def + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
+    return Math.round(base * (1 + 0.12 * this.levels(T.WACHTURM) + 0.15 * this.levels(T.MAUER)));
+  }
+  get power() {
+    let b = 0; for (const p of this.s.plots) if (p.type >= 0) b += p.level * 10;
+    return b + this.troopTotal * 2 + this.defense;
+  }
   get deck() { return deckFor(this.towerLevel); }
   get freeboard() { return this.deck - this.water; }
   get storm() { return this.s.stormLeft > 0; }
@@ -162,7 +179,8 @@ export class Colony {
     }
     const kitchen = 1 + Math.min(0.6, 0.06 * this.levels(T.KUECHE));
     const terrBonus = [1, 1, 1, 1];
-    for (const t of s.terr) if (t.owner === 1) terrBonus[t.res] += t.pct / 100;
+    const owned = this.online && this.online.active ? this.online.owned : s.terr.filter((t) => t.owner === 1);
+    for (const t of owned) terrBonus[t.res] += t.pct / 100;
     for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i];
     r[MUSCHELN] -= this.troopTotal * UPKEEP;
     r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
@@ -239,7 +257,13 @@ export class Colony {
   buildBlocker(plot, t) {
     if (plot === 0 || t === T.TURM) return 'Nicht möglich';
     if (this.s.plots[plot].type >= 0) return 'Platz belegt';
-    if (plot >= INNER && this.towerLevel < OUTER_LEVEL) return `Äußerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
+    if (plot === WALL && t !== T.MAUER) return 'Hier steht die Festungsmauer';
+    if (plot !== WALL && t === T.MAUER) return 'Nur am Mauerplatz';
+    if (plot >= TOWERS && t !== T.ABWEHR) return 'Hier passen nur Abwehrtürme';
+    if (plot < TOWERS && t === T.ABWEHR) return 'Nur auf der Mauer';
+    if (plot >= TOWERS && this.levels(T.MAUER) <= 0) return 'Erst die Festungsmauer bauen';
+    if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `Äußerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
+    if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gelände zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Gebäude bauen`;
     if (this.activeBuilds >= MAX_BUILDS) return 'Alle Bautrupps beschäftigt';
     if (!this.canAfford(costFor(t, 1))) return 'Zu wenig Rohstoffe';
     return null;

@@ -132,6 +132,23 @@ function plane() {
   return s;
 }
 
+/// Kegelstumpf: unten Radius 0.5, oben 0.5*k, Höhe 1 (Boden bei y=0)
+export function frustum(k, seg = 40) {
+  const s = shape();
+  const ny = 0.5 * (1 - k);
+  for (let i = 0; i <= seg; i++) {
+    const a = (i / seg) * Math.PI * 2, x = Math.cos(a), z = Math.sin(a);
+    const n = [x, ny, z], l = Math.hypot(n[0], n[1], n[2]);
+    vert(s, [x * 0.5, 0, z * 0.5], [n[0] / l, n[1] / l, n[2] / l]);
+    vert(s, [x * 0.5 * k, 1, z * 0.5 * k], [n[0] / l, n[1] / l, n[2] / l]);
+  }
+  for (let i = 0; i < seg; i++) { const a = i * 2; s.i.push(a, a + 1, a + 3, a, a + 3, a + 2); }
+  const c = vert(s, [0, 1, 0], [0, 1, 0]), first = s.p.length / 3;
+  for (let i = 0; i <= seg; i++) { const a = (i / seg) * Math.PI * 2; vert(s, [Math.cos(a) * 0.5 * k, 1, Math.sin(a) * 0.5 * k], [0, 1, 0]); }
+  for (let i = 0; i < seg; i++) s.i.push(c, first + i, first + i + 1);
+  return s;
+}
+
 export const GEO = {
   cube: cube(), cylinder: cylinder(), sphere: sphere(), capsule: capsule(), cone: cone(), prism: prism(), plane: plane(),
   cylLow: cylinder(10),
@@ -152,7 +169,7 @@ export class Builder {
   pop() { this.stack.pop(); }
 
   add(name, pos, scl, col, o = {}) {
-    const g = GEO[name];
+    const g = typeof name === 'string' ? GEO[name] : name;
     const M = mul(this.base, trs(pos, o.rot, scl));
     const N = normalMat(M);
     const e = o.e || 0, gl = o.g === undefined ? 0.15 : o.g;

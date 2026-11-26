@@ -1,17 +1,27 @@
 // Die 3D-Welt: Watt, Pfahlwerk, Gebäude, Siedler, Möwen, Wetter, Licht und Kamera.
-import { Builder } from './geo.js';
+import { Builder, frustum } from './geo.js';
 import * as M from './models.js';
 import { C } from './models.js';
-import { PLOTS, INNER, deckFor } from './game.js';
+import { PLOTS, INNER, RING3, WALL, TOWERS, T, deckFor } from './game.js';
 import { trs, mul, perspective, lookAt, invert, normalMat, clamp, clamp01, lerp, lerpC, mulC, moveTowards, rng, noise1, D2R, project } from './math.js';
 
-export const RING = 20, RING2 = 34;
+export const RING = 20, RING2 = 34, RING3R = 47;
 const COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
 
-export function plotAngle(i) { return i < INNER ? ((i - 1) * Math.PI * 2) / 12 : ((i - INNER + 0.5) * Math.PI * 2) / 12; }
+/// Geländeradius (wächst mit jedem Neubau) – wird von der Welt laufend gesetzt
+export const AREA = { r: 45 };
+export const wallRadius = () => AREA.r + 3;
+export function plotAngle(i) {
+  if (i < INNER) return ((i - 1) * Math.PI * 2) / 12;
+  if (i < RING3) return ((i - INNER + 0.5) * Math.PI * 2) / 12;
+  if (i < WALL) return ((i - RING3 + 0.5) * Math.PI * 2) / 18;
+  if (i === WALL) return Math.PI;
+  return ((i - TOWERS + 0.5) * Math.PI * 2) / 8;
+}
+export function plotRadius(i) { return i === 0 ? 0 : i < INNER ? RING : i < RING3 ? RING2 : i < WALL ? RING3R : wallRadius(); }
 export function plotPos(i) {
   if (i === 0) return [0, 0, 0];
-  const a = plotAngle(i), r = i < INNER ? RING : RING2;
+  const a = plotAngle(i), r = plotRadius(i);
   return [Math.sin(a) * r, 0, Math.cos(a) * r];
 }
 /// Drehung so, dass die Vorderseite (+z) zur Mitte zeigt
@@ -37,7 +47,7 @@ export class World {
     // Kamera
     this.target = [0, 3, 0];
     this.dist = 62;
-    this.minDist = 22; this.maxDist = 140;
+    this.minDist = 22; this.maxDist = 170;
 
     this.buildEnvironment();
     this.buildStatic();
@@ -116,9 +126,17 @@ export class World {
     B = new Builder(); B.add('cone', [0, 0, 60], [9, 60, 4], [1, 1, 1], { rot: [-90, 0, 0] }); this.beamMesh = r.upload(B);
   }
 
-  buildInfra(deck) {
+  buildInfra(deck, area) {
     this.r.free(this.infraMesh);
     const B = new Builder();
+    // Warft: aufgeschüttetes Gelände, wächst mit jedem Neubau
+    const top = deck - 0.9, R = area + 5, Rb = area + 16;
+    B.add(frustum(R / Rb), [0, -1, 0], [Rb * 2, top + 1, Rb * 2], [0.6, 0.55, 0.43], { g: 0.15 });
+    B.add('cylinder', [0, top - 0.02, 0], [R * 2 - 0.5, 0.05, R * 2 - 0.5], [0.4, 0.5, 0.29], { g: 0.05 });
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      B.add('cube', [Math.sin(a) * (R * 0.62 + 6), top + 0.04, Math.cos(a) * (R * 0.62 + 6)], [2.2, 0.04, R * 0.75], [0.55, 0.48, 0.36], { rot: [0, a / D2R, 0] });
+    }
     const post = C.tar, algae = [0.18, 0.28, 0.2], plank = C.plank;
     const postLen = deck + 1, postY = (deck - 1) / 2;
     B.add('cylinder', [0, deck - 0.15, 0], [19, 0.15, 19], plank, { g: 0.2 });
@@ -131,7 +149,7 @@ export class World {
       B.add('cylinder', [px, 0.4, pz], [0.56, 0.6, 0.56], algae, { g: 0.6 });
       if (i % 3 !== 0) B.add('cube', [px * 1.05, deck + 0.5, pz * 1.05], [0.12, 1, 0.12], post);
     }
-    for (let i = 1; i < PLOTS; i++) {
+    for (let i = 1; i < RING3; i++) {
       const p = plotPos(i);
       B.push(p, [0, plotYaw(i), 0]);
       B.add('cube', [0, deck - 0.15, 0], [8, 0.3, 8], plank, { g: 0.2 });
@@ -155,6 +173,14 @@ export class World {
       B.add('cube', [ww / 2, deck + 0.6, wz], [0.08, 0.08, wl], post);
       B.pop();
     }
+    for (let i = RING3; i < WALL; i++) {
+      const p = plotPos(i);
+      B.push(p, [0, plotYaw(i), 0]);
+      B.add('cube', [0, deck - 0.15, 0], [8, 0.3, 8], plank, { g: 0.2 });
+      for (let k = -3; k <= 3; k++) B.add('cube', [k * 1.1, deck + 0.005, 0], [0.05, 0.01, 7.9], [0.35, 0.26, 0.17]);
+      for (let k = 0; k < 4; k++) B.add('cube', [(k & 1 ? 3.6 : -3.6), deck - 0.6, (k & 2 ? 3.6 : -3.6)], [0.4, 1, 0.4], post);
+      B.pop();
+    }
     // Pegel-Latte mit roter Marke auf Deckhöhe
     const pa = 15 * D2R, pg = [Math.sin(pa) * 9.8, 0, Math.cos(pa) * 9.8];
     for (let k = 0; k < 10; k++) B.add('cube', [pg[0], k + 0.5, pg[2]], [0.35, 1, 0.12], k % 2 === 0 ? [0.95, 0.95, 0.92] : [0.1, 0.1, 0.12], { g: 0.3 });
@@ -166,7 +192,15 @@ export class World {
       B.add('cube', [lx, deck + 2.6, lz], [0.4, 0.5, 0.4], C.window, { e: 2.2 });
     }
     this.infraMesh = this.r.upload(B);
-    this.infraDeck = deck;
+    this.infraDeck = deck; this.infraArea = area;
+  }
+
+  buildWall(level, deck) {
+    this.r.free(this.wallMesh);
+    const B = new Builder();
+    M.wall(B, level, wallRadius(), deck - 0.9);
+    this.wallMesh = this.r.upload(B);
+    this.wallKey = `${level}|${AREA.r}|${deck}`;
   }
 
   buildPlot(i) {
@@ -181,12 +215,18 @@ export class World {
       const L = new Builder(); L.push([0, deck, 0]); M.lantern(L, Math.max(1, p.level));
       this.lanternMesh = this.r.upload(L);
       this.lampPos = [0, deck + M.towerHeight(Math.max(1, p.level)) + 1.2, 0];
+    } else if (i >= TOWERS) {
+      if (p.type >= 0 && p.level > 0) M.defenseTower(B, p.level);
+      else if (this.c.levels(T.MAUER) > 0) B.add('cylinder', [0, -0.75, 0], [3.6, 0.15, 3.6], [0.5, 0.5, 0.5]);
+    } else if (i === WALL) {
+      // Mauer ist ein eigenes Mesh
     } else if (p.type >= 0 && p.level > 0) M.building(B, p.type, p.level);
-    if (p.buildLeft > 0) M.scaffold(B, i === 0 ? 4.5 : 3, p.level === 0);
+    if (p.buildLeft > 0 && i !== WALL) M.scaffold(B, i === 0 ? 4.5 : 3, p.level === 0);
+    if (p.buildLeft > 0 && i === WALL) { B.push([0, -0.9, 0]); M.scaffold(B, 4.5, false); B.pop(); }
     B.pop();
     this.plotMesh[i] = this.r.upload(B);
     this.plotEmit[i] = B.emitters;
-    Object.assign(this.shown[i], { type: p.type, level: p.level, building: p.buildLeft > 0, deck });
+    Object.assign(this.shown[i], { type: p.type, level: p.level, building: p.buildLeft > 0, deck, area: AREA.r, wall: this.c.levels(T.MAUER) });
   }
 
   // ---------------- Aktualisierung ----------------
@@ -195,10 +235,14 @@ export class World {
     this.time += dt;
     const c = this.c;
     const deck = c.deck;
-    if (this.infraDeck !== deck) this.buildInfra(deck);
+    AREA.r = c.areaRadius;
+    if (this.infraDeck !== deck || this.infraArea !== AREA.r) this.buildInfra(deck, AREA.r);
+    const wl = c.levels(T.MAUER);
+    if (this.wallKey !== `${wl}|${AREA.r}|${deck}`) this.buildWall(wl, deck);
     for (let i = 0; i < PLOTS; i++) {
       const p = c.s.plots[i], sh = this.shown[i];
-      if (p.type !== sh.type || p.level !== sh.level || (p.buildLeft > 0) !== sh.building || sh.deck !== deck) this.buildPlot(i);
+      const moved = i >= WALL && (sh.area !== AREA.r || sh.wall !== wl);
+      if (p.type !== sh.type || p.level !== sh.level || (p.buildLeft > 0) !== sh.building || sh.deck !== deck || moved) this.buildPlot(i);
     }
     this.stormBlend = moveTowards(this.stormBlend, c.storm ? 1 : 0, dt * 0.25);
     this.target[1] = deck;
@@ -230,7 +274,7 @@ export class World {
         let target = -1;
         if (c.freeboard >= 0 && Math.random() < 0.6) {
           const built = [];
-          for (let i = 1; i < PLOTS; i++) if (c.s.plots[i].type >= 0) built.push(i);
+          for (let i = 1; i < RING3; i++) if (c.s.plots[i].type >= 0) built.push(i);
           if (built.length) target = built[Math.floor(Math.random() * built.length)];
         }
         if (target > 0) {
@@ -331,7 +375,7 @@ export class World {
     this.target[0] += dx * k;
     this.target[2] += dy * k;
     const r = Math.hypot(this.target[0], this.target[2]);
-    if (r > 60) { this.target[0] *= 60 / r; this.target[2] *= 60 / r; }
+    if (r > 75) { this.target[0] *= 75 / r; this.target[2] *= 75 / r; }
   }
 
   zoom(f) { this.dist = clamp(this.dist * f, this.minDist, this.maxDist); }
@@ -353,13 +397,15 @@ export class World {
     if (Math.abs(dir[1]) < 1e-6) return -1;
     const s = (deck - a[1]) / dir[1];
     const hx = a[0] + dir[0] * s, hz = a[2] + dir[2] * s;
-    if (Math.hypot(hx, hz) < 9.8) return 0;
+    const hr = Math.hypot(hx, hz);
+    if (hr < 9.8) return 0;
     for (let i = 1; i < PLOTS; i++) {
       const p = plotPos(i), yaw = plotYaw(i) * D2R;
       const lx0 = hx - p[0], lz0 = hz - p[2];
       const lx = Math.cos(yaw) * lx0 - Math.sin(yaw) * lz0, lz = Math.sin(yaw) * lx0 + Math.cos(yaw) * lz0;
       if (Math.abs(lx) < 4.4 && Math.abs(lz) < 4.4) return i;
     }
+    if (Math.abs(hr - wallRadius()) < 3.5) return WALL;
     return -1;
   }
 
@@ -396,6 +442,7 @@ export class World {
     const draws = [];
     draws.push({ mesh: this.envMesh });
     draws.push({ mesh: this.infraMesh });
+    if (this.wallMesh) draws.push({ mesh: this.wallMesh });
     for (const m of this.plotMesh) if (m) draws.push({ mesh: m });
     if (this.lanternMesh) draws.push({ mesh: this.lanternMesh, emis: burn ? 0.8 + flick * 0.6 : 0.02, noShadow: true });
 
@@ -428,7 +475,7 @@ export class World {
       draws.push({ mesh: b.red ? this.buoyRed : this.buoyGreen, model: m });
     });
     if (this.selected >= 0) {
-      const s = this.selected, half = s === 0 ? 9.7 : 4.15, pp = plotPos(s), yaw = plotYaw(s);
+      const s = this.selected, half = s === 0 ? 9.7 : s === WALL ? 6 : 4.15, pp = plotPos(s), yaw = plotYaw(s);
       const base = trs([pp[0], deck + 0.08, pp[2]], [0, yaw, 0], null);
       const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
       for (let k = 0; k < 4; k++) {
@@ -457,7 +504,7 @@ export class World {
       draws, waterY: wy, waterDeep: lerpC(waterDeep, [0.12, 0.17, 0.2], sb * 0.6), waterShallow: lerpC(waterShallow, [0.2, 0.26, 0.28], sb * 0.6), storm: sb,
       smoke: this.smoke, smokeCount: this.smokeCount, smokeCol: mulC(lerpC([0.25, 0.27, 0.32], [0.82, 0.82, 0.85], day), 1),
       rain: this.rain, rainCount: this.rainCount, beams,
-      shadowSize: day > 0.05 ? this.shadowSize : 0, shadowCenter: [this.target[0], deck, this.target[2]], shadowRadius: 55 + this.dist * 0.25,
+      shadowSize: day > 0.05 ? this.shadowSize : 0, shadowCenter: [this.target[0], deck, this.target[2]], shadowRadius: 60 + this.dist * 0.3,
     };
   }
 }
