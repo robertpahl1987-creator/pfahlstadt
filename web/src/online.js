@@ -114,7 +114,7 @@ export class Online {
       d.res.forEach((v, i) => { if (v) this.c.addRes(i, v); });
       s.troops = s.troops.map((v, i) => Math.max(0, v + (du[i] || 0)));
       const back = du.reduce((a, v) => a + Math.max(0, v), 0);
-      if (back > 0) this.c.msg(`${back} Krieger sind heimgekehrt${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
+      if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
       this.reports = r.reports || [];
       for (const rep of this.reports.slice().reverse()) if (rep.id > this.lastReport) { this.c.msg(rep.text); this.lastReport = rep.id; }
       localStorage.setItem('pf_lastrep', String(this.lastReport));

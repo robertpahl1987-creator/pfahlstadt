@@ -4457,7 +4457,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         });
         s.troops = s.troops.map((v, i) => Math.max(0, v + (du[i] || 0)));
         const back = du.reduce((a, v) => a + Math.max(0, v), 0);
-        if (back > 0) this.c.msg(`${back} Krieger sind heimgekehrt${d.res.some((v) => v > 0) ? " \u2013 mit Beute!" : "."}`);
+        if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? " \u2013 mit Beute!" : "."}`);
         this.reports = r.reports || [];
         for (const rep of this.reports.slice().reverse()) if (rep.id > this.lastReport) {
           this.c.msg(rep.text);
