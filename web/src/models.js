@@ -38,7 +38,8 @@ function barrel(B, p) {
 }
 
 export function building(B, t, level) {
-  B.push([0, 0, 0], null, [1 + 0.07 * (level - 1), 1 + 0.07 * (level - 1), 1 + 0.07 * (level - 1)]);
+  const sc = 1 + 0.06 * Math.min(level - 1, 9) + 0.012 * Math.max(0, level - 10);
+  B.push([0, 0, 0], null, [sc, sc, sc]);
   switch (t) {
     case T.TREIBHOLZ:
       hut(B, [0.9, 0, -0.6], 3, 2.1, 2.6, C.wall, C.reed, 2);
@@ -154,6 +155,55 @@ export function building(B, t, level) {
       B.add('sphere', [1.4, 2.1, 2.2], [0.4, 0.4, 0.4], C.reed);
       break;
 
+    case T.HARPHOF: {
+      hut(B, [0, 0, -1.2], 4.2, 2.3, 2.6, [0.45, 0.36, 0.26], C.reed, 2);
+      for (let k = 0; k < 8; k++) {
+        B.add('cube', [-2.4 + k * 0.6, 1.1, 1.3], [0.06, 2.2, 0.06], [0.55, 0.45, 0.3], { rot: [10, 0, 0] });
+        B.add('cone', [-2.4 + k * 0.6, 2.25, 1.5], [0.14, 0.4, 0.14], [0.72, 0.74, 0.78], { g: 0.8 });
+      }
+      B.add('cube', [0, 0.8, 1.2], [5, 0.1, 0.1], C.tar);
+      B.add('cylinder', [2.6, 1.2, 2.4], [0.7, 0.05, 0.7], [0.85, 0.2, 0.15], { rot: [90, 0, 0] });
+      B.add('cylinder', [2.6, 1.2, 2.42], [0.35, 0.06, 0.35], C.white, { rot: [90, 0, 0] });
+      B.add('cylinder', [2.6, 0.6, 2.35], [0.06, 0.6, 0.06], C.tar);
+      break;
+    }
+    case T.WACHSTUBE: {
+      hut(B, [0, 0, -0.8], 4.6, 2.6, 3, [0.5, 0.5, 0.5], C.roofGrey, 2);
+      for (let k = 0; k < 4; k++) {
+        B.add('cylinder', [-1.8 + k * 1.2, 1.3, 0.75], [0.8, 0.06, 0.8], k % 2 ? [0.2, 0.35, 0.6] : [0.7, 0.2, 0.15], { rot: [90, 0, 0], g: 0.4 });
+        B.add('sphere', [-1.8 + k * 1.2, 1.3, 0.8], [0.15, 0.15, 0.1], [0.85, 0.75, 0.4], { g: 0.7 });
+      }
+      B.add('cube', [0, 0.05, 2.2], [4.6, 0.1, 1.6], [0.6, 0.55, 0.45]);
+      break;
+    }
+    case T.ENTERHALLE: {
+      hut(B, [0, 0, -1], 6, 2.4, 2.6, [0.38, 0.3, 0.24], [0.35, 0.25, 0.2], 3);
+      for (let k = 0; k < 3; k++) B.add('cube', [-2 + k * 2, 1.6, 1.4], [0.12, 3.2, 0.12], C.tar);
+      B.add('cube', [0, 3.15, 1.4], [4.4, 0.12, 0.12], C.tar);
+      for (let k = 0; k < 7; k++) B.add('cube', [-1.8 + k * 0.6, 1.8, 1.45], [0.03, 2.6, 0.03], [0.75, 0.65, 0.45]);
+      for (let k = 0; k < 4; k++) B.add('cube', [0, 0.8 + k * 0.7, 1.45], [4, 0.03, 0.03], [0.75, 0.65, 0.45]);
+      B.add('cube', [2.6, 0.5, 2.4], [0.5, 1, 0.08], [0.6, 0.62, 0.66], { g: 0.7 });
+      break;
+    }
+    case T.SCHLEUDER: {
+      B.add('cube', [0, 0.1, 0], [5.4, 0.2, 5.4], [0.55, 0.48, 0.36]);
+      B.add('cube', [0, 0.6, 0], [2.4, 0.8, 1.6], [0.45, 0.34, 0.22]);
+      B.add('cube', [-0.9, 1.6, 0], [0.2, 1.6, 0.2], C.tar); B.add('cube', [0.9, 1.6, 0], [0.2, 1.6, 0.2], C.tar);
+      B.add('cube', [0, 2.3, 0], [2, 0.18, 0.18], C.tar);
+      B.add('cube', [0, 2.6, 0.6], [0.18, 3.4, 0.18], [0.6, 0.48, 0.3], { rot: [-35, 0, 0] });
+      B.add('sphere', [0, 3.9, 1.7], [0.45, 0.3, 0.45], [0.35, 0.3, 0.25]);
+      for (let k = 0; k < 6; k++) B.add('sphere', [1.8 + (k % 3) * 0.45, 0.45, -1.6 + Math.floor(k / 3) * 0.45], [0.35, 0.35, 0.35], [0.5, 0.5, 0.48]);
+      hut(B, [-1.6, 0, -1.8], 2, 1.8, 1.6, C.wall, C.reed, 1, false);
+      break;
+    }
+    case T.WATTHUETTE: {
+      hut(B, [0.4, 0, -0.9], 3.6, 2.1, 2.6, C.wallBlue, C.reed, 2);
+      for (let k = 0; k < 5; k++) B.add('cube', [-2.6 + k * 0.3, 0.45, 1.5], [0.18, 0.9, 0.3], [0.2, 0.25, 0.2]);
+      B.add('cube', [0, 0.15, 2.3], [5, 0.12, 0.8], C.plank);
+      B.add('cylinder', [2.5, 2, 1.9], [0.07, 2, 0.07], C.tar);
+      B.add('cube', [2.95, 3.5, 1.9], [0.9, 0.5, 0.03], [0.95, 0.75, 0.2]);
+      break;
+    }
     case T.WACHTURM: {
       const H = 7;
       for (let i = 0; i < 4; i++) {
@@ -197,8 +247,8 @@ export function building(B, t, level) {
 
 /// Abwehrturm auf der Mauer (Fuß auf der Warft, 0.9 m unter Deckhöhe)
 export function defenseTower(B, level) {
-  const stone = level >= 4 ? [0.5, 0.5, 0.52] : [0.56, 0.5, 0.44];
-  const H = 7 + 0.3 * level;
+  const stone = level >= 7 ? [0.5, 0.5, 0.52] : [0.56, 0.5, 0.44];
+  const H = 7 + 0.2 * level;
   B.add('cylinder', [0, -0.9 + H / 2, 0], [3.4, H / 2, 3.4], stone, { g: 0.15 });
   B.add('cylinder', [0, -0.9 + H + 0.2, 0], [3.9, 0.2, 3.9], [0.36, 0.36, 0.38]);
   for (let i = 0; i < 8; i++) {
@@ -221,9 +271,9 @@ export function defenseTower(B, level) {
 export function wall(B, level, R, base) {
   const seg = Math.ceil((2 * Math.PI * R) / 3);
   const gateHalf = 5 / R;
-  const kind = level <= 0 ? 0 : level <= 3 ? 1 : level <= 7 ? 2 : 3;
+  const kind = level <= 0 ? 0 : level <= 6 ? 1 : level <= 13 ? 2 : 3;
   const stone = kind === 3 ? [0.42, 0.42, 0.45] : [0.55, 0.53, 0.5];
-  const H = kind === 1 ? 3 + 0.3 * level : kind === 2 ? 4 + 0.3 * (level - 4) : 6 + 0.3 * (level - 8);
+  const H = kind === 1 ? 3 + 0.2 * level : kind === 2 ? 4 + 0.2 * (level - 7) : 6 + 0.2 * (level - 14);
   for (let k = 0; k < seg; k++) {
     const a = (k / seg) * Math.PI * 2;
     let d = Math.abs(a - Math.PI); if (d < gateHalf) continue;
@@ -291,10 +341,10 @@ export function basket(B) {
   B.add('cylinder', [0, 1.05, -0.32], [0.42, 0.25, 0.42], [0.72, 0.6, 0.35]);
 }
 
-// Leuchtturm wächst mit dem Ausbau: Holzbake (1–2) → Steinturm (3–5) → klassischer Leuchtturm (6–8) → moderner Turm (9–10)
-const TH = [4.5, 4.5, 5.5, 8, 9.5, 11, 13, 14.5, 16, 20, 23];
-export const towerHeight = (level) => TH[Math.max(1, Math.min(10, level))];
-export const towerEra = (level) => (level <= 2 ? 0 : level <= 5 ? 1 : level <= 8 ? 2 : 3);
+// Leuchtturm wächst mit dem Ausbau: Holzbake (1–3) → Steinturm (4–8) → klassischer Leuchtturm (9–14) → moderner Turm (15–20)
+const TH = [4.5, 4.5, 5, 5.5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21.5, 23, 24.5, 26, 28];
+export const towerHeight = (level) => TH[Math.max(1, Math.min(20, level))];
+export const towerEra = (level) => (level <= 3 ? 0 : level <= 8 ? 1 : level <= 14 ? 2 : 3);
 export const lampHeight = (level) => towerHeight(level) + (towerEra(level) === 0 ? 0.7 : towerEra(level) === 3 ? 2.0 : 1.2);
 
 /// Leuchtturm (ohne Laterne – die wird dynamisch gezeichnet)
@@ -303,7 +353,7 @@ export function tower(B, level) {
   const wood = [0.55, 0.42, 0.28], stone = [0.5, 0.49, 0.46], stoneD = [0.38, 0.37, 0.35], concrete = [0.86, 0.87, 0.88], steel = [0.45, 0.48, 0.52];
   if (era === 0) {
     // einfache Holzbake: vier Pfosten, Streben, Plattform mit Feuerkorb
-    const r = 1.1 - 0.1 * (level - 1);
+    const r = 1.1 - 0.07 * (level - 1);
     for (let i = 0; i < 4; i++) {
       const sx = i & 1 ? 1 : -1, sz = i & 2 ? 1 : -1;
       B.add('cube', [sx * r, H / 2, sz * r], [0.22, H, 0.22], wood, { rot: [sz * -4, 0, sx * 4] });
@@ -336,7 +386,7 @@ export function tower(B, level) {
   }
   if (era === 2) {
     // klassischer rot-weißer Leuchtturm mit Galerie
-    const bands = 6 + (level - 6);
+    const bands = 6 + (level - 9);
     for (let i = 0; i < bands; i++) {
       const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
       B.add('cylinder', [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
@@ -356,7 +406,7 @@ export function tower(B, level) {
   // moderner Turm: schlanker weißer Betonschaft, Stahlringe, Glaskanzel, Antenne
   B.add('cylinder', [0, 0.6, 0], [5.2, 0.6, 5.2], concrete, { g: 0.3 });
   B.add(FR55, [0, 1.2, 0], [4.4, H - 1.2, 4.4], concrete, { g: 0.5 });
-  const rings = level === 10 ? 3 : 2;
+  const rings = level >= 18 ? 3 : 2;
   for (let i = 1; i <= rings; i++) { const y = 1.2 + ((H - 1.2) * i) / (rings + 1), rad = (2.2 - 1.0 * ((y - 1.2) / (H - 1.2))) ; B.add('cylinder', [0, y, 0], [rad * 2 + 0.15, 0.25, rad * 2 + 0.15], C.red, { g: 0.4 }); }
   for (let i = 1; i < 6; i++) { const y = (H * i) / 6.5, rad = 2.2 - 1.0 * ((y - 1.2) / (H - 1.2)); B.add('cube', [0, y, rad - 0.02], [0.3, 0.9, 0.06], [0.55, 0.8, 0.95], { e: 0.9, g: 0.9 }); }
   B.add('cube', [0, 1.3, 2.3], [1.2, 2.4, 0.14], steel, { g: 0.7 });
@@ -400,21 +450,21 @@ export function dike(B, level, R, top) {
     if (Math.abs(a - Math.PI) < gap) continue;
     const x = Math.sin(a), z = Math.cos(a), yaw = a / (Math.PI / 180);
     const lay = (y0, h, w, off, col) => B.add('cube', [x * (R + off), y0 + h / 2, z * (R + off)], [seg, h, w], col, { rot: [0, yaw, 0], g: 0.08 });
-    lay(base, H * 0.4, 9, 0, level >= 4 ? stone : earth);
-    lay(base + H * 0.4, H * 0.35, 6.5, 0.3, level >= 4 ? stone : earth);
+    lay(base, H * 0.4, 9, 0, level >= 7 ? stone : earth);
+    lay(base + H * 0.4, H * 0.35, 6.5, 0.3, level >= 7 ? stone : earth);
     lay(base + H * 0.75, H * 0.25, 4, 0.3, grass);
-    if (level >= 4) lay(base + H * 0.4, H * 0.35, 1, -2.8, grass);
-    if (level >= 8) lay(top, 0.9, 0.6, 2.0, concrete);
+    if (level >= 7) lay(base + H * 0.4, H * 0.35, 1, -2.8, grass);
+    if (level >= 14) lay(top, 0.9, 0.6, 2.0, concrete);
   }
   // Sieltor
   const zc = -R;
   for (const s of [-1, 1]) {
     const xs = s * Math.sin(gap) * R;
-    B.add('cube', [xs, base + (H + 1.5) / 2, zc], [1.6, H + 1.5, 7], level >= 4 ? concrete : C.plank, { g: 0.2 });
+    B.add('cube', [xs, base + (H + 1.5) / 2, zc], [1.6, H + 1.5, 7], level >= 7 ? concrete : C.plank, { g: 0.2 });
   }
   const w = Math.sin(gap) * R * 2;
-  B.add('cube', [0, top + 1.2, zc], [w + 1.6, 0.6, 1.4], level >= 4 ? concrete : C.plank);
-  B.add('cube', [0, top - 0.6, zc + 2.6], [w, H * 0.5, 0.35], level >= 8 ? [0.4, 0.44, 0.5] : C.tar, { g: 0.5 });
+  B.add('cube', [0, top + 1.2, zc], [w + 1.6, 0.6, 1.4], level >= 7 ? concrete : C.plank);
+  B.add('cube', [0, top - 0.6, zc + 2.6], [w, H * 0.5, 0.35], level >= 14 ? [0.4, 0.44, 0.5] : C.tar, { g: 0.5 });
   B.add('cube', [0, base + 0.2, zc], [w, 0.4, 7], earth);
 }
 

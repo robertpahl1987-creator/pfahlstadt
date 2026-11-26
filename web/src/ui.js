@@ -1,5 +1,5 @@
 // Oberfläche (HTML über der 3D-Ansicht) inkl. Seekarte, Kaserne und Berichten
-import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, LAYOUT, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
+import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, LAYOUT, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime, zeroU, uSum, armyStr, troopStr, speedFactor, carryOf } from './game.js';
 import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
 import { TIERS } from './gfx.js';
@@ -10,7 +10,7 @@ const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) 
 const amount = (v) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : String(Math.floor(v)));
 const rate = (v) => { const a = Math.abs(v); const s = a >= 1000 ? (a / 1000).toFixed(1) + 'k' : String(Math.round(a)); return (v < 0 ? '−' : '+') + s; };
 const RES_IC = ['🪵', '🦪', '💧', '⚙️'];
-const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹', '🌊'];
+const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹', '🌊', '🔱', '🛡️', '🗡️', '🪨', '🏃'];
 const NODE_NAME = ['Treibholz', 'Muschelbank', 'Süßwassertümpel', 'Wrackteile'];
 const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
 const clock = (d) => { const m = Math.floor(d * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
@@ -19,7 +19,7 @@ export class UI {
   constructor(colony, world, gfx, online) {
     this.c = colony; this.w = world; this.g = gfx; this.o = online;
     this.selected = -1; this.menu = false; this.confirm = null; this.panelKey = null;
-    this.view = 'city'; this.mapSel = null; this.form = [0, 0]; this.showReports = false;
+    this.view = 'city'; this.mapSel = null; this.form = zeroU(); this.showReports = false;
     this.mode = null; // 'ally' | 'rank' | 'account'
     this.busy = false; this.tasksOpen = true; this.troopTab = 'truppen';
     this.build();
@@ -92,7 +92,7 @@ export class UI {
       md = null;
       const r = mc.getBoundingClientRect();
       this.mapSel = this.sea.pick(e.clientX - r.left, e.clientY - r.top);
-      this.form = [0, 0]; this.showReports = false; this.panelKey = null; this.confirm = null;
+      this.form = zeroU(); this.showReports = false; this.panelKey = null; this.confirm = null;
     });
 
     const v = window.APP_VERSION || { name: 'dev', channel: 'test' };
@@ -140,7 +140,7 @@ export class UI {
   }
 
   setView(v) {
-    this.view = v; this.mapSel = null; this.form = [0, 0]; this.showReports = false;
+    this.view = v; this.mapSel = null; this.form = zeroU(); this.showReports = false;
     this.mapEl.style.display = v === 'map' ? '' : 'none';
     this.labels.style.display = v === 'map' ? 'none' : '';
     if (v === 'map') { this.select(-1); this.menu = false; this.mode = null; this.o.wantChat = false; }
@@ -186,13 +186,13 @@ export class UI {
     else if (a === 'train') c.startTrain(+ds.u, +ds.n);
     else if (a === 'gath') { const id = -1000 - this.selected; c.setGatherers(id, Math.max(0, c.assigned(id) + +ds.d)); }
     else if (a === 'f') { const u = +ds.u; this.form[u] = Math.max(0, Math.min(c.s.troops[u], this.form[u] + +ds.d)); }
-    else if (a === 'fall') { this.form = [c.s.troops[0], c.s.troops[1]]; }
-    else if (a === 'f0') { this.form = [0, 0]; }
+    else if (a === 'fall') { this.form = c.s.troops.slice(0, 5); }
+    else if (a === 'f0') { this.form = zeroU(); }
     else if (a === 'send') {
       const sel = this.mapSel, f = this.form.slice();
       if (!sel) return;
-      if (this.sea.isOnline) this.run(async () => { await o.sendMarch(sel.type, sel.id, f[0], f[1]); this.form = [0, 0]; this.mapSel = null; c.msg(sel.type === 'player' ? 'Angriff gestartet!' : 'Trupp ist unterwegs.'); await o.loadWorld(); });
-      else if (c.sendTroops(sel.id, f[0], f[1])) { this.form = [0, 0]; this.mapSel = null; }
+      if (this.sea.isOnline) this.run(async () => { await o.sendMarch(sel.type, sel.id, f); this.form = zeroU(); this.mapSel = null; c.msg(sel.type === 'player' ? 'Angriff gestartet!' : 'Trupp ist unterwegs.'); await o.loadWorld(); });
+      else if (c.sendTroops(sel.id, f)) { this.form = zeroU(); this.mapSel = null; }
     }
     else if (a === 'withdraw') {
       const sel = this.mapSel; if (!sel) return;
@@ -258,7 +258,7 @@ export class UI {
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
     const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? 'Ebbe' : c.rising ? 'Flut ↑' : 'Flut ↓';
     setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
-    let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${s.troops[0] + s.troops[1]}</b> · ${clock(s.dayTime)}`;
+    let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${uSum(s.troops)}</b> · ${clock(s.dayTime)}`;
     if (this.o.active) st += this.o.incoming ? ` · <b style="color:#ff6060">⚠ Angriff!</b>` : this.o.status === 'online' ? ' <span style="color:#8ef0a0">●</span>' : ' <span style="color:#ffb070">●</span>';
     setHTML(this.st, st);
 
@@ -435,7 +435,7 @@ export class UI {
       out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div><button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button></div>`;
     } else out += '<div class="sm">Maximale Stufe erreicht.</div>';
     const extra = [];
-    if (L > 0 && p.type === T.KASERNE) extra.push('<button class="btn ghost" data-a="troops">⚔️ Truppen ausbilden</button>');
+    if (L > 0 && (p.type === T.KASERNE || p.type >= T.HARPHOF)) extra.push('<button class="btn ghost" data-a="troops">⚔️ Truppen ausbilden</button>');
     if (i !== 0) extra.push(`<button class="btn ${this.confirm === 'demo' ? 'danger' : 'ghost'}" data-a="demo" style="padding:7px 10px;font-size:12px">${this.confirm === 'demo' ? '<b>Wirklich abreißen?</b>' : 'Abreißen'}</button>`);
     return out + (extra.length ? `<div class="btns" style="margin-top:8px">${extra.join('')}</div>` : '');
   }
@@ -457,17 +457,19 @@ export class UI {
 
   barracksHtml() {
     const c = this.c, s = c.s;
-    let out = `<div class="sub2">Truppen zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>`;
+    let out = `<div class="sub2">Zu Hause: ${troopStr(s.troops)}</div>`;
     if (s.train.length) {
       const q = s.train[0];
       out += `<div class="sm">In Ausbildung: ${s.train.map((t) => `${t.n}× ${UNITS[t.u].name}`).join(', ')} · nächster in ${fmtTime(q.left)} (${c.queued()}/${c.trainSlots()})</div>`;
     } else out += `<div class="sm">Ausbildungsschlange leer (max. ${c.trainSlots()})</div>`;
     UNITS.forEach((u, k) => {
-      const b1 = c.trainBlocker(k, 1), b5 = c.trainBlocker(k, 5);
-      out += `<div class="row"><div class="ri"><div><b>${u.name}</b> <span class="sh">Angriff ${u.att} · Verteidigung ${u.def}</span></div>
-        <div class="sm">je ${this.costStr(unitCost(k, 1))}</div></div>
-        <button class="btn sm2" data-a="train" data-u="${k}" data-n="1" ${b1 ? 'disabled' : ''}>+1</button>
-        <button class="btn sm2" data-a="train" data-u="${k}" data-n="5" ${b5 ? 'disabled' : ''}>+5</button></div>`;
+      const lv = c.levels(u.b), b1 = c.trainBlocker(k, 1), b5 = c.trainBlocker(k, 5), b10 = c.trainBlocker(k, 10);
+      out += `<div class="row"><div class="ri"><div><b>${u.ic} ${u.name}</b> <span class="sh">⚔${u.att} 🛡${u.def} 🎒${u.carry}</span> <span class="sh">· ${s.troops[k]} da</span></div>
+        <div class="sm">${u.info}</div>
+        ${lv > 0 ? `<div class="sm">je ${this.costStr(unitCost(k, 1))}</div>` : `<div class="warn">Braucht ${DEFS[u.b].name} (${B_IC[u.b]})</div>`}</div>
+        ${lv > 0 ? `<button class="btn sm2" data-a="train" data-u="${k}" data-n="1" ${b1 ? 'disabled' : ''}>+1</button>
+        <button class="btn sm2" data-a="train" data-u="${k}" data-n="5" ${b5 ? 'disabled' : ''}>+5</button>
+        <button class="btn sm2" data-a="train" data-u="${k}" data-n="10" ${b10 ? 'disabled' : ''}>+10</button>` : ''}</div>`;
     });
     return out;
   }
@@ -481,10 +483,14 @@ export class UI {
       case T.RAUCH: return [`Muschelverbrauch −${Math.min(50, 8 * L)} %`, `Arbeiter: ${d.workers * L}`];
       case T.KUECHE: return [`Alle Produktion <b>+${Math.min(60, 6 * L)} %</b>`, `Arbeiter: ${d.workers * L}`];
       case T.KASERNE: return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller · Schlange bis ${10 * L}`];
+      case T.HARPHOF: case T.WACHSTUBE: case T.ENTERHALLE: case T.SCHLEUDER: case T.WATTHUETTE: {
+        const k = UNITS.findIndex((u) => u.b === t), u = UNITS[k];
+        return [`${u.ic} <b>${u.name}</b>: ${u.info}`, `Ausbildung ${10 * (L - 1)} % schneller · zu Hause: ${c.s.troops[k]}`];
+      }
       case T.WACHTURM: return [`Verteidigung der Stadt <b>+${12 * L} %</b>`, `Aktuelle Verteidigung: <b>${c.defense}</b>`, c.raidIn !== null ? `Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}` : 'Piraten greifen ab Tag 2 an'];
       case T.LAGER: return [`Lagerplatz je Rohstoff: <b>${c.storage}</b>`];
       case T.DAMM: return [`Schützt bis Wasserstand <b>${damTopFor(L).toFixed(1)} m</b> (nächste Stufe ${damTopFor(L + 1).toFixed(1)} m)`, `Jetzt: Wasser ${c.water.toFixed(1)} m · ${c.damHolds ? '<b style="color:#8ef0a0">Damm hält die Flut ab</b>' : c.water > c.damTop ? '<b style="color:#ff6a6a">Wasser läuft über den Damm!</b>' : 'Stadt liegt trocken'}`];
-      case T.MAUER: return [`${L <= 3 ? 'Holzpalisade' : L <= 7 ? 'Steinwall' : 'Festungswall'} · Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Geländeradius: ${Math.round(c.areaRadius)} m`];
+      case T.MAUER: return [`${L <= 6 ? 'Holzpalisade' : L <= 13 ? 'Steinwall' : 'Festungswall'} · Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Geländeradius: ${Math.round(c.areaRadius)} m`];
       case T.ABWEHR: return [`Verteidigung <b>+${40 * L}</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`];
       default:
         return [`Produktion: <b>${Math.round(rateAt(t, L) * 60 * c.efficiency)}</b>/min ${RES[d.prod]} (Arbeit ${Math.round(c.efficiency * 100)} %)`,
@@ -497,10 +503,13 @@ export class UI {
     const s = this.c.s, f = this.form;
     let out = '';
     UNITS.forEach((u, k) => {
-      out += `<div class="row"><div class="ri"><b>${u.name}</b> <span class="sh">${f[k]} / ${s.troops[k]}</span></div>
+      if (!s.troops[k] && !f[k]) return;
+      out += `<div class="row"><div class="ri"><b>${u.ic} ${u.name}</b> <span class="sh">${f[k]} / ${s.troops[k]}</span></div>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="-5">−5</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="-1">−1</button>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="1">+1</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="5">+5</button></div>`;
     });
+    if (!uSum(s.troops) && !uSum(f)) out += '<div class="sm">Keine Krieger zu Hause. Bilde sie unter ⚔️ Truppen aus.</div>';
+    else if (uSum(f)) out += `<div class="sm">Trupp: ${troopStr(f)} · Beute bis ${carryOf(f)} · Tempo ${speedFactor(f) < 1 ? 'schnell 🏃' : speedFactor(f) > 1 ? 'langsam 🪨' : 'normal'}</div>`;
     if (extra) out += extra;
     if (blk && blk !== 'Keine Truppen ausgewählt') out += `<div class="warn">${blk}</div>`;
     out += `<div class="btns"><button class="btn ghost" data-a="fall">Alle</button><button class="btn ghost" data-a="f0">Keine</button>
@@ -515,8 +524,8 @@ export class UI {
   }
 
   homeTroops(c, s, away) {
-    return `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>
-       <div class="inf">Unterwegs/Besatzung: <b>${away.h}</b> · <b>${away.w}</b></div>`;
+    return `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div>
+       <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
   }
 
   mapHtml() {
@@ -526,7 +535,7 @@ export class UI {
       const tname = (m) => m.target_player ? ((o.world.players.find((p) => p.id === m.target_player) || {}).name || 'Stadt') : ((o.world.territories.find((t) => t.id === m.target_terr) || {}).name || 'Gebiet');
       const marches = o.marches.map((m) => {
         const left = m.status === 'out' ? Date.parse(m.arrive) - now : Date.parse(m.back_at) - now;
-        return `<div class="sm">⛵ ${m.h + m.w} Soldaten → ${tname(m)} (${m.status === 'back' ? 'Heimweg' : m.kind === 'player' ? 'Angriff auf Stadt' : 'Gebiet'}) · ${fmtTime(Math.max(0, left / 1000))}</div>`;
+        return `<div class="sm">⛵ ${uSum(m.u || zeroU())} Krieger → ${tname(m)} (${m.status === 'back' ? 'Heimweg' : m.kind === 'player' ? 'Angriff auf Stadt' : 'Gebiet'}) · ${fmtTime(Math.max(0, left / 1000))}</div>`;
       }).join('');
       return this.head('Seekarte (online)') + this.homeTroops(c, s, away) +
         `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches}
@@ -535,7 +544,7 @@ export class UI {
     }
     if (o.active) return this.head('Seekarte') + '<div class="inf">Lade Weltkarte …</div>' + (o.error ? `<div class="warn">${o.error}</div>` : '');
     const owned = s.terr.filter((t) => t.owner === 1).length;
-    const marches = s.marches.map((m) => `<div class="sm">⛵ ${m.h + m.w} Soldaten → ${s.terr[m.target].name} (${m.phase === 'back' ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärkung'}) · ${fmtTime(m.left)}</div>`).join('');
+    const marches = s.marches.map((m) => `<div class="sm">⛵ ${uSum(m.u || zeroU())} Krieger → ${s.terr[m.target].name} (${m.phase === 'back' ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärkung'}) · ${fmtTime(m.left)}</div>`).join('');
     return this.head('Seekarte (offline)') + this.homeTroops(c, s, away) +
       `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
        <div class="sm">Offline kämpfst du gegen Piraten. Für Mitspieler und Allianzen: Menü → Online-Konto.</div>
@@ -543,17 +552,17 @@ export class UI {
   }
 
   terrHtml() {
-    const c = this.c, s = c.s, o = this.o, f = this.form, att = f[0] * UNITS[0].att + f[1] * UNITS[1].att;
+    const c = this.c, s = c.s, o = this.o, f = this.form, att = Math.round(armyStr(f, null, true));
     if (this.sea.isOnline) {
       const t = o.world.territories.find((x) => x.id === this.mapSel.id);
       if (!t) return this.head('Gebiet') + '<div class="sm">Nicht gefunden.</div>';
       const me = o.me, mine = t.owner === me.id, ally = !mine && t.owner && me.alliance_id && t.owner_alliance === me.alliance_id;
-      const dist = Math.hypot(t.x - me.x, t.y - me.y), tt = 20 + dist * 22;
+      const dist = Math.hypot(t.x - me.x, t.y - me.y), tt = (20 + dist * 22) * speedFactor(f);
       let out = this.head(t.name) + `<div class="desc">${t.kind} · Bonus <b>+${t.pct} % ${RES[t.res]}</b> · Fahrt ${fmtTime(tt)}</div>`;
       if (mine) {
-        out += `<div class="inf">🚩 Dein Gebiet. Besatzung: <b>${t.gh || 0}</b> Harpuniere · <b>${t.gw || 0}</b> Wachen</div><div class="sm">Andere Spieler können es dir abnehmen – Wachen verteidigen am besten.</div>`;
+        out += `<div class="inf">🚩 Dein Gebiet. Besatzung: ${troopStr(t.gu || zeroU())}</div><div class="sm">Andere Spieler können es dir abnehmen – Schildwachen verteidigen am besten, Schleuderer kaum.</div>`;
         out += `<div class="sub2">Verstärkung schicken</div>` + this.troopForm('Verstärken', false, this.busy ? 'Bitte warten …' : null);
-        if ((t.gh || 0) + (t.gw || 0) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+        if (uSum(t.gu || zeroU()) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
         return out;
       }
       if (ally) return out + `<div class="inf">🚩 Gehört deinem Verbündeten <b>${t.owner_name}</b>.</div>`;
@@ -561,27 +570,27 @@ export class UI {
       out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm('Angreifen!', true, null, this.attackInfo(att, t.owner ? null : t.strength));
       return out;
     }
-    const t = s.terr[this.mapSel.id], tt = travelTime(t);
+    const t = s.terr[this.mapSel.id], tt = travelTime(t) * speedFactor(f);
     let out = this.head(t.name) + `<div class="desc">${t.kind} · Ring ${t.ring} · Bonus <b>+${t.pct} % ${RES[t.res]}</b> · Fahrt ${fmtTime(tt)}</div>`;
-    out += t.owner === 1 ? `<div class="inf">🚩 Dein Gebiet. Besatzung: <b>${t.gh}</b> Harpuniere · <b>${t.gw}</b> Wachen</div>
-        <div class="sm">Piraten versuchen ab und zu, Gebiete zurückzuerobern. Wachen verteidigen besonders gut.</div>` : `<div class="inf">☠ Piraten, Stärke etwa <b>${Math.round(t.pirates)}</b></div>`;
+    out += t.owner === 1 ? `<div class="inf">🚩 Dein Gebiet. Besatzung: ${troopStr(t.gu)}</div>
+        <div class="sm">Piraten versuchen ab und zu, Gebiete zurückzuerobern. Schildwachen verteidigen besonders gut.</div>` : `<div class="inf">☠ Piraten, Stärke etwa <b>${Math.round(t.pirates)}</b></div>`;
     out += `<div class="sub2">${t.owner === 1 ? 'Verstärkung schicken' : 'Angriffstrupp'}</div>`;
-    out += this.troopForm(t.owner === 1 ? 'Verstärken' : 'Angreifen!', t.owner !== 1, c.attackBlocker(t.id, f[0], f[1]), t.owner === 1 ? '' : this.attackInfo(att, t.pirates));
-    if (t.owner === 1 && t.gh + t.gw > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+    out += this.troopForm(t.owner === 1 ? 'Verstärken' : 'Angreifen!', t.owner !== 1, c.attackBlocker(t.id, f), t.owner === 1 ? '' : this.attackInfo(att, t.pirates));
+    if (t.owner === 1 && uSum(t.gu) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
     return out;
   }
 
   playerHtml() {
-    const o = this.o, f = this.form, att = f[0] * UNITS[0].att + f[1] * UNITS[1].att;
+    const o = this.o, f = this.form, att = Math.round(armyStr(f, null, true));
     const p = o.world.players.find((x) => x.id === this.mapSel.id);
     if (!p) return this.head('Stadt') + '<div class="sm">Nicht gefunden.</div>';
     const me = o.me, ally = me.alliance_id && p.alliance_id === me.alliance_id;
-    const dist = Math.hypot(p.x - me.x, p.y - me.y), tt = 20 + dist * 22;
+    const dist = Math.hypot(p.x - me.x, p.y - me.y), tt = (20 + dist * 22) * speedFactor(f);
     let out = this.head(`🏰 ${p.tag ? '[' + p.tag + '] ' : ''}${p.name}`) +
       `<div class="desc">Macht ⚔ <b>${p.power}</b> · Gezeitenturm Stufe ${p.tower} · ${p.online ? '<span style="color:#8ef0a0">online</span>' : 'offline'} · Fahrt ${fmtTime(tt)}</div>`;
     if (ally) return out + '<div class="inf">Verbündeter – gemeinsam seid ihr stärker!</div>';
     if (p.shield) return out + '<div class="inf">🛡 Diese Stadt steht unter Schutz (neue Spieler 12 Std., nach einer Plünderung 30 Min.).</div>';
-    out += '<div class="sm">Siegst du, plündern deine Truppen bis zu 20 % der Vorräte (Harpuniere tragen 30, Wachen 15). Wer angreift, verliert seinen eigenen Schutz.</div>';
+    out += '<div class="sm">Siegst du, plündern deine Truppen bis zu 20 % der Vorräte (Wattläufer tragen am meisten, Schleuderer halbieren Mauern und Türme). Wer angreift, verliert seinen eigenen Schutz.</div>';
     out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm('Stadt angreifen!', true, null, this.attackInfo(att, null));
     return out;
   }
@@ -681,7 +690,7 @@ export class UI {
     if (tab === 'mine') body = this.cityOverviewHtml();
     else {
       const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
-      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]], ['Schutz vor der Flut', [T.DAMM]]];
+      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Militär', [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE]], ['Verteidigung', [T.WACHTURM, T.MAUER, T.ABWEHR]], ['Schutz vor der Flut', [T.DAMM]]];
       body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt. Der Platz wird automatisch gewählt.</div>`;
       for (const [title, list] of groups) {
         body += `<div class="sub2">${title}</div>`;
@@ -714,7 +723,8 @@ export class UI {
       ['Herz der Stadt', [T.TURM]],
       ['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]],
       ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
-      ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]],
+      ['Militär', [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE]],
+      ['Verteidigung', [T.WACHTURM, T.MAUER, T.ABWEHR]],
       ['Schutz vor der Flut', [T.DAMM]],
     ];
     let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt · Gelände ${Math.round(c.areaRadius)} m · freie Bewohner ${c.freeVillagers}</div>`;
@@ -740,11 +750,11 @@ export class UI {
   troopsTabHtml() {
     const c = this.c, s = c.s, away = c.troopsAway;
     let out = `<div class="inf">Verteidigung der Stadt: <b>${c.defense}</b> · Macht ⚔ <b>${c.power}</b></div>
-      <div class="inf">Unterwegs/Besatzung: <b>${away.h + away.w}</b> Soldaten</div>`;
-    if (c.levels(T.KASERNE) <= 0) out += `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>`;
+      <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
     if (c.raidIn !== null) out += `<div class="sm">Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}</div>`;
     if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
-    else out += '<div class="desc">Für Truppen brauchst du eine <b>Kaserne</b>. Baue sie unter <b>🏗️ Gebäude → Neu bauen</b>.</div>';
+    else out += `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div><div class="desc">Für Truppen brauchst du die <b>Kaserne</b> und für jeden Krieger seine <b>Ausbildungsstätte</b>. Baue sie unter <b>🏗️ Gebäude → Neu bauen</b>.</div>`;
+    out += `<div class="sm" style="margin-top:8px">Stärken: 🔱 schlägt 🗡️ · 🛡️ schlägt 🔱 · 🗡️ schlägt 🪨 und 🏃 · 🪨 schlägt 🛡️ und Mauern. Mische deine Truppen passend zum Gegner!</div>`;
     out += '<div class="btns"><button class="btn" data-a="map">🗺️ Seekarte öffnen</button></div>';
     return out;
   }

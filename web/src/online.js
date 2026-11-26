@@ -1,5 +1,5 @@
 // Verbindung zum Mehrspieler-Server (Supabase). Alle Spielregeln laufen auf dem Server.
-import { RES } from './game.js';
+import { RES, uAdd, zeroU, uSum } from './game.js';
 
 export const SERVER = 'https://qoatkmjobrlnqadsfmhs.supabase.co';
 const KEY = 'sb_publishable_J84AUIbZnb_CZuak5SiKRg_f5nLkn1w';
@@ -95,7 +95,7 @@ export class Online {
 
   snapshot() {
     const c = this.c, s = c.s;
-    return { power: c.power, tower: c.towerLevel, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
   }
 
   async sync(strict) {
@@ -105,12 +105,12 @@ export class Online {
       this.offset = Date.now() - Date.parse(r.now);
       this.me = r.me; this.name = r.me.name;
       this.marches = r.marches || []; this.owned = r.owned || []; this.incoming = r.incoming || 0;
-      const d = r.delta || { res: [0, 0, 0, 0], h: 0, w: 0 };
-      const s = this.c.s;
+      const d = r.delta || { res: [0, 0, 0, 0], u: zeroU() };
+      const s = this.c.s, du = d.u || zeroU();
       d.res.forEach((v, i) => { if (v) this.c.addRes(i, v); });
-      if (d.h) s.troops[0] = Math.max(0, s.troops[0] + d.h);
-      if (d.w) s.troops[1] = Math.max(0, s.troops[1] + d.w);
-      if (d.h > 0 || d.w > 0) this.c.msg(`${Math.max(0, d.h) + Math.max(0, d.w)} Soldaten sind heimgekehrt${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
+      s.troops = s.troops.map((v, i) => Math.max(0, v + (du[i] || 0)));
+      const back = du.reduce((a, v) => a + Math.max(0, v), 0);
+      if (back > 0) this.c.msg(`${back} Krieger sind heimgekehrt${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
       this.reports = r.reports || [];
       for (const rep of this.reports.slice().reverse()) if (rep.id > this.lastReport) { this.c.msg(rep.text); this.lastReport = rep.id; }
       localStorage.setItem('pf_lastrep', String(this.lastReport));
@@ -146,12 +146,12 @@ export class Online {
     try { this.ranking = await this.call('ranking', { p_token: this.token }); } catch (e) { /* */ }
   }
 
-  async sendMarch(kind, target, h, w) {
+  async sendMarch(kind, target, u) {
     const s = this.c.s;
     const r = await this.call('send_march', () => ({
-      p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_h: h, p_w: w,
+      p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u,
     }));
-    s.troops[0] -= h; s.troops[1] -= w;
+    s.troops = s.troops.map((v, i) => v - (u[i] || 0));
     await this.sync();
     return r;
   }
@@ -166,10 +166,10 @@ export class Online {
   /// eigene Gebiete (für Produktionsbonus)
   ownedBonus() { return this.owned; }
   troopsAway() {
-    let h = 0, w = 0;
-    for (const m of this.marches) { h += m.h; w += m.w; }
-    if (this.world && this.me) for (const t of this.world.territories) if (t.owner === this.me.id) { h += t.gh || 0; w += t.gw || 0; }
-    return { h, w };
+    let a = zeroU();
+    for (const m of this.marches) a = uAdd(a, m.u || zeroU());
+    if (this.world && this.me) for (const t of this.world.territories) if (t.owner === this.me.id) a = uAdd(a, t.gu || zeroU());
+    return a;
   }
 
   update(dt) {

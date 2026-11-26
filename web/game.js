@@ -819,7 +819,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var MUSCHELN = 1;
   var WASSER = 2;
   var METALL = 3;
-  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14 };
+  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19 };
   var DEFS = [
     { name: "Gezeitenturm", short: "Herz der Stadt", desc: "Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt h\xF6her \xFCber das Wasser.", cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
     { name: "Treibholzsammler", short: "+Holz", desc: "Fischt angeschwemmtes Holz aus dem Wasser.", cost: [40, 0, 0, 0], prod: HOLZ, rate: 0.9, workers: 2, build: 6 },
@@ -830,19 +830,48 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { name: "Heilerh\xFCtte", short: "heilt Kranke", desc: "Kr\xE4uter und trockene Decken. Kranke werden deutlich schneller gesund.", cost: [140, 30, 0, 20], prod: -1, rate: 0, workers: 1, build: 6 },
     { name: "R\xE4ucherei", short: "\u2212Muschelverbrauch", desc: "R\xE4uchert Vorr\xE4te haltbar. Senkt den Muschelverbrauch um 8 % pro Stufe (max. 50 %).", cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 1, build: 6 },
     { name: "K\xFCche", short: "+6 % Produktion je Stufe", desc: "Warme Mahlzeiten aus dem gro\xDFen Kessel: Alle Siedler arbeiten besser (+6 % Produktion pro Stufe, max. 60 %).", cost: [120, 40, 0, 10], prod: -1, rate: 0, workers: 1, build: 7 },
-    { name: "Kaserne", short: "bildet Truppen aus", desc: "Bildet Harpuniere (Angriff) und Wachen (Verteidigung) aus. H\xF6here Stufe: schneller und gr\xF6\xDFere Ausbildungsschlange.", cost: [150, 60, 0, 30], prod: -1, rate: 0, workers: 2, build: 8 },
+    { name: "Kaserne", short: "Hauptquartier der Truppen", desc: "Ohne Kaserne keine Ausbildung. Jede Stufe: +10 Pl\xE4tze in der Ausbildungsschlange und schnellere Ausbildung. Die Krieger selbst lernen in ihren Ausbildungsst\xE4tten.", cost: [150, 60, 0, 30], prod: -1, rate: 0, workers: 2, build: 8 },
     { name: "Wachturm", short: "+12 % Verteidigung je Stufe", desc: "Sp\xE4her und Signalh\xF6rner: Deine Stadt verteidigt sich besser gegen \xDCberf\xE4lle (+12 % pro Stufe).", cost: [130, 0, 0, 40], prod: -1, rate: 0, workers: 1, build: 8 },
     { name: "Lager", short: "+1500 Lagerplatz je Stufe", desc: "Schuppen, Kisten und F\xE4sser: mehr Platz f\xFCr jeden Rohstoff (+1500 pro Stufe).", cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 0, build: 6 },
-    { name: "Festungsmauer", short: "Mauer mit Tor", desc: "Umschlie\xDFt dein ganzes Gel\xE4nde. Stufe 1\u20133 Holzpalisade, 4\u20137 Steinwall, 8\u201310 Festungswall. +15 % Verteidigung pro Stufe.", cost: [200, 0, 0, 40], prod: -1, rate: 0, workers: 0, build: 12 },
+    { name: "Festungsmauer", short: "Mauer mit Tor", desc: "Umschlie\xDFt dein ganzes Gel\xE4nde. Stufe 1\u20136 Holzpalisade, 7\u201313 Steinwall, 14\u201320 Festungswall. +15 % Verteidigung pro Stufe.", cost: [200, 0, 0, 40], prod: -1, rate: 0, workers: 0, build: 12 },
     { name: "Abwehrturm", short: "Turm auf der Mauer", desc: "Steinturm mit Harpunen-Schleuder auf der Festungsmauer. +40 Verteidigung pro Stufe.", cost: [160, 0, 0, 50], prod: -1, rate: 0, workers: 1, build: 10 },
-    { name: "Damm", short: "h\xE4lt Flut & Sturmflut ab", desc: "Erddamm ganz au\xDFen um die Warft, mit Sieltor. Solange das Wasser nicht \xFCber den Damm steigt, bleibt deine Stadt trocken. Jede Stufe macht ihn 40 cm h\xF6her.", cost: [240, 0, 0, 30], prod: -1, rate: 0, workers: 0, build: 12 }
+    { name: "Damm", short: "h\xE4lt Flut & Sturmflut ab", desc: "Erddamm ganz au\xDFen um die Warft, mit Sieltor. Solange das Wasser nicht \xFCber den Damm steigt, bleibt deine Stadt trocken. Jede Stufe macht ihn 25 cm h\xF6her.", cost: [240, 0, 0, 30], prod: -1, rate: 0, workers: 0, build: 12 },
+    { name: "Harpunierhof", short: "bildet Harpuniere aus", desc: "Schie\xDFstand mit Harpunen-St\xE4ndern. Schaltet Harpuniere frei; jede Stufe bildet sie 10 % schneller aus.", cost: [110, 30, 0, 15], prod: -1, rate: 0, workers: 1, build: 7 },
+    { name: "Wachstube", short: "bildet Schildwachen aus", desc: "Steinhaus mit Schilden und \xDCbungsplatz. Schaltet Schildwachen frei; jede Stufe bildet sie 10 % schneller aus.", cost: [100, 20, 0, 25], prod: -1, rate: 0, workers: 1, build: 7 },
+    { name: "Enterhalle", short: "bildet Enterer aus", desc: "Lange Halle mit Kletternetzen und Enterhaken. Schaltet Enterer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [160, 60, 0, 30], prod: -1, rate: 0, workers: 1, build: 9 },
+    { name: "Schleuderplatz", short: "bildet Schleuderer aus", desc: "Offener Platz mit Wurfschleuder. Schaltet Schleuderer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [180, 40, 0, 50], prod: -1, rate: 0, workers: 1, build: 9 },
+    { name: "Wattl\xE4uferh\xFCtte", short: "bildet Wattl\xE4ufer aus", desc: "H\xFCtte mit Wattstiefeln und Laufstegen. Schaltet Wattl\xE4ufer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [120, 50, 20, 0], prod: -1, rate: 0, workers: 1, build: 8 }
   ];
-  var damTopFor = (lvl) => lvl > 0 ? 3 + 0.4 * lvl : -99;
-  var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  var damTopFor = (lvl) => lvl > 0 ? 3 + 0.25 * lvl : -99;
+  var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19];
   var UNITS = [
-    { name: "Harpunier", att: 10, def: 5, cost: [25, 15, 0, 4], time: 6 },
-    { name: "Wache", att: 3, def: 12, cost: [20, 10, 0, 6], time: 5 }
+    { name: "Harpunier", ic: "\u{1F531}", att: 10, def: 5, carry: 30, cost: [25, 15, 0, 4], time: 6, b: 15, info: "Fernkampf. Stark gegen Enterer, schwach gegen Schildwachen." },
+    { name: "Schildwache", ic: "\u{1F6E1}\uFE0F", att: 3, def: 12, carry: 15, cost: [20, 10, 0, 6], time: 5, b: 16, info: "Verteidiger. Stark gegen Harpuniere, schwach gegen Schleuderer." },
+    { name: "Enterer", ic: "\u{1F5E1}\uFE0F", att: 14, def: 6, carry: 25, cost: [32, 20, 0, 8], time: 8, b: 17, info: "Nahkampf. Stark gegen Schleuderer und Wattl\xE4ufer, schwach gegen Harpuniere." },
+    { name: "Schleuderer", ic: "\u{1FAA8}", att: 9, def: 3, carry: 15, cost: [36, 10, 0, 12], time: 9, b: 18, info: "Belagerung: halbiert Mauern und T\xFCrme, stark gegen Schildwachen. Schwach gegen Enterer, langsam." },
+    { name: "Wattl\xE4ufer", ic: "\u{1F3C3}", att: 6, def: 5, carry: 60, cost: [20, 20, 10, 0], time: 5, b: 19, info: "Schnell (40 % k\xFCrzere Wege) und tr\xE4gt doppelt Beute. Schwach gegen Enterer." }
   ];
+  var NU = 5;
+  var STRONG = [[2], [0], [3, 4], [1], []];
+  var WEAK = [[1], [3], [0], [2], [2]];
+  var zeroU = () => [0, 0, 0, 0, 0];
+  var uSum = (u) => (u || []).reduce((a, b) => a + (b || 0), 0);
+  var uScale = (u, f) => u.map((v) => Math.round(v * f));
+  var uSub = (a, b) => a.map((v, i) => v - (b && b[i] || 0));
+  var uAdd = (a, b) => a.map((v, i) => v + (b && b[i] || 0));
+  function armyStr(u, other, att) {
+    const tot = Math.max(1, uSum(other));
+    let s = 0;
+    for (let i = 0; i < NU; i++) {
+      const strong = other ? STRONG[i].reduce((a, j) => a + (other[j] || 0), 0) / tot : 0;
+      const weak = other ? WEAK[i].reduce((a, j) => a + (other[j] || 0), 0) / tot : 0;
+      s += (u[i] || 0) * (att ? UNITS[i].att : UNITS[i].def) * (1 + 0.5 * strong - 0.4 * weak);
+    }
+    return s;
+  }
+  var speedFactor = (u) => u[3] > 0 ? 1.25 : uSum(u) > 0 && u[4] === uSum(u) ? 0.6 : 1;
+  var carryOf = (u) => u.reduce((a, v, i) => a + v * UNITS[i].carry, 0);
+  var troopStr = (u) => uSum(u) ? u.map((v, i) => v ? `${UNITS[i].ic}${v}` : "").filter(Boolean).join(" ") : "keine";
   var unitCost = (u, n) => UNITS[u].cost.map((c) => c * n);
   var UPKEEP = 4e-3;
   var TERR_NAMES = [
@@ -890,22 +919,21 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           base: Math.round(base),
           pirates: Math.round(base),
           owner: 0,
-          gh: 0,
-          gw: 0,
+          gu: [0, 0, 0, 0, 0],
           seed: Math.floor(R() * 1e6)
         });
       }
     return list;
   }
   var travelTime = (t) => 20 + Math.hypot(t.x, t.y) * 22;
-  var MAX_LEVEL = 10;
-  var costFor = (t, lvl) => DEFS[t].cost.map((c) => Math.round(c * Math.pow(1.65, lvl - 1)));
+  var MAX_LEVEL = 20;
+  var costFor = (t, lvl) => DEFS[t].cost.map((c) => Math.round(c * Math.pow(1.55, Math.min(lvl, 10) - 1) * Math.pow(1.3, Math.max(0, lvl - 10))));
   var buildTime = (t, lvl) => DEFS[t].build * Math.pow(lvl, 1.5);
   var rateAt = (t, lvl) => lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 * (lvl - 1));
-  var deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
+  var deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, Math.min(lvl, 10)) + 0.2 * Math.max(0, lvl - 10);
   var beaconWood = (lvl) => 0.04 + 0.04 * lvl;
   var DAMM = 52;
-  var _T = { L: 11, H: 5, K: 8, HE: 6, KA: 9, W: 10, R: 7, TH: 1, MU: 2, RE: 3, TA: 4 };
+  var _T = { L: 11, H: 5, K: 8, HE: 6, KA: 9, W: 10, R: 7, TH: 1, MU: 2, RE: 3, TA: 4, HP: 15, WS: 16, EN: 17, SL: 18, WL: 19 };
   var LAYOUT = [
     0,
     // Ring 1 (Stadtkern, Plätze 1–12, im Uhrzeigersinn ab Norden; 7 = Torseite)
@@ -914,9 +942,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     _T.MU,
     _T.RE,
     _T.H,
-    _T.HE,
+    _T.HP,
     _T.KA,
-    _T.W,
+    _T.WS,
     _T.H,
     _T.TA,
     _T.K,
@@ -927,13 +955,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     _T.RE,
     _T.H,
     _T.R,
-    _T.KA,
+    _T.EN,
     _T.W,
-    _T.H,
+    _T.SL,
     _T.TA,
     _T.L,
     _T.H,
-    _T.TH,
+    _T.HE,
     // Ring 3 (Warft, wächst mit)
     _T.TH,
     _T.MU,
@@ -943,7 +971,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     _T.L,
     _T.H,
     _T.W,
-    _T.KA,
+    _T.WL,
     _T.W,
     _T.H,
     _T.TA,
@@ -1024,27 +1052,20 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return 8 + (i - RING3);
     }
     get storage() {
-      return 1500 + 1500 * this.levels(T.LAGER);
+      return 1500 + 2500 * this.levels(T.LAGER);
     }
     get troopsAway() {
       if (this.online && this.online.active) return this.online.troopsAway();
-      let h2 = 0, w = 0;
-      for (const m of this.s.marches) {
-        h2 += m.h;
-        w += m.w;
-      }
-      for (const t of this.s.terr) {
-        h2 += t.gh;
-        w += t.gw;
-      }
-      return { h: h2, w };
+      let a = zeroU();
+      for (const m of this.s.marches) a = uAdd(a, m.u);
+      for (const t of this.s.terr) a = uAdd(a, t.gu);
+      return a;
     }
     get troopTotal() {
-      const a = this.troopsAway;
-      return this.s.troops[0] + this.s.troops[1] + a.h + a.w;
+      return uSum(this.s.troops) + uSum(this.troopsAway);
     }
     get defense() {
-      const base = this.s.troops[0] * UNITS[0].def + this.s.troops[1] * UNITS[1].def + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
+      const base = armyStr(this.s.troops, null, false) + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
       return Math.round(base * (1 + 0.12 * this.levels(T.WACHTURM) + 0.15 * this.levels(T.MAUER)));
     }
     get power() {
@@ -1346,6 +1367,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     trainBlocker(u, n) {
       if (this.levels(T.KASERNE) <= 0) return "Erst eine Kaserne bauen";
+      if (this.levels(UNITS[u].b) <= 0) return `Erst ${DEFS[UNITS[u].b].name} bauen`;
       if (this.queued() + n > this.trainSlots()) return `Schlange voll (max. ${this.trainSlots()})`;
       if (!this.canAfford(unitCost(u, n))) return "Zu wenig Rohstoffe";
       return null;
@@ -1353,64 +1375,53 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     startTrain(u, n) {
       if (this.trainBlocker(u, n)) return false;
       this.pay(unitCost(u, n));
-      const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1));
+      const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1)) / (1 + 0.1 * (this.levels(UNITS[u].b) - 1));
       this.s.train.push({ u, n, per, left: per });
       this.msg(`${n}\xD7 ${UNITS[u].name} in Ausbildung.`);
       return true;
     }
-    attackBlocker(id, h2, w) {
+    attackBlocker(id, u) {
       const t = this.s.terr[id];
       if (!t) return "Unbekanntes Ziel";
-      if (h2 + w <= 0) return "Keine Truppen ausgew\xE4hlt";
-      if (h2 > this.s.troops[0] || w > this.s.troops[1]) return "So viele Truppen hast du nicht zu Hause";
+      if (uSum(u) <= 0) return "Keine Truppen ausgew\xE4hlt";
+      if (u.some((v, i) => v > this.s.troops[i])) return "So viele Truppen hast du nicht zu Hause";
       if (this.s.marches.some((m) => m.target === id && m.phase === "out")) return "Dorthin ist schon ein Trupp unterwegs";
       return null;
     }
-    sendTroops(id, h2, w) {
-      if (this.attackBlocker(id, h2, w)) return false;
-      const t = this.s.terr[id], tt = travelTime(t);
-      this.s.troops[0] -= h2;
-      this.s.troops[1] -= w;
-      this.s.marches.push({ target: id, h: h2, w, left: tt, total: tt, phase: "out", kind: t.owner === 1 ? "reinforce" : "attack" });
+    sendTroops(id, u) {
+      if (this.attackBlocker(id, u)) return false;
+      const t = this.s.terr[id], tt = travelTime(t) * speedFactor(u);
+      this.s.troops = uSub(this.s.troops, u);
+      this.s.marches.push({ target: id, u: u.slice(), left: tt, total: tt, phase: "out", kind: t.owner === 1 ? "reinforce" : "attack" });
       this.msg(t.owner === 1 ? `Verst\xE4rkung nach ${t.name} unterwegs.` : `Angriff auf ${t.name} gestartet!`);
       return true;
     }
     withdraw(id) {
       const t = this.s.terr[id];
-      if (!t || t.owner !== 1 || t.gh + t.gw === 0) return false;
-      const tt = travelTime(t);
-      this.s.marches.push({ target: id, h: t.gh, w: t.gw, left: tt, total: tt, phase: "back", kind: "return" });
-      t.gh = 0;
-      t.gw = 0;
+      if (!t || t.owner !== 1 || uSum(t.gu) === 0) return false;
+      const tt = travelTime(t) * speedFactor(t.gu);
+      this.s.marches.push({ target: id, u: t.gu.slice(), left: tt, total: tt, phase: "back", kind: "return" });
+      t.gu = zeroU();
       this.msg(`Besatzung von ${t.name} kehrt heim.`);
       return true;
     }
-    winChance(id, h2, w) {
-      const t = this.s.terr[id];
-      const att = h2 * UNITS[0].att + w * UNITS[1].att;
-      if (att <= 0) return 0;
-      const r = att / Math.max(1, t.pirates);
-      return Math.max(0, Math.min(1, (r - 0.85) / 0.3));
-    }
     battle(m, t) {
-      const att = (m.h * UNITS[0].att + m.w * UNITS[1].att) * (0.85 + Math.random() * 0.3);
+      const att = armyStr(m.u, null, true) * (0.85 + Math.random() * 0.3);
       if (att > t.pirates) {
         const loss = Math.min(0.9, Math.pow(t.pirates / att, 1.3) * 0.6);
-        const lh = Math.round(m.h * loss), lw = Math.round(m.w * loss);
+        const lost = uScale(m.u, loss);
         t.owner = 1;
         t.pirates = 0;
-        t.gh += m.h - lh;
-        t.gw += m.w - lw;
-        this.report(`Sieg! ${t.name} erobert. Verluste: ${lh} Harpuniere, ${lw} Wachen. Bonus: +${t.pct} % ${RES[t.res]}.`, true);
+        t.gu = uAdd(t.gu, uSub(m.u, lost));
+        this.report(`Sieg! ${t.name} erobert. Verluste: ${troopStr(lost)}. Bonus: +${t.pct} % ${RES[t.res]}.`, true);
       } else {
-        const lh = Math.round(m.h * 0.8), lw = Math.round(m.w * 0.8);
+        const lost = uScale(m.u, 0.8), rest = uSub(m.u, lost);
         t.pirates = Math.max(Math.round(t.base * 0.3), Math.round(t.pirates - att * 0.5));
-        const rh = m.h - lh, rw = m.w - lw;
-        if (rh + rw > 0) {
-          const tt = travelTime(t);
-          this.s.marches.push({ target: t.id, h: rh, w: rw, left: tt, total: tt, phase: "back", kind: "return" });
+        if (uSum(rest) > 0) {
+          const tt = travelTime(t) * speedFactor(rest);
+          this.s.marches.push({ target: t.id, u: rest, left: tt, total: tt, phase: "back", kind: "return" });
         }
-        this.report(`Niederlage bei ${t.name}. Verluste: ${lh} Harpuniere, ${lw} Wachen. Die Piraten sind geschw\xE4cht.`, false);
+        this.report(`Niederlage bei ${t.name}. Verluste: ${troopStr(lost)}. Die Piraten sind geschw\xE4cht.`, false);
       }
     }
     military(dt, offline) {
@@ -1435,12 +1446,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         s.marches.splice(i, 1);
         const t = s.terr[m.target];
         if (m.phase === "back") {
-          s.troops[0] += m.h;
-          s.troops[1] += m.w;
-          this.msg(`${m.h + m.w} Soldaten sind heimgekehrt.`);
+          s.troops = uAdd(s.troops, m.u);
+          this.msg(`${uSum(m.u)} Krieger sind heimgekehrt.`);
         } else if (t.owner === 1) {
-          t.gh += m.h;
-          t.gw += m.w;
+          t.gu = uAdd(t.gu, m.u);
           this.msg(`Verst\xE4rkung in ${t.name} angekommen.`);
         } else this.battle(m, t);
       }
@@ -1453,17 +1462,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           s.counterTimer = 360 + Math.random() * 300;
           const t = owned[Math.floor(Math.random() * owned.length)];
           const str = t.base * (0.5 + Math.random() * 0.5);
-          const def = (t.gh * UNITS[0].def + t.gw * UNITS[1].def) * (0.85 + Math.random() * 0.3);
+          const def = armyStr(t.gu, null, false) * (0.85 + Math.random() * 0.3);
           if (def > str) {
-            const loss = Math.min(0.9, Math.pow(str / def, 1.3) * 0.5);
-            const lh = Math.round(t.gh * loss), lw = Math.round(t.gw * loss);
-            t.gh -= lh;
-            t.gw -= lw;
-            this.report(`Piraten griffen ${t.name} an und wurden zur\xFCckgeschlagen! Verluste: ${lh + lw}.`, true);
+            const lost = uScale(t.gu, Math.min(0.9, Math.pow(str / def, 1.3) * 0.5));
+            t.gu = uSub(t.gu, lost);
+            this.report(`Piraten griffen ${t.name} an und wurden zur\xFCckgeschlagen! Verluste: ${troopStr(lost)}.`, true);
           } else {
             t.owner = 0;
-            t.gh = 0;
-            t.gw = 0;
+            t.gu = zeroU();
             t.pirates = t.base;
             this.report(`${t.name} ist an die Piraten gefallen! Die Besatzung ist verloren.`, false);
           }
@@ -1479,15 +1485,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           const def = this.defense * (0.85 + Math.random() * 0.3);
           if (def > str) {
             const loss = Math.min(0.8, Math.pow(str / def, 1.3) * 0.5);
-            const lh = Math.round(s.troops[0] * loss), lw = Math.round(s.troops[1] * loss);
-            s.troops[0] -= lh;
-            s.troops[1] -= lw;
-            this.report(`Piraten\xFCberfall abgewehrt! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${lh + lw}.`, true);
+            const lost = uScale(s.troops, loss);
+            s.troops = uSub(s.troops, lost);
+            this.report(`Piraten\xFCberfall abgewehrt! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${troopStr(lost)}.`, true);
           } else {
             const lost = s.res.map((v) => Math.round(v * 0.2));
             lost.forEach((v, i) => s.res[i] -= v);
-            s.troops[0] = Math.round(s.troops[0] * 0.4);
-            s.troops[1] = Math.round(s.troops[1] * 0.4);
+            s.troops = uScale(s.troops, 0.4);
             this.report(`Piraten haben die Stadt gepl\xFCndert! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + " " + RES[i]).join(", ")}.`, false);
           }
         }
@@ -1528,7 +1532,18 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (!s.gath) s.gath = [];
       if (s.nodeTimer === void 0) s.nodeTimer = 2;
       if (s.nodeSeq === void 0) s.nodeSeq = 1;
-      if (!s.troops) s.troops = [0, 0];
+      if (!s.troops) s.troops = zeroU();
+      while (s.troops.length < NU) s.troops.push(0);
+      for (const m of s.marches || []) if (!m.u) {
+        m.u = [m.h || 0, m.w || 0, 0, 0, 0];
+        delete m.h;
+        delete m.w;
+      }
+      for (const t of s.terr || []) if (!t.gu) {
+        t.gu = [t.gh || 0, t.gw || 0, 0, 0, 0];
+        delete t.gh;
+        delete t.gw;
+      }
       if (!s.train) s.train = [];
       if (!s.marches) s.marches = [];
       if (!s.reports) s.reports = [];
@@ -1536,9 +1551,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.raidTimer === void 0) s.raidTimer = 480;
       if (s.counterTimer === void 0) s.counterTimer = 420;
       while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
-      if (!s.layoutV) {
+      if ((s.layoutV || 0) < 2) {
         this.relayout();
-        s.layoutV = 1;
+        s.layoutV = 2;
       }
       if (!s.nodes.length && !s.gath.length) {
         for (let k = 0; k < 4; k++) {
@@ -1736,7 +1751,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         sick: 0,
         beaconOn: true,
         plots,
-        layoutV: 1,
+        layoutV: 2,
         lastSave: Date.now(),
         dayTime: 0.3,
         days: 1,
@@ -1824,7 +1839,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     B.add("cylinder", [p[0], p[1] + 0.2, p[2]], [0.63, 0.03, 0.63], C.tar, { g: 0.4 });
   }
   function building(B, t, level) {
-    B.push([0, 0, 0], null, [1 + 0.07 * (level - 1), 1 + 0.07 * (level - 1), 1 + 0.07 * (level - 1)]);
+    const sc = 1 + 0.06 * Math.min(level - 1, 9) + 0.012 * Math.max(0, level - 10);
+    B.push([0, 0, 0], null, [sc, sc, sc]);
     switch (t) {
       case T.TREIBHOLZ:
         hut(B, [0.9, 0, -0.6], 3, 2.1, 2.6, C.wall, C.reed, 2);
@@ -1928,6 +1944,56 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         B.add("cylinder", [1.4, 1.4, 2.2], [0.5, 0.45, 0.5], C.reed);
         B.add("sphere", [1.4, 2.1, 2.2], [0.4, 0.4, 0.4], C.reed);
         break;
+      case T.HARPHOF: {
+        hut(B, [0, 0, -1.2], 4.2, 2.3, 2.6, [0.45, 0.36, 0.26], C.reed, 2);
+        for (let k = 0; k < 8; k++) {
+          B.add("cube", [-2.4 + k * 0.6, 1.1, 1.3], [0.06, 2.2, 0.06], [0.55, 0.45, 0.3], { rot: [10, 0, 0] });
+          B.add("cone", [-2.4 + k * 0.6, 2.25, 1.5], [0.14, 0.4, 0.14], [0.72, 0.74, 0.78], { g: 0.8 });
+        }
+        B.add("cube", [0, 0.8, 1.2], [5, 0.1, 0.1], C.tar);
+        B.add("cylinder", [2.6, 1.2, 2.4], [0.7, 0.05, 0.7], [0.85, 0.2, 0.15], { rot: [90, 0, 0] });
+        B.add("cylinder", [2.6, 1.2, 2.42], [0.35, 0.06, 0.35], C.white, { rot: [90, 0, 0] });
+        B.add("cylinder", [2.6, 0.6, 2.35], [0.06, 0.6, 0.06], C.tar);
+        break;
+      }
+      case T.WACHSTUBE: {
+        hut(B, [0, 0, -0.8], 4.6, 2.6, 3, [0.5, 0.5, 0.5], C.roofGrey, 2);
+        for (let k = 0; k < 4; k++) {
+          B.add("cylinder", [-1.8 + k * 1.2, 1.3, 0.75], [0.8, 0.06, 0.8], k % 2 ? [0.2, 0.35, 0.6] : [0.7, 0.2, 0.15], { rot: [90, 0, 0], g: 0.4 });
+          B.add("sphere", [-1.8 + k * 1.2, 1.3, 0.8], [0.15, 0.15, 0.1], [0.85, 0.75, 0.4], { g: 0.7 });
+        }
+        B.add("cube", [0, 0.05, 2.2], [4.6, 0.1, 1.6], [0.6, 0.55, 0.45]);
+        break;
+      }
+      case T.ENTERHALLE: {
+        hut(B, [0, 0, -1], 6, 2.4, 2.6, [0.38, 0.3, 0.24], [0.35, 0.25, 0.2], 3);
+        for (let k = 0; k < 3; k++) B.add("cube", [-2 + k * 2, 1.6, 1.4], [0.12, 3.2, 0.12], C.tar);
+        B.add("cube", [0, 3.15, 1.4], [4.4, 0.12, 0.12], C.tar);
+        for (let k = 0; k < 7; k++) B.add("cube", [-1.8 + k * 0.6, 1.8, 1.45], [0.03, 2.6, 0.03], [0.75, 0.65, 0.45]);
+        for (let k = 0; k < 4; k++) B.add("cube", [0, 0.8 + k * 0.7, 1.45], [4, 0.03, 0.03], [0.75, 0.65, 0.45]);
+        B.add("cube", [2.6, 0.5, 2.4], [0.5, 1, 0.08], [0.6, 0.62, 0.66], { g: 0.7 });
+        break;
+      }
+      case T.SCHLEUDER: {
+        B.add("cube", [0, 0.1, 0], [5.4, 0.2, 5.4], [0.55, 0.48, 0.36]);
+        B.add("cube", [0, 0.6, 0], [2.4, 0.8, 1.6], [0.45, 0.34, 0.22]);
+        B.add("cube", [-0.9, 1.6, 0], [0.2, 1.6, 0.2], C.tar);
+        B.add("cube", [0.9, 1.6, 0], [0.2, 1.6, 0.2], C.tar);
+        B.add("cube", [0, 2.3, 0], [2, 0.18, 0.18], C.tar);
+        B.add("cube", [0, 2.6, 0.6], [0.18, 3.4, 0.18], [0.6, 0.48, 0.3], { rot: [-35, 0, 0] });
+        B.add("sphere", [0, 3.9, 1.7], [0.45, 0.3, 0.45], [0.35, 0.3, 0.25]);
+        for (let k = 0; k < 6; k++) B.add("sphere", [1.8 + k % 3 * 0.45, 0.45, -1.6 + Math.floor(k / 3) * 0.45], [0.35, 0.35, 0.35], [0.5, 0.5, 0.48]);
+        hut(B, [-1.6, 0, -1.8], 2, 1.8, 1.6, C.wall, C.reed, 1, false);
+        break;
+      }
+      case T.WATTHUETTE: {
+        hut(B, [0.4, 0, -0.9], 3.6, 2.1, 2.6, C.wallBlue, C.reed, 2);
+        for (let k = 0; k < 5; k++) B.add("cube", [-2.6 + k * 0.3, 0.45, 1.5], [0.18, 0.9, 0.3], [0.2, 0.25, 0.2]);
+        B.add("cube", [0, 0.15, 2.3], [5, 0.12, 0.8], C.plank);
+        B.add("cylinder", [2.5, 2, 1.9], [0.07, 2, 0.07], C.tar);
+        B.add("cube", [2.95, 3.5, 1.9], [0.9, 0.5, 0.03], [0.95, 0.75, 0.2]);
+        break;
+      }
       case T.WACHTURM: {
         const H = 7;
         for (let i = 0; i < 4; i++) {
@@ -1967,8 +2033,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     B.pop();
   }
   function defenseTower(B, level) {
-    const stone = level >= 4 ? [0.5, 0.5, 0.52] : [0.56, 0.5, 0.44];
-    const H = 7 + 0.3 * level;
+    const stone = level >= 7 ? [0.5, 0.5, 0.52] : [0.56, 0.5, 0.44];
+    const H = 7 + 0.2 * level;
     B.add("cylinder", [0, -0.9 + H / 2, 0], [3.4, H / 2, 3.4], stone, { g: 0.15 });
     B.add("cylinder", [0, -0.9 + H + 0.2, 0], [3.9, 0.2, 3.9], [0.36, 0.36, 0.38]);
     for (let i = 0; i < 8; i++) {
@@ -1986,9 +2052,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   function wall(B, level, R, base) {
     const seg = Math.ceil(2 * Math.PI * R / 3);
     const gateHalf = 5 / R;
-    const kind = level <= 0 ? 0 : level <= 3 ? 1 : level <= 7 ? 2 : 3;
+    const kind = level <= 0 ? 0 : level <= 6 ? 1 : level <= 13 ? 2 : 3;
     const stone = kind === 3 ? [0.42, 0.42, 0.45] : [0.55, 0.53, 0.5];
-    const H = kind === 1 ? 3 + 0.3 * level : kind === 2 ? 4 + 0.3 * (level - 4) : 6 + 0.3 * (level - 8);
+    const H = kind === 1 ? 3 + 0.2 * level : kind === 2 ? 4 + 0.2 * (level - 7) : 6 + 0.2 * (level - 14);
     for (let k = 0; k < seg; k++) {
       const a = k / seg * Math.PI * 2;
       let d = Math.abs(a - Math.PI);
@@ -2051,15 +2117,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   function basket(B) {
     B.add("cylinder", [0, 1.05, -0.32], [0.42, 0.25, 0.42], [0.72, 0.6, 0.35]);
   }
-  var TH = [4.5, 4.5, 5.5, 8, 9.5, 11, 13, 14.5, 16, 20, 23];
-  var towerHeight = (level) => TH[Math.max(1, Math.min(10, level))];
-  var towerEra = (level) => level <= 2 ? 0 : level <= 5 ? 1 : level <= 8 ? 2 : 3;
+  var TH = [4.5, 4.5, 5, 5.5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21.5, 23, 24.5, 26, 28];
+  var towerHeight = (level) => TH[Math.max(1, Math.min(20, level))];
+  var towerEra = (level) => level <= 3 ? 0 : level <= 8 ? 1 : level <= 14 ? 2 : 3;
   var lampHeight = (level) => towerHeight(level) + (towerEra(level) === 0 ? 0.7 : towerEra(level) === 3 ? 2 : 1.2);
   function tower(B, level) {
     const H = towerHeight(level), era = towerEra(level);
     const wood = [0.55, 0.42, 0.28], stone = [0.5, 0.49, 0.46], stoneD = [0.38, 0.37, 0.35], concrete = [0.86, 0.87, 0.88], steel = [0.45, 0.48, 0.52];
     if (era === 0) {
-      const r = 1.1 - 0.1 * (level - 1);
+      const r = 1.1 - 0.07 * (level - 1);
       for (let i = 0; i < 4; i++) {
         const sx = i & 1 ? 1 : -1, sz = i & 2 ? 1 : -1;
         B.add("cube", [sx * r, H / 2, sz * r], [0.22, H, 0.22], wood, { rot: [sz * -4, 0, sx * 4] });
@@ -2098,7 +2164,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return;
     }
     if (era === 2) {
-      const bands = 6 + (level - 6);
+      const bands = 6 + (level - 9);
       for (let i = 0; i < bands; i++) {
         const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
         B.add("cylinder", [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
@@ -2120,7 +2186,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     B.add("cylinder", [0, 0.6, 0], [5.2, 0.6, 5.2], concrete, { g: 0.3 });
     B.add(FR55, [0, 1.2, 0], [4.4, H - 1.2, 4.4], concrete, { g: 0.5 });
-    const rings = level === 10 ? 3 : 2;
+    const rings = level >= 18 ? 3 : 2;
     for (let i = 1; i <= rings; i++) {
       const y = 1.2 + (H - 1.2) * i / (rings + 1), rad = 2.2 - 1 * ((y - 1.2) / (H - 1.2));
       B.add("cylinder", [0, y, 0], [rad * 2 + 0.15, 0.25, rad * 2 + 0.15], C.red, { g: 0.4 });
@@ -2172,20 +2238,20 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (Math.abs(a - Math.PI) < gap) continue;
       const x = Math.sin(a), z = Math.cos(a), yaw = a / (Math.PI / 180);
       const lay = (y0, h2, w2, off, col) => B.add("cube", [x * (R + off), y0 + h2 / 2, z * (R + off)], [seg, h2, w2], col, { rot: [0, yaw, 0], g: 0.08 });
-      lay(base, H * 0.4, 9, 0, level >= 4 ? stone : earth);
-      lay(base + H * 0.4, H * 0.35, 6.5, 0.3, level >= 4 ? stone : earth);
+      lay(base, H * 0.4, 9, 0, level >= 7 ? stone : earth);
+      lay(base + H * 0.4, H * 0.35, 6.5, 0.3, level >= 7 ? stone : earth);
       lay(base + H * 0.75, H * 0.25, 4, 0.3, grass);
-      if (level >= 4) lay(base + H * 0.4, H * 0.35, 1, -2.8, grass);
-      if (level >= 8) lay(top, 0.9, 0.6, 2, concrete);
+      if (level >= 7) lay(base + H * 0.4, H * 0.35, 1, -2.8, grass);
+      if (level >= 14) lay(top, 0.9, 0.6, 2, concrete);
     }
     const zc = -R;
     for (const s of [-1, 1]) {
       const xs = s * Math.sin(gap) * R;
-      B.add("cube", [xs, base + (H + 1.5) / 2, zc], [1.6, H + 1.5, 7], level >= 4 ? concrete : C.plank, { g: 0.2 });
+      B.add("cube", [xs, base + (H + 1.5) / 2, zc], [1.6, H + 1.5, 7], level >= 7 ? concrete : C.plank, { g: 0.2 });
     }
     const w = Math.sin(gap) * R * 2;
-    B.add("cube", [0, top + 1.2, zc], [w + 1.6, 0.6, 1.4], level >= 4 ? concrete : C.plank);
-    B.add("cube", [0, top - 0.6, zc + 2.6], [w, H * 0.5, 0.35], level >= 8 ? [0.4, 0.44, 0.5] : C.tar, { g: 0.5 });
+    B.add("cube", [0, top + 1.2, zc], [w + 1.6, 0.6, 1.4], level >= 7 ? concrete : C.plank);
+    B.add("cube", [0, top - 0.6, zc + 2.6], [w, H * 0.5, 0.35], level >= 14 ? [0.4, 0.44, 0.5] : C.tar, { g: 0.5 });
     B.add("cube", [0, base + 0.2, zc], [w, 0.4, 7], earth);
   }
   function scaffold(B, half, newBuild) {
@@ -3190,7 +3256,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     return (v < 0 ? "\u2212" : "+") + s;
   };
   var RES_IC = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
-  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}"];
+  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}", "\u{1F531}", "\u{1F6E1}\uFE0F", "\u{1F5E1}\uFE0F", "\u{1FAA8}", "\u{1F3C3}"];
   var NODE_NAME = ["Treibholz", "Muschelbank", "S\xFC\xDFwassert\xFCmpel", "Wrackteile"];
   var setHTML = (el, html) => {
     if (el._h !== html) {
@@ -3214,7 +3280,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.panelKey = null;
       this.view = "city";
       this.mapSel = null;
-      this.form = [0, 0];
+      this.form = zeroU();
       this.showReports = false;
       this.mode = null;
       this.busy = false;
@@ -3317,7 +3383,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         md = null;
         const r = mc.getBoundingClientRect();
         this.mapSel = this.sea.pick(e.clientX - r.left, e.clientY - r.top);
-        this.form = [0, 0];
+        this.form = zeroU();
         this.showReports = false;
         this.panelKey = null;
         this.confirm = null;
@@ -3391,7 +3457,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     setView(v) {
       this.view = v;
       this.mapSel = null;
-      this.form = [0, 0];
+      this.form = zeroU();
       this.showReports = false;
       this.mapEl.style.display = v === "map" ? "" : "none";
       this.labels.style.display = v === "map" ? "none" : "";
@@ -3515,21 +3581,21 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const u = +ds.u;
         this.form[u] = Math.max(0, Math.min(c.s.troops[u], this.form[u] + +ds.d));
       } else if (a === "fall") {
-        this.form = [c.s.troops[0], c.s.troops[1]];
+        this.form = c.s.troops.slice(0, 5);
       } else if (a === "f0") {
-        this.form = [0, 0];
+        this.form = zeroU();
       } else if (a === "send") {
         const sel = this.mapSel, f = this.form.slice();
         if (!sel) return;
         if (this.sea.isOnline) this.run(async () => {
-          await o.sendMarch(sel.type, sel.id, f[0], f[1]);
-          this.form = [0, 0];
+          await o.sendMarch(sel.type, sel.id, f);
+          this.form = zeroU();
           this.mapSel = null;
           c.msg(sel.type === "player" ? "Angriff gestartet!" : "Trupp ist unterwegs.");
           await o.loadWorld();
         });
-        else if (c.sendTroops(sel.id, f[0], f[1])) {
-          this.form = [0, 0];
+        else if (c.sendTroops(sel.id, f)) {
+          this.form = zeroU();
           this.mapSel = null;
         }
       } else if (a === "withdraw") {
@@ -3650,7 +3716,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const fb = c.freeboard, fbCol = fb >= 0.5 ? "#8ef0a0" : fb >= 0 ? "#ffd27a" : "#ff6a6a";
       const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? "Ebbe" : c.rising ? "Flut \u2191" : "Flut \u2193";
       setHTML(this.tl, `${tide} \xB7 <b style="color:${fbCol}">${fb >= 0 ? "+" : ""}${fb.toFixed(1)} m</b>${c.damHolds ? ' \xB7 <span style="color:#8ef0a0">\u{1F30A} Damm h\xE4lt</span>' : ""}${c.stormWarning ? ' \xB7 <span style="color:#ffc060">Sturm naht</span>' : ""}${c.raidIn !== null && c.raidIn < 30 ? ' \xB7 <b style="color:#ff6060">Piraten!</b>' : ""}`);
-      let st = `\u{1F465} <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` \u{1F912}${s.sick}` : ""} \xB7 \u2694 <b>${s.troops[0] + s.troops[1]}</b> \xB7 ${clock(s.dayTime)}`;
+      let st = `\u{1F465} <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` \u{1F912}${s.sick}` : ""} \xB7 \u2694 <b>${uSum(s.troops)}</b> \xB7 ${clock(s.dayTime)}`;
       if (this.o.active) st += this.o.incoming ? ` \xB7 <b style="color:#ff6060">\u26A0 Angriff!</b>` : this.o.status === "online" ? ' <span style="color:#8ef0a0">\u25CF</span>' : ' <span style="color:#ffb070">\u25CF</span>';
       setHTML(this.st, st);
       const now = c.time;
@@ -3843,7 +3909,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         out += `<div class="bline"><div class="ri" style="flex:1">\u2192 Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} \xB7 \u23F1 ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div><button class="btn" data-a="up" ${blk ? "disabled" : ""}><b>Ausbauen</b></button></div>`;
       } else out += '<div class="sm">Maximale Stufe erreicht.</div>';
       const extra = [];
-      if (L > 0 && p.type === T.KASERNE) extra.push('<button class="btn ghost" data-a="troops">\u2694\uFE0F Truppen ausbilden</button>');
+      if (L > 0 && (p.type === T.KASERNE || p.type >= T.HARPHOF)) extra.push('<button class="btn ghost" data-a="troops">\u2694\uFE0F Truppen ausbilden</button>');
       if (i !== 0) extra.push(`<button class="btn ${this.confirm === "demo" ? "danger" : "ghost"}" data-a="demo" style="padding:7px 10px;font-size:12px">${this.confirm === "demo" ? "<b>Wirklich abrei\xDFen?</b>" : "Abrei\xDFen"}</button>`);
       return out + (extra.length ? `<div class="btns" style="margin-top:8px">${extra.join("")}</div>` : "");
     }
@@ -3862,17 +3928,19 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     barracksHtml() {
       const c = this.c, s = c.s;
-      let out = `<div class="sub2">Truppen zu Hause: <b>${s.troops[0]}</b> Harpuniere \xB7 <b>${s.troops[1]}</b> Wachen</div>`;
+      let out = `<div class="sub2">Zu Hause: ${troopStr(s.troops)}</div>`;
       if (s.train.length) {
         const q = s.train[0];
         out += `<div class="sm">In Ausbildung: ${s.train.map((t) => `${t.n}\xD7 ${UNITS[t.u].name}`).join(", ")} \xB7 n\xE4chster in ${fmtTime(q.left)} (${c.queued()}/${c.trainSlots()})</div>`;
       } else out += `<div class="sm">Ausbildungsschlange leer (max. ${c.trainSlots()})</div>`;
       UNITS.forEach((u, k) => {
-        const b1 = c.trainBlocker(k, 1), b5 = c.trainBlocker(k, 5);
-        out += `<div class="row"><div class="ri"><div><b>${u.name}</b> <span class="sh">Angriff ${u.att} \xB7 Verteidigung ${u.def}</span></div>
-        <div class="sm">je ${this.costStr(unitCost(k, 1))}</div></div>
-        <button class="btn sm2" data-a="train" data-u="${k}" data-n="1" ${b1 ? "disabled" : ""}>+1</button>
-        <button class="btn sm2" data-a="train" data-u="${k}" data-n="5" ${b5 ? "disabled" : ""}>+5</button></div>`;
+        const lv = c.levels(u.b), b1 = c.trainBlocker(k, 1), b5 = c.trainBlocker(k, 5), b10 = c.trainBlocker(k, 10);
+        out += `<div class="row"><div class="ri"><div><b>${u.ic} ${u.name}</b> <span class="sh">\u2694${u.att} \u{1F6E1}${u.def} \u{1F392}${u.carry}</span> <span class="sh">\xB7 ${s.troops[k]} da</span></div>
+        <div class="sm">${u.info}</div>
+        ${lv > 0 ? `<div class="sm">je ${this.costStr(unitCost(k, 1))}</div>` : `<div class="warn">Braucht ${DEFS[u.b].name} (${B_IC[u.b]})</div>`}</div>
+        ${lv > 0 ? `<button class="btn sm2" data-a="train" data-u="${k}" data-n="1" ${b1 ? "disabled" : ""}>+1</button>
+        <button class="btn sm2" data-a="train" data-u="${k}" data-n="5" ${b5 ? "disabled" : ""}>+5</button>
+        <button class="btn sm2" data-a="train" data-u="${k}" data-n="10" ${b10 ? "disabled" : ""}>+10</button>` : ""}</div>`;
       });
       return out;
     }
@@ -3891,6 +3959,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return [`Alle Produktion <b>+${Math.min(60, 6 * L)} %</b>`, `Arbeiter: ${d.workers * L}`];
         case T.KASERNE:
           return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller \xB7 Schlange bis ${10 * L}`];
+        case T.HARPHOF:
+        case T.WACHSTUBE:
+        case T.ENTERHALLE:
+        case T.SCHLEUDER:
+        case T.WATTHUETTE: {
+          const k = UNITS.findIndex((u2) => u2.b === t), u = UNITS[k];
+          return [`${u.ic} <b>${u.name}</b>: ${u.info}`, `Ausbildung ${10 * (L - 1)} % schneller \xB7 zu Hause: ${c.s.troops[k]}`];
+        }
         case T.WACHTURM:
           return [`Verteidigung der Stadt <b>+${12 * L} %</b>`, `Aktuelle Verteidigung: <b>${c.defense}</b>`, c.raidIn !== null ? `N\xE4chster Piraten\xFCberfall in etwa ${fmtTime(c.raidIn)}` : "Piraten greifen ab Tag 2 an"];
         case T.LAGER:
@@ -3898,7 +3974,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         case T.DAMM:
           return [`Sch\xFCtzt bis Wasserstand <b>${damTopFor(L).toFixed(1)} m</b> (n\xE4chste Stufe ${damTopFor(L + 1).toFixed(1)} m)`, `Jetzt: Wasser ${c.water.toFixed(1)} m \xB7 ${c.damHolds ? '<b style="color:#8ef0a0">Damm h\xE4lt die Flut ab</b>' : c.water > c.damTop ? '<b style="color:#ff6a6a">Wasser l\xE4uft \xFCber den Damm!</b>' : "Stadt liegt trocken"}`];
         case T.MAUER:
-          return [`${L <= 3 ? "Holzpalisade" : L <= 7 ? "Steinwall" : "Festungswall"} \xB7 Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Gel\xE4nderadius: ${Math.round(c.areaRadius)} m`];
+          return [`${L <= 6 ? "Holzpalisade" : L <= 13 ? "Steinwall" : "Festungswall"} \xB7 Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Gel\xE4nderadius: ${Math.round(c.areaRadius)} m`];
         case T.ABWEHR:
           return [`Verteidigung <b>+${40 * L}</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`];
         default:
@@ -3913,10 +3989,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const s = this.c.s, f = this.form;
       let out = "";
       UNITS.forEach((u, k) => {
-        out += `<div class="row"><div class="ri"><b>${u.name}</b> <span class="sh">${f[k]} / ${s.troops[k]}</span></div>
+        if (!s.troops[k] && !f[k]) return;
+        out += `<div class="row"><div class="ri"><b>${u.ic} ${u.name}</b> <span class="sh">${f[k]} / ${s.troops[k]}</span></div>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="-5">\u22125</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="-1">\u22121</button>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="1">+1</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="5">+5</button></div>`;
       });
+      if (!uSum(s.troops) && !uSum(f)) out += '<div class="sm">Keine Krieger zu Hause. Bilde sie unter \u2694\uFE0F Truppen aus.</div>';
+      else if (uSum(f)) out += `<div class="sm">Trupp: ${troopStr(f)} \xB7 Beute bis ${carryOf(f)} \xB7 Tempo ${speedFactor(f) < 1 ? "schnell \u{1F3C3}" : speedFactor(f) > 1 ? "langsam \u{1FAA8}" : "normal"}</div>`;
       if (extra) out += extra;
       if (blk && blk !== "Keine Truppen ausgew\xE4hlt") out += `<div class="warn">${blk}</div>`;
       out += `<div class="btns"><button class="btn ghost" data-a="fall">Alle</button><button class="btn ghost" data-a="f0">Keine</button>
@@ -3929,8 +4008,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return `<div class="sm">Angriffskraft: <b>${att}</b> gegen ~${Math.round(def)} \xB7 Siegchance: <b style="color:${ch >= 70 ? "#8ef0a0" : ch >= 30 ? "#ffd27a" : "#ff7a7a"}">${ch} %</b></div>`;
     }
     homeTroops(c, s, away) {
-      return `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere \xB7 <b>${s.troops[1]}</b> Wachen</div>
-       <div class="inf">Unterwegs/Besatzung: <b>${away.h}</b> \xB7 <b>${away.w}</b></div>`;
+      return `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div>
+       <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
     }
     mapHtml() {
       const c = this.c, s = c.s, away = c.troopsAway, o = this.o;
@@ -3939,7 +4018,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const tname = (m) => m.target_player ? (o.world.players.find((p) => p.id === m.target_player) || {}).name || "Stadt" : (o.world.territories.find((t) => t.id === m.target_terr) || {}).name || "Gebiet";
         const marches2 = o.marches.map((m) => {
           const left = m.status === "out" ? Date.parse(m.arrive) - now : Date.parse(m.back_at) - now;
-          return `<div class="sm">\u26F5 ${m.h + m.w} Soldaten \u2192 ${tname(m)} (${m.status === "back" ? "Heimweg" : m.kind === "player" ? "Angriff auf Stadt" : "Gebiet"}) \xB7 ${fmtTime(Math.max(0, left / 1e3))}</div>`;
+          return `<div class="sm">\u26F5 ${uSum(m.u || zeroU())} Krieger \u2192 ${tname(m)} (${m.status === "back" ? "Heimweg" : m.kind === "player" ? "Angriff auf Stadt" : "Gebiet"}) \xB7 ${fmtTime(Math.max(0, left / 1e3))}</div>`;
         }).join("");
         return this.head("Seekarte (online)") + this.homeTroops(c, s, away) + `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches2}
          <div class="sm">Ziehen zum Verschieben. Tippe auf Inseln oder fremde St\xE4dte (\u{1F3F0}). Gr\xFCn = deins, blau = Verb\xFCndete, orange = Gegner.</div>
@@ -3947,23 +4026,23 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
       if (o.active) return this.head("Seekarte") + '<div class="inf">Lade Weltkarte \u2026</div>' + (o.error ? `<div class="warn">${o.error}</div>` : "");
       const owned = s.terr.filter((t) => t.owner === 1).length;
-      const marches = s.marches.map((m) => `<div class="sm">\u26F5 ${m.h + m.w} Soldaten \u2192 ${s.terr[m.target].name} (${m.phase === "back" ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rkung"}) \xB7 ${fmtTime(m.left)}</div>`).join("");
+      const marches = s.marches.map((m) => `<div class="sm">\u26F5 ${uSum(m.u || zeroU())} Krieger \u2192 ${s.terr[m.target].name} (${m.phase === "back" ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rkung"}) \xB7 ${fmtTime(m.left)}</div>`).join("");
       return this.head("Seekarte (offline)") + this.homeTroops(c, s, away) + `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
        <div class="sm">Offline k\xE4mpfst du gegen Piraten. F\xFCr Mitspieler und Allianzen: Men\xFC \u2192 Online-Konto.</div>
        <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${s.reports.length})</button></div>`;
     }
     terrHtml() {
-      const c = this.c, s = c.s, o = this.o, f = this.form, att = f[0] * UNITS[0].att + f[1] * UNITS[1].att;
+      const c = this.c, s = c.s, o = this.o, f = this.form, att = Math.round(armyStr(f, null, true));
       if (this.sea.isOnline) {
         const t2 = o.world.territories.find((x) => x.id === this.mapSel.id);
         if (!t2) return this.head("Gebiet") + '<div class="sm">Nicht gefunden.</div>';
         const me = o.me, mine = t2.owner === me.id, ally = !mine && t2.owner && me.alliance_id && t2.owner_alliance === me.alliance_id;
-        const dist = Math.hypot(t2.x - me.x, t2.y - me.y), tt2 = 20 + dist * 22;
+        const dist = Math.hypot(t2.x - me.x, t2.y - me.y), tt2 = (20 + dist * 22) * speedFactor(f);
         let out2 = this.head(t2.name) + `<div class="desc">${t2.kind} \xB7 Bonus <b>+${t2.pct} % ${RES[t2.res]}</b> \xB7 Fahrt ${fmtTime(tt2)}</div>`;
         if (mine) {
-          out2 += `<div class="inf">\u{1F6A9} Dein Gebiet. Besatzung: <b>${t2.gh || 0}</b> Harpuniere \xB7 <b>${t2.gw || 0}</b> Wachen</div><div class="sm">Andere Spieler k\xF6nnen es dir abnehmen \u2013 Wachen verteidigen am besten.</div>`;
+          out2 += `<div class="inf">\u{1F6A9} Dein Gebiet. Besatzung: ${troopStr(t2.gu || zeroU())}</div><div class="sm">Andere Spieler k\xF6nnen es dir abnehmen \u2013 Schildwachen verteidigen am besten, Schleuderer kaum.</div>`;
           out2 += `<div class="sub2">Verst\xE4rkung schicken</div>` + this.troopForm("Verst\xE4rken", false, this.busy ? "Bitte warten \u2026" : null);
-          if ((t2.gh || 0) + (t2.gw || 0) > 0) out2 += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+          if (uSum(t2.gu || zeroU()) > 0) out2 += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
           return out2;
         }
         if (ally) return out2 + `<div class="inf">\u{1F6A9} Geh\xF6rt deinem Verb\xFCndeten <b>${t2.owner_name}</b>.</div>`;
@@ -3971,25 +4050,25 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         out2 += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Angreifen!", true, null, this.attackInfo(att, t2.owner ? null : t2.strength));
         return out2;
       }
-      const t = s.terr[this.mapSel.id], tt = travelTime(t);
+      const t = s.terr[this.mapSel.id], tt = travelTime(t) * speedFactor(f);
       let out = this.head(t.name) + `<div class="desc">${t.kind} \xB7 Ring ${t.ring} \xB7 Bonus <b>+${t.pct} % ${RES[t.res]}</b> \xB7 Fahrt ${fmtTime(tt)}</div>`;
-      out += t.owner === 1 ? `<div class="inf">\u{1F6A9} Dein Gebiet. Besatzung: <b>${t.gh}</b> Harpuniere \xB7 <b>${t.gw}</b> Wachen</div>
-        <div class="sm">Piraten versuchen ab und zu, Gebiete zur\xFCckzuerobern. Wachen verteidigen besonders gut.</div>` : `<div class="inf">\u2620 Piraten, St\xE4rke etwa <b>${Math.round(t.pirates)}</b></div>`;
+      out += t.owner === 1 ? `<div class="inf">\u{1F6A9} Dein Gebiet. Besatzung: ${troopStr(t.gu)}</div>
+        <div class="sm">Piraten versuchen ab und zu, Gebiete zur\xFCckzuerobern. Schildwachen verteidigen besonders gut.</div>` : `<div class="inf">\u2620 Piraten, St\xE4rke etwa <b>${Math.round(t.pirates)}</b></div>`;
       out += `<div class="sub2">${t.owner === 1 ? "Verst\xE4rkung schicken" : "Angriffstrupp"}</div>`;
-      out += this.troopForm(t.owner === 1 ? "Verst\xE4rken" : "Angreifen!", t.owner !== 1, c.attackBlocker(t.id, f[0], f[1]), t.owner === 1 ? "" : this.attackInfo(att, t.pirates));
-      if (t.owner === 1 && t.gh + t.gw > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+      out += this.troopForm(t.owner === 1 ? "Verst\xE4rken" : "Angreifen!", t.owner !== 1, c.attackBlocker(t.id, f), t.owner === 1 ? "" : this.attackInfo(att, t.pirates));
+      if (t.owner === 1 && uSum(t.gu) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
       return out;
     }
     playerHtml() {
-      const o = this.o, f = this.form, att = f[0] * UNITS[0].att + f[1] * UNITS[1].att;
+      const o = this.o, f = this.form, att = Math.round(armyStr(f, null, true));
       const p = o.world.players.find((x) => x.id === this.mapSel.id);
       if (!p) return this.head("Stadt") + '<div class="sm">Nicht gefunden.</div>';
       const me = o.me, ally = me.alliance_id && p.alliance_id === me.alliance_id;
-      const dist = Math.hypot(p.x - me.x, p.y - me.y), tt = 20 + dist * 22;
+      const dist = Math.hypot(p.x - me.x, p.y - me.y), tt = (20 + dist * 22) * speedFactor(f);
       let out = this.head(`\u{1F3F0} ${p.tag ? "[" + p.tag + "] " : ""}${p.name}`) + `<div class="desc">Macht \u2694 <b>${p.power}</b> \xB7 Gezeitenturm Stufe ${p.tower} \xB7 ${p.online ? '<span style="color:#8ef0a0">online</span>' : "offline"} \xB7 Fahrt ${fmtTime(tt)}</div>`;
       if (ally) return out + '<div class="inf">Verb\xFCndeter \u2013 gemeinsam seid ihr st\xE4rker!</div>';
       if (p.shield) return out + '<div class="inf">\u{1F6E1} Diese Stadt steht unter Schutz (neue Spieler 12 Std., nach einer Pl\xFCnderung 30 Min.).</div>';
-      out += '<div class="sm">Siegst du, pl\xFCndern deine Truppen bis zu 20 % der Vorr\xE4te (Harpuniere tragen 30, Wachen 15). Wer angreift, verliert seinen eigenen Schutz.</div>';
+      out += '<div class="sm">Siegst du, pl\xFCndern deine Truppen bis zu 20 % der Vorr\xE4te (Wattl\xE4ufer tragen am meisten, Schleuderer halbieren Mauern und T\xFCrme). Wer angreift, verliert seinen eigenen Schutz.</div>';
       out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Stadt angreifen!", true, null, this.attackInfo(att, null));
       return out;
     }
@@ -4077,7 +4156,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (tab === "mine") body = this.cityOverviewHtml();
       else {
         const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
-        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Verteidigung", [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]]];
+        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE]], ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]]];
         body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt. Der Platz wird automatisch gew\xE4hlt.</div>`;
         for (const [title, list] of groups) {
           body += `<div class="sub2">${title}</div>`;
@@ -4109,7 +4188,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         ["Herz der Stadt", [T.TURM]],
         ["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]],
         ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
-        ["Verteidigung", [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]],
+        ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE]],
+        ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]],
         ["Schutz vor der Flut", [T.DAMM]]
       ];
       let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt \xB7 Gel\xE4nde ${Math.round(c.areaRadius)} m \xB7 freie Bewohner ${c.freeVillagers}</div>`;
@@ -4134,11 +4214,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     troopsTabHtml() {
       const c = this.c, s = c.s, away = c.troopsAway;
       let out = `<div class="inf">Verteidigung der Stadt: <b>${c.defense}</b> \xB7 Macht \u2694 <b>${c.power}</b></div>
-      <div class="inf">Unterwegs/Besatzung: <b>${away.h + away.w}</b> Soldaten</div>`;
-      if (c.levels(T.KASERNE) <= 0) out += `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere \xB7 <b>${s.troops[1]}</b> Wachen</div>`;
+      <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
       if (c.raidIn !== null) out += `<div class="sm">N\xE4chster Piraten\xFCberfall in etwa ${fmtTime(c.raidIn)}</div>`;
       if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
-      else out += '<div class="desc">F\xFCr Truppen brauchst du eine <b>Kaserne</b>. Baue sie unter <b>\u{1F3D7}\uFE0F Geb\xE4ude \u2192 Neu bauen</b>.</div>';
+      else out += `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div><div class="desc">F\xFCr Truppen brauchst du die <b>Kaserne</b> und f\xFCr jeden Krieger seine <b>Ausbildungsst\xE4tte</b>. Baue sie unter <b>\u{1F3D7}\uFE0F Geb\xE4ude \u2192 Neu bauen</b>.</div>`;
+      out += `<div class="sm" style="margin-top:8px">St\xE4rken: \u{1F531} schl\xE4gt \u{1F5E1}\uFE0F \xB7 \u{1F6E1}\uFE0F schl\xE4gt \u{1F531} \xB7 \u{1F5E1}\uFE0F schl\xE4gt \u{1FAA8} und \u{1F3C3} \xB7 \u{1FAA8} schl\xE4gt \u{1F6E1}\uFE0F und Mauern. Mische deine Truppen passend zum Gegner!</div>`;
       out += '<div class="btns"><button class="btn" data-a="map">\u{1F5FA}\uFE0F Seekarte \xF6ffnen</button></div>';
       return out;
     }
@@ -4280,7 +4360,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     snapshot() {
       const c = this.c, s = c.s;
-      return { power: c.power, tower: c.towerLevel, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
     }
     async sync(strict) {
       if (!this.token) return;
@@ -4292,14 +4372,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         this.marches = r.marches || [];
         this.owned = r.owned || [];
         this.incoming = r.incoming || 0;
-        const d = r.delta || { res: [0, 0, 0, 0], h: 0, w: 0 };
-        const s = this.c.s;
+        const d = r.delta || { res: [0, 0, 0, 0], u: zeroU() };
+        const s = this.c.s, du = d.u || zeroU();
         d.res.forEach((v, i) => {
           if (v) this.c.addRes(i, v);
         });
-        if (d.h) s.troops[0] = Math.max(0, s.troops[0] + d.h);
-        if (d.w) s.troops[1] = Math.max(0, s.troops[1] + d.w);
-        if (d.h > 0 || d.w > 0) this.c.msg(`${Math.max(0, d.h) + Math.max(0, d.w)} Soldaten sind heimgekehrt${d.res.some((v) => v > 0) ? " \u2013 mit Beute!" : "."}`);
+        s.troops = s.troops.map((v, i) => Math.max(0, v + (du[i] || 0)));
+        const back = du.reduce((a, v) => a + Math.max(0, v), 0);
+        if (back > 0) this.c.msg(`${back} Krieger sind heimgekehrt${d.res.some((v) => v > 0) ? " \u2013 mit Beute!" : "."}`);
         this.reports = r.reports || [];
         for (const rep of this.reports.slice().reverse()) if (rep.id > this.lastReport) {
           this.c.msg(rep.text);
@@ -4351,18 +4431,16 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       } catch (e) {
       }
     }
-    async sendMarch(kind, target, h2, w) {
+    async sendMarch(kind, target, u) {
       const s = this.c.s;
       const r = await this.call("send_march", () => ({
         p_token: this.token,
         p_kind: kind,
         p_target: kind === "terr" ? target : null,
         p_target_player: kind === "player" ? target : null,
-        p_h: h2,
-        p_w: w
+        p_u: u
       }));
-      s.troops[0] -= h2;
-      s.troops[1] -= w;
+      s.troops = s.troops.map((v, i) => v - (u[i] || 0));
       await this.sync();
       return r;
     }
@@ -4405,18 +4483,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return this.owned;
     }
     troopsAway() {
-      let h2 = 0, w = 0;
-      for (const m of this.marches) {
-        h2 += m.h;
-        w += m.w;
-      }
+      let a = zeroU();
+      for (const m of this.marches) a = uAdd(a, m.u || zeroU());
       if (this.world && this.me) {
-        for (const t of this.world.territories) if (t.owner === this.me.id) {
-          h2 += t.gh || 0;
-          w += t.gw || 0;
-        }
+        for (const t of this.world.territories) if (t.owner === this.me.id) a = uAdd(a, t.gu || zeroU());
       }
-      return { h: h2, w };
+      return a;
     }
     update(dt) {
       if (!this.token) return;
