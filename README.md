@@ -1,5 +1,13 @@
 # Pfahlstadt – Ebbe & Flut
 
+> **Fertige App:** Die Android-APK wird bei jedem Upload automatisch gebaut und liegt unter
+> **Releases** (rechts auf der Repo-Seite) zum Herunterladen bereit.
+>
+> Diese App-Fassung nutzt eine eigene WebGL-3D-Engine (Ordner `web/`) in einer Android-Hülle
+> (Ordner `android/`) und braucht keine Unity-Lizenz. Die Unity-Fassung (`Assets/`) lässt sich
+> später zusätzlich bauen (Workflow „Unity-APK bauen“, siehe unten).
+
+
 Ein eigenständiges Aufbau- und Überlebensspiel für Android, gebaut mit Unity 6.
 Deine Siedlung steht auf Holzpfählen mitten im Wattenmeer. Zweimal am Tag steigt die Flut,
 dazu ziehen immer wieder Sturmfluten auf. Halte die Stadt über Wasser.

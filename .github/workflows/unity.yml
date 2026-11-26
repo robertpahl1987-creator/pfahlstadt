@@ -1,9 +1,7 @@
-name: Android-APK bauen
+name: Unity-APK bauen (braucht Unity-Lizenz)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   build:

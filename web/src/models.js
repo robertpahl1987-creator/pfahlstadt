@@ -1,0 +1,193 @@
+// Alle 3D-Modelle, aus Grundformen zusammengesetzt (Maße wie in der Unity-Fassung).
+import { T } from './game.js';
+
+export const C = {
+  sand: [0.62, 0.57, 0.47], wetSand: [0.42, 0.39, 0.33], plank: [0.52, 0.4, 0.27], drift: [0.62, 0.56, 0.48],
+  tar: [0.16, 0.13, 0.11], wall: [0.36, 0.42, 0.44], wallBlue: [0.25, 0.38, 0.5], reed: [0.72, 0.62, 0.38],
+  rust: [0.5, 0.28, 0.18], window: [1, 0.72, 0.38], white: [0.92, 0.92, 0.88], red: [0.7, 0.16, 0.13],
+  dark: [0.12, 0.13, 0.15], roofGrey: [0.3, 0.3, 0.32],
+};
+
+/// Hütte mit Reetdach, Eckbalken, Tür (+z) und runden Fenstern
+function hut(B, p, w, h, d, wall, roof, windows, door = true) {
+  B.add('cube', [p[0], p[1] + h / 2, p[2]], [w, h, d], wall, { g: 0.12 });
+  for (let i = 0; i < 4; i++) {
+    const sx = i & 1 ? w / 2 : -w / 2, sz = i & 2 ? d / 2 : -d / 2;
+    B.add('cube', [p[0] + sx, p[1] + h / 2, p[2] + sz], [0.18, h, 0.18], C.tar, { g: 0.2 });
+  }
+  B.add('prism', [p[0], p[1] + h, p[2]], [w * 1.22, h * 0.8, d * 1.15], roof, { g: 0.05 });
+  // Dachfirst
+  B.add('cube', [p[0], p[1] + h + h * 0.8, p[2]], [0.22, 0.16, d * 1.17], C.tar, { g: 0.2 });
+  const fz = p[2] + d / 2 + 0.04;
+  if (door) B.add('cube', [p[0], p[1] + 0.6, fz], [0.75, 1.2, 0.08], C.tar);
+  for (let i = 0; i < windows; i++) {
+    const t = windows === 1 ? 0.5 : i / (windows - 1);
+    let x = -w * 0.32 + (w * 0.64) * t;
+    if (door && Math.abs(x) < 0.65) x += x >= 0 ? 0.75 : -0.75;
+    B.add('cylinder', [p[0] + x, p[1] + h * 0.6, fz], [0.55, 0.04, 0.55], C.tar, { rot: [90, 0, 0] });
+    B.add('cylinder', [p[0] + x, p[1] + h * 0.6, fz + 0.02], [0.42, 0.04, 0.42], C.window, { rot: [90, 0, 0], e: 1.8 });
+  }
+}
+
+function barrel(B, p) {
+  B.add('cylinder', [p[0], p[1] + 0.45, p[2]], [0.6, 0.45, 0.6], C.plank, { g: 0.2 });
+  B.add('cylinder', [p[0], p[1] + 0.7, p[2]], [0.63, 0.03, 0.63], C.tar, { g: 0.4 });
+  B.add('cylinder', [p[0], p[1] + 0.2, p[2]], [0.63, 0.03, 0.63], C.tar, { g: 0.4 });
+}
+
+export function building(B, t, level) {
+  B.push([0, 0, 0], null, [1 + 0.07 * (level - 1), 1 + 0.07 * (level - 1), 1 + 0.07 * (level - 1)]);
+  switch (t) {
+    case T.TREIBHOLZ:
+      hut(B, [0.9, 0, -0.6], 3, 2.1, 2.6, C.wall, C.reed, 2);
+      for (let i = 0; i < 7; i++) {
+        const row = i < 4 ? 0 : 1, z = -1.5 + (i % 4) * 0.5 + row * 0.25;
+        B.add('cylinder', [-2.3, 0.25 + row * 0.42, z], [0.45, 1.0 + (i % 3) * 0.15, 0.45], C.drift, { rot: [0, 8 * (i % 3), 90], g: 0.1 });
+      }
+      B.add('cube', [-3.2, 2.2, -2.6], [0.25, 4.4, 0.25], C.tar);
+      B.add('cube', [-3.2, 4.3, -3.8], [0.2, 0.2, 2.6], C.tar);
+      B.add('sphere', [-3.2, 3.2, -4.9], [0.9, 1.2, 0.9], [0.3, 0.35, 0.28], { g: 0.05 });
+      break;
+
+    case T.MUSCHEL:
+      hut(B, [-0.8, 0, -1], 2.6, 1.9, 2.4, C.wallBlue, C.reed, 1);
+      for (let i = 0; i < 4; i++) {
+        const x = -1.2 + (i % 2) * 2.4, z = -4.8 - Math.floor(i / 2) * 1.4;
+        B.add('cylinder', [x, -1, z], [0.18, 3, 0.18], C.tar, { g: 0.3 });
+        B.add('cylinder', [x, -0.9, z], [0.34, 1, 0.34], [0.12, 0.13, 0.2], { g: 0.7 });
+      }
+      B.add('cube', [0, 1.6, -4.8], [2.6, 0.06, 0.06], [0.65, 0.58, 0.42]);
+      for (let i = 0; i < 3; i++) B.add('cylinder', [-2.6 + i * 0.9, 0.3, 1.9], [0.7, 0.3, 0.7], C.reed);
+      break;
+
+    case T.REGEN:
+      B.add('cone', [0, 4.6, 0], [4.2, 2.2, 4.2], [0.86, 0.83, 0.74], { rot: [180, 0, 0], g: 0.1 });
+      for (let i = 0; i < 3; i++) {
+        const a = (i * 120 * Math.PI) / 180;
+        B.add('cube', [Math.cos(a) * 1.7, 2.2, Math.sin(a) * 1.7], [0.2, 4.6, 0.2], C.tar);
+      }
+      B.add('cylinder', [0, 1.1, 0], [1.8, 1.1, 1.8], C.plank, { g: 0.25 });
+      B.add('cylinder', [0, 2.25, 0], [0.25, 0.2, 0.25], C.rust, { g: 0.5 });
+      barrel(B, [2.4, 0, 1.6]); barrel(B, [2.4, 0, 0.7]); barrel(B, [-2.4, 0, 1.6]);
+      break;
+
+    case T.TAUCHER:
+      hut(B, [1.2, 0, -0.6], 2.6, 2, 2.4, C.wall, C.roofGrey, 1);
+      B.add('cube', [-2.2, 2.6, 0], [0.3, 5.2, 0.3], C.tar);
+      B.add('cube', [-2.2, 5.1, -1.6], [0.25, 0.25, 3.4], C.tar);
+      B.add('cube', [-2.2, 4.0, -3.2], [0.05, 2.2, 0.05], C.tar);
+      B.add('sphere', [-2.2, 2.5, -3.2], [1.3, 1.4, 1.3], [0.55, 0.45, 0.25], { g: 0.75 });
+      B.add('cylinder', [-2.2, 2.5, -3.85], [0.45, 0.03, 0.45], [0.5, 0.8, 1], { rot: [90, 0, 0], e: 1.2 });
+      for (let i = 0; i < 5; i++)
+        B.add('cube', [0.6 + i * 0.35, 0.25, 1.8 - (i % 2) * 0.4], [0.6, 0.4, 0.5], C.rust, { rot: [0, i * 23, i * 9], g: 0.4 });
+      B.add('cube', [2.9, 0.9, 1.6], [0.15, 1.6, 0.15], C.tar, { g: 0.5 });
+      B.add('cube', [2.9, 0.25, 1.6], [0.9, 0.15, 0.15], C.tar, { g: 0.5 });
+      break;
+
+    case T.HAUS:
+      hut(B, [0, 0, -0.3], 5, 2.4, 3.2, C.wallBlue, C.reed, 4);
+      B.add('cube', [1.6, 3.4, -0.8], [0.5, 1.6, 0.5], [0.5, 0.3, 0.25]);
+      B.smoke([1.6, 4.3, -0.8], 0.6);
+      B.add('cube', [-2.9, 1.1, 2.2], [0.12, 2.2, 0.12], C.tar);
+      B.add('cube', [2.9, 1.1, 2.2], [0.12, 2.2, 0.12], C.tar);
+      B.add('cube', [0, 2.1, 2.2], [5.8, 0.04, 0.04], C.reed);
+      B.add('cube', [-1, 1.7, 2.2], [0.7, 0.8, 0.03], [0.8, 0.3, 0.25]);
+      B.add('cube', [0.6, 1.75, 2.2], [0.6, 0.7, 0.03], [0.9, 0.85, 0.6]);
+      break;
+
+    case T.HEILER:
+      hut(B, [0, 0, -0.3], 3.6, 2.4, 3, [0.82, 0.84, 0.8], C.reed, 2);
+      B.add('sphere', [0, 2.0, 1.25], [0.55, 0.8, 0.06], [0.3, 0.95, 0.45], { rot: [0, 0, 35], e: 1.4 });
+      for (let i = 0; i < 3; i++) {
+        B.add('cube', [-1.4 + i * 1.4, 0.25, 2.2], [1.1, 0.5, 0.6], C.plank);
+        B.add('sphere', [-1.4 + i * 1.4, 0.6, 2.2], [1, 0.5, 0.5], [0.25, 0.5, 0.25]);
+      }
+      break;
+
+    case T.RAUCH:
+      hut(B, [0.4, 0, -0.4], 3.2, 2.2, 2.8, [0.3, 0.26, 0.22], C.reed, 1);
+      B.add('cube', [-0.6, 3.1, -0.9], [0.7, 1.8, 0.7], [0.45, 0.3, 0.24]);
+      B.smoke([-0.6, 4.1, -0.9], 1);
+      B.add('cube', [-2.4, 1, 1.2], [0.15, 2, 0.15], C.tar);
+      B.add('cube', [-2.4, 1, -0.4], [0.15, 2, 0.15], C.tar);
+      B.add('cube', [-2.4, 1.95, 0.4], [0.1, 0.1, 1.8], C.tar);
+      for (let i = 0; i < 4; i++) B.add('sphere', [-2.4, 1.5, -0.2 + i * 0.4], [0.12, 0.7, 0.25], [0.75, 0.55, 0.3], { g: 0.5 });
+      barrel(B, [2.4, 0, 1.5]);
+      break;
+  }
+  B.pop();
+}
+
+export const towerHeight = (level) => 9 + 0.5 * level;
+
+/// Leuchtturm (ohne Laterne – die wird dynamisch gezeichnet)
+export function tower(B, level) {
+  const H = towerHeight(level), bands = 6;
+  for (let i = 0; i < bands; i++) {
+    const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
+    B.add('cylinder', [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
+  }
+  B.add('cube', [0, 0.9, 1.68], [1, 1.8, 0.12], C.tar);
+  for (let i = 1; i < 4; i++) {
+    const y = (H * i) / 4.5, rad = (3.4 + (2.3 - 3.4) * (y / H)) * 0.5 + 0.02;
+    B.add('cube', [0, y, rad], [0.4, 0.6, 0.06], C.window, { e: 1.4 });
+  }
+  B.add('cylinder', [0, H + 0.1, 0], [3.4, 0.12, 3.4], C.dark, { g: 0.5 });
+  for (let i = 0; i < 16; i++) {
+    const a = (i * Math.PI * 2) / 16;
+    B.add('cube', [Math.cos(a) * 1.6, H + 0.55, Math.sin(a) * 1.6], [0.07, 0.8, 0.07], C.dark);
+  }
+  B.add('cylinder', [0, H + 0.95, 0], [3.25, 0.04, 3.25], C.dark);
+  B.add('cone', [0, H + 2.2, 0], [2.6, 1.5, 2.6], C.red, { g: 0.35 });
+  B.add('sphere', [0, H + 3.8, 0], [0.35, 0.35, 0.35], C.dark, { g: 0.6 });
+}
+
+/// Laterne (eigenes Mesh, damit sie flackern kann)
+export function lantern(B, level) {
+  const H = towerHeight(level);
+  B.add('cylinder', [0, H + 1.2, 0], [1.9, 1, 1.9], [1, 0.85, 0.45], { e: 3 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI * 2) / 6;
+    B.add('cube', [Math.cos(a) * 0.95, H + 1.2, Math.sin(a) * 0.95], [0.08, 2, 0.08], C.dark);
+  }
+}
+
+export function scaffold(B, half, newBuild) {
+  const wood = [0.65, 0.5, 0.3];
+  const h = half * 1.1 + 1.5;
+  for (let i = 0; i < 4; i++) {
+    const sx = i & 1 ? half : -half, sz = i & 2 ? half : -half;
+    B.add('cube', [sx, h / 2, sz], [0.18, h, 0.18], wood);
+  }
+  for (let k = 1; k <= 2; k++) {
+    const y = h * 0.45 * k;
+    B.add('cube', [0, y, -half], [half * 2, 0.12, 0.12], wood);
+    B.add('cube', [0, y, half], [half * 2, 0.12, 0.12], wood);
+    B.add('cube', [-half, y, 0], [0.12, 0.12, half * 2], wood);
+    B.add('cube', [half, y, 0], [0.12, 0.12, half * 2], wood);
+    B.add('cube', [0, y * 0.5 + 0.3, -half], [half * 2.2, 0.1, 0.1], wood, { rot: [0, 0, 28] });
+  }
+  if (newBuild) B.add('cube', [half + 0.6, 0.3, half - 0.6], [0.9, 0.6, 1.4], C.drift);
+}
+
+/// Siedler in Ölzeug mit Südwester
+export function villager(B, coat) {
+  B.add('capsule', [0, 0.55, 0], [0.55, 0.55, 0.55], coat, { g: 0.35 });
+  B.add('sphere', [0, 1.25, 0], [0.38, 0.38, 0.38], [0.9, 0.72, 0.6]);
+  B.add('cylinder', [0, 1.42, -0.04], [0.55, 0.04, 0.6], [0.9, 0.75, 0.2], { g: 0.4 });
+  B.add('sphere', [0, 1.48, 0], [0.36, 0.2, 0.36], [0.9, 0.75, 0.2], { g: 0.4 });
+}
+
+export function gullBody(B) {
+  B.add('capsule', [0, 0, 0], [0.25, 0.4, 0.25], [0.95, 0.95, 0.95], { rot: [90, 0, 0], g: 0.2 });
+  B.add('cube', [0, 0.05, 0.45], [0.08, 0.06, 0.2], [0.95, 0.75, 0.2]);
+}
+export function gullWing(B, side) {
+  B.add('cube', [side * 0.55, 0, 0], [1.1, 0.04, 0.35], [0.55, 0.58, 0.62], { g: 0.2 });
+}
+
+export function buoy(B, col) {
+  B.add('cylinder', [0, 0.3, 0], [0.9, 0.5, 0.9], col, { g: 0.4 });
+  B.add('cone', [0, 0.8, 0], [0.8, 1.1, 0.8], col, { g: 0.4 });
+  B.add('sphere', [0, 2, 0], [0.25, 0.25, 0.25], [1, 0.9, 0.6], { e: 2 });
+}
