@@ -43,6 +43,36 @@
   #login input { font: inherit; font-size: 17px; padding: 13px; border-radius: 10px; border: 1px solid rgba(127,211,240,.35); background: rgba(0,0,0,.35); color: var(--txt); user-select: text; -webkit-user-select: text; }
   #login .link { background: none; color: #7fd3f0; text-decoration: underline; padding: 6px; font-size: 14px; }
   #loginErr { color: #ff8a8a; min-height: 18px; font-size: 14px; }
+
+  /* --- aufgeräumtes Layout --- */
+  #top { padding: calc(env(safe-area-inset-top) + 5px) 8px 6px; }
+  .res { gap: 5px; }
+  .card { display: flex; align-items: baseline; gap: 4px; padding: 6px 8px; border-radius: 12px; }
+  .card .ic { font-size: 15px; }
+  .rv { font-size: 17px; font-weight: 800; }
+  .rr { font-size: 11px; margin-left: auto; }
+  .rn { display: none; }
+  .status { display: flex; align-items: center; gap: 8px; max-width: 720px; margin: 6px auto 0; font-size: 12px; color: var(--dim); }
+  .tide { flex: 1; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .gauge { position: relative; flex: 0 0 64px; height: 10px; border-radius: 5px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .gw { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #2a8fc0, #4fc3e8); }
+  .gd { position: absolute; top: -2px; bottom: -2px; width: 3px; background: #ffd27a; }
+  .tl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st { white-space: nowrap; }
+  .st b { color: var(--txt); }
+  #toasts { top: calc(env(safe-area-inset-top) + 78px); gap: 4px; }
+  .toast { font-size: 13px; padding: 6px 10px; }
+  #badge { top: calc(env(safe-area-inset-top) + 70px); font-size: 10px; padding: 2px 6px; opacity: .8; }
+  .bb { min-height: 54px; gap: 1px; }
+  .bb .ic { font-size: 20px; line-height: 1; }
+  .bb b { font-size: 11px; font-weight: 700; }
+  .bb span { font-size: 10px; }
+  .lbl { padding: 2px 7px; font-size: 12px; border-radius: 10px; }
+  .lbl .li { font-size: 13px; }
+  .lbl i { margin-left: 2px; }
+  #panel { bottom: calc(env(safe-area-inset-bottom) + 74px); max-height: 58vh; }
+  .pt { font-size: 18px; }
+  .inf { font-size: 14px; }
   #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
   .lbl { position: absolute; left: 0; top: 0; background: rgba(0, 12, 16, .62); padding: 3px 9px; border-radius: 8px; font-size: 13px; font-weight: 700; white-space: nowrap; text-align: center; }
   .lbl i { font-style: normal; color: #7fd3f0; margin-left: 3px; }
@@ -84,7 +114,9 @@
 <canvas id="c"></canvas>
 <div id="labels"></div>
 <div id="map" style="display:none"><canvas id="mapc"></canvas></div>
-<div id="top"><div class="res"></div><div class="l1"></div><div class="l2"></div></div>
+<div id="top"><div class="res"></div>
+  <div class="status"><div class="tide"><div class="gauge"><div class="gw"></div><div class="gd"></div></div><span class="tl"></span></div><div class="st"></div></div>
+</div>
 <div id="toasts"></div>
 <div id="badge" style="display:none"></div>
 <div id="panel" style="display:none"></div>

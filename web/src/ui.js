@@ -8,6 +8,9 @@ const $ = (sel) => document.querySelector(sel);
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const amount = (v) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : String(Math.floor(v)));
 const rate = (v) => { const a = Math.abs(v); const s = a >= 100 ? String(Math.round(a)) : a.toFixed(1).replace(/\.0$/, ''); return (v < 0 ? '−' : '+') + s; };
+const RES_IC = ['🪵', '🦪', '💧', '⚙️'];
+const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹'];
+const NODE_NAME = ['Treibholz', 'Muschelbank', 'Süßwassertümpel', 'Wrackteile'];
 const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
 const clock = (d) => { const m = Math.floor(d * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 
@@ -24,11 +27,12 @@ export class UI {
   build() {
     const top = $('#top');
     this.cards = RES.map((name, i) => {
-      const card = h('div', 'card', `<div class="rn" style="color:${RES_COL[i]}">${name}</div><div class="rv">0</div><div class="rr">+0/min</div>`);
+      const card = h('div', 'card', `<span class="ic" title="${name}">${RES_IC[i]}</span><b class="rv">0</b><span class="rr">+0</span>`);
       top.querySelector('.res').appendChild(card);
       return { v: card.querySelector('.rv'), r: card.querySelector('.rr') };
     });
-    this.line1 = top.querySelector('.l1'); this.line2 = top.querySelector('.l2');
+    this.gw = top.querySelector('.gw'); this.gd = top.querySelector('.gd'); this.tl = top.querySelector('.tl'); this.st = top.querySelector('.st');
+    this.acc = 1;
     this.toasts = $('#toasts');
     this.labels = $('#labels');
     this.labelEls = Array.from({ length: PLOTS }, () => { const e = h('div', 'lbl'); this.labels.appendChild(e); return e; });
@@ -95,9 +99,9 @@ export class UI {
   }
 
   select(i, keepMenu) {
-    if (this.view === 'map' && i >= 0) return;
+    if (this.view === 'map' && i !== -1) return;
     this.selected = i; this.w.selected = i; this.confirm = null; this.panelKey = null;
-    if (i >= 0 && !keepMenu) { this.menu = false; this.mode = null; this.o.wantChat = false; }
+    if (i !== -1 && !keepMenu) { this.menu = false; this.mode = null; this.o.wantChat = false; }
   }
 
   showLogin(on, codeMode) {
@@ -156,6 +160,7 @@ export class UI {
     else if (a === 'save') { c.save(); c.msg('Spielstand gespeichert.'); }
     else if (a === 'new') { if (this.confirm === 'new') { c.newGame(); this.menu = false; this.confirm = null; } else this.confirm = 'new'; }
     else if (a === 'train') c.startTrain(+ds.u, +ds.n);
+    else if (a === 'gath') { const id = -1000 - this.selected; c.setGatherers(id, Math.max(0, c.assigned(id) + +ds.d)); }
     else if (a === 'f') { const u = +ds.u; this.form[u] = Math.max(0, Math.min(c.s.troops[u], this.form[u] + +ds.d)); }
     else if (a === 'fall') { this.form = [c.s.troops[0], c.s.troops[1]]; }
     else if (a === 'f0') { this.form = [0, 0]; }
@@ -207,25 +212,32 @@ export class UI {
   }
 
   update(cw, ch, dt) {
+    // Karte und Beschriftungen laufen flüssig mit, der Rest 10× pro Sekunde (spart Rechenzeit)
+    if (this.view === 'map') this.sea.draw(dt, this.mapSel);
+    else this.cityLabels(cw, ch);
+    this.acc += dt;
+    if (this.acc < 0.1) return;
+    this.acc = 0;
     const c = this.c, s = c.s;
     this.cards.forEach((k, i) => {
-      setHTML(k.v, amount(s.res[i]) + (s.res[i] >= c.storage - 1 ? ' <small style="font-size:10px;color:#ffc060">voll</small>' : ''));
+      setHTML(k.v, amount(s.res[i]) + (s.res[i] >= c.storage - 1 ? '<small style="font-size:9px;color:#ffc060"> voll</small>' : ''));
       const r = c.rates[i];
-      setHTML(k.r, rate(r) + '/min');
+      setHTML(k.r, rate(r));
       k.r.style.color = r >= 0 ? '#8ef0a0' : '#ff7a7a';
     });
+    // Wasserstand-Anzeige: blau = Wasser, gelb = Deckhöhe
+    const top = Math.max(c.deck + 1.5, 6);
+    this.gw.style.width = `${Math.max(0, Math.min(100, (c.water / top) * 100))}%`;
+    this.gd.style.left = `${Math.min(97, (c.deck / top) * 100)}%`;
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
-    const tide = c.water < EBB ? 'Ebbe' : c.rising ? 'Flut steigt' : 'Wasser fällt';
-    setHTML(this.line1, `Wasser <b>${c.water.toFixed(1)} m</b> (${tide}) &nbsp; Deck ${c.deck.toFixed(1)} m &nbsp; Abstand <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>`);
-    let l2 = `Siedler <b>${s.survivors}/${c.capacity}</b> &nbsp; Krank <b>${s.sick}</b> &nbsp; ⚔ <b>${s.troops[0]}</b>/<b>${s.troops[1]}</b> &nbsp; Tag ${s.days} · ${clock(s.dayTime)}`;
-    if (c.storm) l2 += ' &nbsp; <b style="color:#ff6060">STURMFLUT!</b>';
-    else if (c.stormWarning) l2 += ` &nbsp; <span style="color:#ffc060">Sturm in ${Math.ceil(s.stormTimer)}s</span>`;
-    if (c.raidIn !== null && c.raidIn < 30) l2 += ` &nbsp; <b style="color:#ff6060">Piraten in ${Math.ceil(c.raidIn)}s!</b>`;
-    if (this.o.active) l2 += this.o.incoming ? ` &nbsp; <b style="color:#ff6060">⚠ ${this.o.incoming} Angriff${this.o.incoming > 1 ? 'e' : ''} unterwegs!</b>` : this.o.status === 'online' ? ' &nbsp; <span style="color:#8ef0a0">● online</span>' : ' &nbsp; <span style="color:#ffb070">● offline</span>';
-    setHTML(this.line2, l2);
+    const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? 'Ebbe' : c.rising ? 'Flut ↑' : 'Flut ↓';
+    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
+    let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${s.troops[0] + s.troops[1]}</b> · ${clock(s.dayTime)}`;
+    if (this.o.active) st += this.o.incoming ? ` · <b style="color:#ff6060">⚠ Angriff!</b>` : this.o.status === 'online' ? ' <span style="color:#8ef0a0">●</span>' : ' <span style="color:#ffb070">●</span>';
+    setHTML(this.st, st);
 
     const now = c.time;
-    const recent = c.log.filter((e) => now - e.t < 5).slice(-3);
+    const recent = c.log.filter((e) => now - e.t < 4).slice(-2);
     const key = recent.map((e) => e.t + e.text).join('|');
     if (key !== this.toastKey) {
       this.toastKey = key;
@@ -233,18 +245,17 @@ export class UI {
       for (const e of recent) this.toasts.appendChild(h('div', 'toast', e.text));
     }
 
-    setHTML(this.bBeacon, `<b>Leuchtfeuer</b><span>${s.beaconOn ? '<i style="color:#ffd27a">AN</i>' : '<i style="color:#9ab8c8">AUS</i>'}</span>`);
+    const btn = (el, ic, label, sub) => setHTML(el, `<span class="ic">${ic}</span><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}`);
+    btn(this.bBeacon, '🔥', 'Feuer', s.beaconOn ? '<i style="color:#ffd27a">an</i>' : '<i style="color:#9ab8c8">aus</i>');
     const blk = c.expeditionBlocker();
     if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
-    setHTML(this.bExp, s.expLeft > 0 ? `<b>Im Watt</b><span>${fmtTime(s.expLeft)}</span>`
-      : blk === 'Wartet auf Ebbe' ? '<b>Wattwandern</b><span>wartet auf Ebbe</span>' : `<b>Wattwandern</b><span>${EXP_FOOD} Muscheln</span>`);
+    btn(this.bExp, '🧭', 'Watt', s.expLeft > 0 ? fmtTime(s.expLeft) : blk === 'Wartet auf Ebbe' ? 'bei Ebbe' : 'los');
     const nm = this.o.active ? this.o.marches.length : s.marches.length;
-    setHTML(this.bMap, this.view === 'map' ? '<b>Stadt</b><span>zurück</span>' : `<b>Seekarte</b><span>${nm ? nm + ' unterwegs' : 'Gebiete'}</span>`);
+    if (this.view === 'map') btn(this.bMap, '🏘️', 'Stadt', '');
+    else btn(this.bMap, '🗺️', 'Karte', nm ? nm + ' unterw.' : '');
     const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
-    setHTML(this.bAlly, `<b>Allianz</b><span>${!this.o.active ? 'offline' : al ? '[' + al.tag + ']' : this.o.me && this.o.me.alliance_id ? 'Mitglied' : 'keine'}</span>`);
-
-    if (this.view === 'map') this.sea.draw(dt, this.mapSel);
-    else this.cityLabels(cw, ch);
+    btn(this.bAlly, '🤝', 'Allianz', !this.o.active ? 'offline' : al ? '[' + al.tag + ']' : '');
+    btn(this.bMenu, '☰', 'Menü', '');
     this.renderPanel();
   }
 
@@ -252,14 +263,15 @@ export class UI {
     const c = this.c, s = c.s, deck = c.deck;
     for (let i = 0; i < PLOTS; i++) {
       const p = s.plots[i], el = this.labelEls[i];
-      if (p.type < 0 || (this.w.dist > 105 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
+      if (p.type < 0 || (this.w.dist > 120 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
       const pp = plotPos(i);
       const tall = i === 0 ? 16 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
       const sp = this.w.screenPos([pp[0], deck + tall, pp[2]], cw, ch);
       if (!sp) { el.style.display = 'none'; continue; }
       el.style.display = '';
       el.style.transform = `translate(${sp[0]}px, ${sp[1]}px) translate(-50%, -50%)`;
-      const txt = (p.level > 0 ? `${DEFS[p.type].name} <i>${p.level}</i>` : DEFS[p.type].name) +
+      const near = this.w.dist < 50 || i === this.selected;
+      const txt = `<span class="li">${B_IC[p.type]}</span>${near ? ' ' + DEFS[p.type].name : ''}${p.level > 0 ? ` <i>${p.level}</i>` : ''}` +
         (p.buildLeft > 0 ? `<div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div><small>${fmtTime(p.buildLeft)}</small>` : '');
       if (el._t !== txt) { el._t = txt; el.innerHTML = txt; }
     }
@@ -276,6 +288,7 @@ export class UI {
     else if (this.mode === 'account') html = this.accountHtml();
     else if (this.menu) html = this.menuHtml();
     else if (this.selected >= 0) html = this.plotHtml();
+    else if (this.selected <= -1000) html = this.nodeHtml();
     if (html === this.panelKey || this.holding) return;
     this.panelKey = html;
     this.panel.innerHTML = html;
@@ -323,6 +336,21 @@ export class UI {
     } else if (L >= MAX_LEVEL) out += '<div class="sm">Maximale Stufe erreicht.</div>';
     if (i !== 0) btns += `<button class="btn ${this.confirm === 'demo' ? 'danger' : 'ghost'}" data-a="demo">${this.confirm === 'demo' ? '<b>Wirklich abreißen?</b>' : 'Abreißen'}</button>`;
     return out + `<div class="btns">${btns}</div>`;
+  }
+
+  nodeHtml() {
+    const c = this.c, id = -1000 - this.selected, n = c.nodeById(id);
+    if (!n) return this.head('Sammelstelle') + '<div class="desc">Hier ist nichts mehr zu holen.</div>';
+    const as = c.assigned(id), flooded = c.nodeFlooded(n);
+    const path = c.gatherPath(n), trip = (path.L * 2) / 2.3 + 5;
+    return this.head(`${RES_IC[n.type]} ${NODE_NAME[n.type]}`) +
+      `<div class="desc">Schicke Bewohner los: Sie laufen durchs Tor hinaus, sammeln und tragen bis zu <b>${c.carry}</b> ${RES[n.type]} pro Gang zurück.</div>
+       <div class="inf">Vorrat: <b>${Math.round(n.amount)}</b> ${RES[n.type]} · ein Gang ≈ ${fmtTime(trip)}</div>
+       <div class="inf">${flooded ? '<b style="color:#7fd3f0">🌊 Überflutet</b> – erst bei Ebbe wieder erreichbar' : '<b style="color:#8ef0a0">✓ Erreichbar</b>' + (n.h < 0.3 ? ' (liegt im Watt: nur bei Ebbe)' : ' (auf einer Sandbank)')}</div>
+       <div class="row"><div class="ri"><b>Sammler: ${as}</b><div class="sm">freie Bewohner: ${c.freeVillagers} · Sammler fehlen in den Gebäuden</div></div>
+         <button class="btn sm2" data-a="gath" data-d="-1" ${as <= 0 ? 'disabled' : ''}>−1</button>
+         <button class="btn sm2" data-a="gath" data-d="1" ${c.freeVillagers <= 0 ? 'disabled' : ''}>+1</button>
+         <button class="btn sm2" data-a="gath" data-d="3" ${c.freeVillagers <= 0 ? 'disabled' : ''}>+3</button></div>`;
   }
 
   barracksHtml() {

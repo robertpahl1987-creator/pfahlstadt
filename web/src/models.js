@@ -261,6 +261,34 @@ export function wall(B, level, R, base) {
   }
 }
 
+/// Sammelstellen: 0 Treibholz, 1 Muschelbank, 2 Süßwassertümpel, 3 Wrackteile
+export function resourceNode(B, type) {
+  if (type === 0) {
+    for (let i = 0; i < 7; i++) B.add('cylinder', [(i % 3 - 1) * 0.7, 0.3 + Math.floor(i / 3) * 0.45, (i % 2) * 0.5 - 0.25], [0.4, 1.3 + (i % 3) * 0.2, 0.4], C.drift, { rot: [0, i * 37, 90], g: 0.1 });
+    B.add('cylinder', [1.6, 0.25, 1.2], [0.3, 0.9, 0.3], C.drift, { rot: [0, -40, 90] });
+  } else if (type === 1) {
+    for (let i = 0; i < 9; i++) B.add('sphere', [Math.cos(i * 2.4) * (0.4 + i * 0.12), 0.15, Math.sin(i * 2.4) * (0.4 + i * 0.12)], [0.7, 0.35, 0.5], [0.12, 0.13, 0.2], { rot: [0, i * 40, 0], g: 0.8 });
+    B.add('cylinder', [0, 0.9, 0], [0.12, 0.9, 0.12], C.tar);
+    B.add('cube', [0.25, 1.6, 0], [0.5, 0.35, 0.04], [0.95, 0.6, 0.2]);
+  } else if (type === 2) {
+    B.add('sphere', [0, -0.05, 0], [5, 0.5, 3.6], C.sand, { g: 0.2 });
+    B.add('cylinder', [0, 0.18, 0], [3.4, 0.03, 2.4], [0.3, 0.62, 0.75], { g: 0.95, e: 0.25 });
+    for (let i = 0; i < 4; i++) B.add('cone', [Math.cos(i * 1.6) * 2, 0.1, Math.sin(i * 1.6) * 1.5], [0.6, 1.1, 0.6], [0.5, 0.55, 0.3]);
+  } else {
+    B.add('sphere', [0, -0.05, 0], [4.6, 0.5, 3.4], C.sand, { g: 0.2 });
+    B.add('cube', [0, 0.45, 0], [2.4, 0.7, 1.2], [0.22, 0.17, 0.13], { rot: [0, 20, 18] });
+    for (let i = 0; i < 5; i++) B.add('cube', [-1.2 + i * 0.6, 0.35, 0.9 - (i % 2) * 1.6], [0.5, 0.35, 0.4], C.rust, { rot: [i * 15, i * 30, i * 9], g: 0.45 });
+    B.add('cylinder', [0.8, 0.5, -0.4], [0.5, 0.35, 0.5], C.rust, { rot: [80, 0, 0], g: 0.45 });
+  }
+  // Markierungsstab mit Wimpel, damit man die Stelle findet
+  B.add('cylinder', [0, 2, 0], [0.08, 2, 0.08], C.tar);
+  B.add('cube', [0.35, 3.7, 0], [0.7, 0.4, 0.03], [[0.9, 0.7, 0.4], [0.95, 0.5, 0.45], [0.4, 0.8, 0.95], [0.8, 0.8, 0.85]][type], { e: 0.6 });
+}
+
+export function basket(B) {
+  B.add('cylinder', [0, 1.05, -0.32], [0.42, 0.25, 0.42], [0.72, 0.6, 0.35]);
+}
+
 export const towerHeight = (level) => 9 + 0.5 * level;
 
 /// Leuchtturm (ohne Laterne – die wird dynamisch gezeichnet)

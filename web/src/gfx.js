@@ -1,7 +1,9 @@
 // Grafikstufen: erkennt die Geräteleistung, Auflösung bis 8K, regelt bei Ruckeln automatisch herunter.
 export const TIERS = ['Niedrig', 'Mittel', 'Hoch', 'Ultra'];
-const SCALE = [0.6, 0.8, 1, 1.25];          // Ultra = Supersampling über der Geräteauflösung
-const SHADOW = [0, 1024, 2048, 4096];
+// Bildschärfe: Faktor auf CSS-Pixel und Obergrenze für das Pixelverhältnis des Displays
+const SCALE = [1, 1, 1, 1.25];
+const MAXDPR = [1, 1.5, 2, 4];             // Ultra: volle Displayauflösung + Supersampling (bis 8K)
+const SHADOW = [0, 1024, 2048, 2048];
 const PARTICLES = [0.35, 0.65, 1, 1.5];
 export const MAX_SIDE = 7680;               // 8K
 
@@ -21,8 +23,8 @@ export class Graphics {
     const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
     const mem = navigator.deviceMemory || 4, cores = navigator.hardwareConcurrency || 4;
     if (!mobile) return 3;
-    if (mem >= 8 && cores >= 8) return 3;
-    if (mem >= 6) return 2;
+    // Handys starten vorsichtig; bei guter Bildrate wird automatisch hochgeschaltet
+    if (mem >= 6 && cores >= 8) return 2;
     if (mem >= 4) return 1;
     return 0;
   }
@@ -45,7 +47,8 @@ export class Graphics {
   /// Zielauflösung des Bildes in Pixeln
   size(cssW, cssH) {
     const dpr = window.devicePixelRatio || 1;
-    let w = cssW * dpr * SCALE[this.tier], h = cssH * dpr * SCALE[this.tier];
+    const d = Math.min(dpr, MAXDPR[this.tier]) * SCALE[this.tier];
+    let w = cssW * d, h = cssH * d;
     const cap = MAX_SIDE / Math.max(w, h);
     if (cap < 1) { w *= cap; h *= cap; }
     this.res = [Math.max(1, Math.round(w)), Math.max(1, Math.round(h))];
@@ -58,10 +61,14 @@ export class Graphics {
     if (Math.floor(this.t * 2) !== Math.floor((this.t - dt) * 2)) this.fpsShown = this.fps;
     if (!this.auto || this.t < 8) return;
     if (this.fps < 40) this.low += dt; else this.low = 0;
-    if (this.low > 5 && this.tier > 0) {
-      this.tier--;
+    if (this.fps > 57) this.high = (this.high || 0) + dt; else this.high = 0;
+    if (this.low > 4 && this.tier > 0) {
+      this.tier--; this.ceiling = this.tier;
       this.apply();
       colony.msg(`Grafik automatisch angepasst: ${TIERS[this.tier]}`);
+    } else if (this.high > 12 && this.tier < 2 && (this.ceiling === undefined || this.tier < this.ceiling)) {
+      this.tier++; this.high = 0;
+      this.apply();
     }
   }
 }

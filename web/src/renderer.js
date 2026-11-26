@@ -26,9 +26,11 @@ float shadowAt(){
   vec3 p = vSh.xyz / vSh.w * 0.5 + 0.5;
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
   float s = 0.0;
-  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++)
-    s += texture(uShadow, vec3(p.xy + vec2(float(x), float(y)) * uTexel, p.z - 0.0025));
-  return s / 9.0;
+  s += texture(uShadow, vec3(p.xy + vec2(-0.5, -0.5) * uTexel, p.z - 0.0025));
+  s += texture(uShadow, vec3(p.xy + vec2(0.5, -0.5) * uTexel, p.z - 0.0025));
+  s += texture(uShadow, vec3(p.xy + vec2(-0.5, 0.5) * uTexel, p.z - 0.0025));
+  s += texture(uShadow, vec3(p.xy + vec2(0.5, 0.5) * uTexel, p.z - 0.0025));
+  return s * 0.25;
 }
 void main(){
   vec3 n = normalize(vNrm);
@@ -62,7 +64,7 @@ uniform float uTime, uCloud, uNight; out vec4 o;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
   return mix(mix(hash(i), hash(i+vec2(1,0)), u.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y); }
-float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
+float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 3; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s + 0.12; }
 void main(){
   vec4 w = uInvVP * vec4(vNdc, 1.0, 1.0);
   vec3 d = normalize(w.xyz / w.w - uCam);
@@ -73,7 +75,7 @@ void main(){
   if (d.y > 0.0) {
     vec2 uv = d.xz / (d.y + 0.12) * 0.7 + vec2(uTime * 0.012, uTime * 0.004);
     float c = smoothstep(0.42 - 0.2 * uCloud, 0.85, fbm(uv));
-    float lit = 0.6 + 0.4 * fbm(uv * 1.7 + 3.0);
+    float lit = 0.75 + 0.25 * noise(uv * 3.0 + 3.0);
     col = mix(col, uCloudCol * lit, c * (0.6 + 0.35 * uCloud) * smoothstep(0.0, 0.25, d.y));
     float st = step(0.9975, hash(floor(d.xz / (d.y + 0.05) * 160.0)));
     col += vec3(st) * uNight * (1.0 - c) * smoothstep(0.05, 0.4, d.y);
@@ -90,13 +92,6 @@ uniform float uFogDen, uTime, uStorm, uPLRange, uY; out vec4 o;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
   return mix(mix(hash(i), hash(i+vec2(1,0)), u.x), mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y); }
-float ripples(vec2 p){
-  float t = uTime;
-  float h = vnoise(p * 0.9 + vec2(t * 0.35, t * 0.2)) * 0.5;
-  h += vnoise(p * 2.1 - vec2(t * 0.5, -t * 0.3)) * 0.25;
-  h += vnoise(p * 4.7 + vec2(-t * 0.8, t * 0.6)) * 0.12;
-  return h;
-}
 vec2 swell(vec2 p){
   float t = uTime; vec2 g = vec2(0.0); float a = 0.045 + 0.16 * uStorm;
   vec2 d1 = normalize(vec2(1.0, 0.3)), d2 = normalize(vec2(-0.4, 1.0)), d3 = normalize(vec2(0.7, -0.8));
@@ -108,12 +103,13 @@ vec2 swell(vec2 p){
 void main(){
   vec3 v = normalize(uCam - vPos);
   float dist = length(uCam - vPos);
-  // feine Kräuselung, zur Ferne hin ausblenden (verhindert Flimmern)
-  float e = 0.08;
-  float r0 = ripples(vPos.xz);
-  vec2 rg = vec2(ripples(vPos.xz + vec2(e, 0.0)) - r0, ripples(vPos.xz + vec2(0.0, e)) - r0) / e;
+  // feine Kräuselung als Sinuswellen (günstig), zur Ferne hin ausblenden
   float fade = 1.0 - smoothstep(30.0, 160.0, dist);
-  vec2 g = swell(vPos.xz) + rg * (0.06 + 0.2 * uStorm) * fade;
+  float t = uTime;
+  vec2 rp = vPos.xz;
+  vec2 rg = vec2(cos(rp.x * 2.7 + rp.y * 0.9 + t * 2.2), cos(rp.y * 3.1 - rp.x * 0.7 + t * 1.8)) * 0.5
+          + vec2(cos(rp.x * 5.3 - rp.y * 2.1 + t * 3.1), cos(rp.y * 4.7 + rp.x * 1.9 - t * 2.6)) * 0.25;
+  vec2 g = swell(vPos.xz) + rg * (0.025 + 0.12 * uStorm) * fade;
   vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
 
   float ndv = max(dot(n, v), 0.0);
@@ -131,15 +127,17 @@ void main(){
 
   vec3 col = mix(body, sky, fres);
   // Sonnenglitzern
-  float sp = pow(max(dot(r, uSunDir), 0.0), 900.0) * 3.5 + pow(max(dot(r, uSunDir), 0.0), 200.0) * 0.15;
+  float sp = min(pow(max(dot(r, uSunDir), 0.0), 2500.0) * 0.9, 0.6) + pow(max(dot(r, uSunDir), 0.0), 300.0) * 0.04;
   col += uSunCol * sp;
   // Leuchtturm spiegelt sich
   vec3 lv = uPLPos - vPos; float d = length(lv);
   col += uPLCol * pow(max(dot(r, lv / d), 0.0), 140.0) * clamp(1.0 - d / (uPLRange * 2.5), 0.0, 1.0) * 0.5;
   // Gischt bei Sturm
-  float foam = smoothstep(0.30, 0.55, length(swell(vPos.xz))) * uStorm;
-  foam *= 0.5 + 0.5 * vnoise(vPos.xz * 1.5 + uTime);
-  col = mix(col, vec3(0.88, 0.92, 0.95), foam * 0.7);
+  if (uStorm > 0.01) {
+    float foam = smoothstep(0.30, 0.55, length(swell(vPos.xz))) * uStorm;
+    foam *= 0.5 + 0.5 * vnoise(vPos.xz * 1.5 + uTime);
+    col = mix(col, vec3(0.88, 0.92, 0.95), foam * 0.7);
+  }
 
   col = mix(col, uFogCol, 1.0 - exp(-pow(dist * uFogDen, 2.0)));
   float alpha = mix(0.55, 0.93, smoothstep(0.0, 2.5, depth));
@@ -258,6 +256,7 @@ export class Renderer {
   ensureShadow(size) {
     const gl = this.gl;
     if (size === this.shadowSize) return;
+    this.lastShadowVP = null;
     if (this.shadowTex) { gl.deleteTexture(this.shadowTex); gl.deleteFramebuffer(this.shadowFb); this.shadowTex = null; }
     this.shadowSize = size;
     if (!size) return;
@@ -287,7 +286,10 @@ export class Renderer {
     // ---- Schatten-Pass ----
     this.ensureShadow(s.shadowSize);
     let shadowVP = this.ident;
-    if (this.shadowSize) {
+    this.frameNo = (this.frameNo || 0) + 1;
+    const redoShadow = this.frameNo % 3 === 1 || !this.lastShadowVP;
+    if (this.shadowSize && !redoShadow) shadowVP = this.lastShadowVP;
+    else if (this.shadowSize) {
       const r = s.shadowRadius;
       const up = Math.abs(s.sunDir[1]) > 0.95 ? [0, 0, 1] : [0, 1, 0];
       const lv = lookAt(add(s.shadowCenter, scale(s.sunDir, 200)), s.shadowCenter, up);
@@ -309,6 +311,7 @@ export class Renderer {
       }
       gl.disable(gl.POLYGON_OFFSET_FILL);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      this.lastShadowVP = shadowVP;
     }
 
     gl.viewport(0, 0, W, H);

@@ -137,6 +137,7 @@ export class Colony {
     this.population(dt);
     this.expedition(dt);
     this.military(dt, false);
+    this.gathering(dt, false);
   }
 
   updateWater() {
@@ -163,7 +164,7 @@ export class Colony {
       if (p.type === T.RAUCH) smoke += p.level;
     }
     this.workers = workers; this.capacity = cap;
-    this.efficiency = workers === 0 ? 1 : Math.min(1, this.healthy / workers);
+    this.efficiency = workers === 0 ? 1 : Math.min(1, Math.max(0, this.healthy - this.gatherers) / workers);
     const fb = this.freeboard;
     const flood = offline ? 0.5 : fb < 0 ? Math.max(0.25, Math.min(1, 1 + fb / 2)) : 1;
     const tide = offline ? 0 : this.tideSin;
@@ -493,6 +494,10 @@ export class Colony {
 
   ensureMilitary() {
     const s = this.s;
+    if (!s.nodes) s.nodes = [];
+    if (!s.gath) s.gath = [];
+    if (s.nodeTimer === undefined) s.nodeTimer = 2;
+    if (s.nodeSeq === undefined) s.nodeSeq = 1;
     if (!s.troops) s.troops = [0, 0];
     if (!s.train) s.train = [];
     if (!s.marches) s.marches = [];
@@ -501,6 +506,110 @@ export class Colony {
     if (s.raidTimer === undefined) s.raidTimer = 480;
     if (s.counterTimer === undefined) s.counterTimer = 420;
     while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
+    if (!s.nodes.length && !s.gath.length) { for (let k = 0; k < 4; k++) { this.spawnNodeAt(k); } }
+  }
+
+
+  // ---------- Sammeln mit Bewohnern ----------
+  get gatherers() { return this.s.gath ? this.s.gath.length : 0; }
+  get freeVillagers() { return Math.max(0, this.healthy - this.gatherers); }
+  get carry() { return 18 + 3 * this.towerLevel; }
+  nodeById(id) { return this.s.nodes.find((n) => n.id === id); }
+  nodeFlooded(n) { return this.water > n.h + 0.25; }
+  assigned(id) { return this.s.gath.filter((g) => g.node === id).length; }
+
+  /// Weg von der Stadtmitte durchs Tor hinaus zur Sammelstelle (Punkte in x/z)
+  gatherPath(n) {
+    const R = this.areaRadius + 3;
+    const pts = [[0, -4], [0, -(R - 3)], [0, -(R + 5)]];
+    const a = Math.atan2(n.x, n.z); // Winkel wie plotPos (sin, cos)
+    let from = Math.PI, to = a < 0 ? a + Math.PI * 2 : a;
+    const steps = Math.ceil(Math.abs(to - from) / 0.2);
+    for (let k = 1; k <= steps; k++) {
+      const t = from + (to - from) * (k / steps);
+      pts.push([Math.sin(t) * (R + 5), Math.cos(t) * (R + 5)]);
+    }
+    pts.push([n.x, n.z]);
+    let L = 0; const seg = [0];
+    for (let k = 1; k < pts.length; k++) { L += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); seg.push(L); }
+    return { pts, seg, L };
+  }
+  pathPoint(path, d) {
+    const { pts, seg } = path;
+    d = Math.max(0, Math.min(path.L, d));
+    for (let k = 1; k < pts.length; k++) if (d <= seg[k]) {
+      const t = (d - seg[k - 1]) / Math.max(0.001, seg[k] - seg[k - 1]);
+      return [pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * t, pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * t, Math.atan2(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1])];
+    }
+    const e = pts[pts.length - 1]; return [e[0], e[1], 0];
+  }
+
+  spawnNode() {
+    const s = this.s, R = this.areaRadius + 3;
+    const type = Math.floor(Math.random() * 4);
+    const a = Math.PI + (Math.random() - 0.5) * 2.2;
+    const r = R + 12 + Math.random() * 26;
+    const base = [140, 110, 100, 45][type] * (1 + 0.15 * (s.days - 1));
+    s.nodes.push({ id: s.nodeSeq++, type, x: Math.sin(a) * r, z: Math.cos(a) * r, h: type === WASSER || type === METALL ? 0.6 : 0.05, amount: Math.round(base), max: Math.round(base) });
+  }
+
+  spawnNodeAt(type) {
+    const s = this.s, R = 40 + 1.4 * 4 + 3;
+    const a = Math.PI + (type - 1.5) * 0.45;
+    const r = R + 14 + type * 3;
+    s.nodes.push({ id: s.nodeSeq++, type, x: Math.sin(a) * r, z: Math.cos(a) * r, h: type === WASSER || type === METALL ? 0.6 : 0.05, amount: [160, 120, 110, 50][type], max: [160, 120, 110, 50][type] });
+  }
+
+  setGatherers(id, n) {
+    const s = this.s, node = this.nodeById(id);
+    if (!node) return;
+    const cur = this.assigned(id);
+    if (n > cur) {
+      const add = Math.min(n - cur, this.freeVillagers);
+      for (let k = 0; k < add; k++) s.gath.push({ node: id, phase: 'out', d: -k * 2.5, t: 0, load: 0 });
+    } else if (n < cur) {
+      let rm = cur - n;
+      for (const g of s.gath) if (rm > 0 && g.node === id && g.phase !== 'back') { g.phase = 'back'; g.stop = true; rm--; }
+      for (const g of s.gath) if (rm > 0 && g.node === id && !g.stop) { g.stop = true; rm--; }
+    }
+  }
+
+  gathering(dt, offline) {
+    const s = this.s;
+    s.nodeTimer -= dt;
+    if (s.nodeTimer <= 0) { s.nodeTimer = 35 + Math.random() * 30; if (s.nodes.length < 7) this.spawnNode(); }
+    const speed = 2.3 * (this.storm && !offline ? 0.7 : 1);
+    const paths = {};
+    for (let i = s.gath.length - 1; i >= 0; i--) {
+      const g = s.gath[i], n = this.nodeById(g.node);
+      if (!n && g.phase !== 'back') { g.phase = 'back'; g.stop = true; }
+      const path = n ? (paths[n.id] || (paths[n.id] = this.gatherPath(n))) : null;
+      if (path && g.d > path.L) g.d = path.L;
+      if (g.phase === 'out') {
+        if (n && this.nodeFlooded(n) && !offline) { if (g.d <= 0.1) { g.d = Math.min(g.d, 0); continue; } g.phase = 'back'; continue; }
+        g.d += speed * dt;
+        if (g.d >= path.L) { g.d = path.L; g.phase = 'work'; g.t = 5; }
+      } else if (g.phase === 'work') {
+        if (n && this.nodeFlooded(n) && !offline) { g.phase = 'back'; continue; }
+        g.t -= dt;
+        if (g.t <= 0) {
+          const take = Math.min(this.carry, n ? n.amount : 0);
+          g.load = take; if (n) n.amount -= take;
+          g.phase = 'back';
+          if (n && n.amount <= 0) { s.nodes = s.nodes.filter((x) => x.id !== n.id); this.msg(`${['Treibholz', 'Muschelbank', 'Tümpel', 'Wrackteile'][n.type]} ist leer gesammelt.`); }
+        }
+      } else {
+        g.d -= speed * dt;
+        if (g.d <= 0) {
+          if (g.load > 0) { this.addRes(g.res !== undefined ? g.res : (n ? n.type : 0), g.load); }
+          g.load = 0; g.d = 0;
+          if (g.stop || !this.nodeById(g.node)) { s.gath.splice(i, 1); continue; }
+          g.phase = 'out';
+        }
+      }
+      if (n && g.phase === 'back' && g.res === undefined) g.res = n.type;
+      if (g.phase === 'out') g.res = undefined;
+    }
   }
 
   // ---------- Speichern ----------
@@ -534,7 +643,7 @@ export class Colony {
     };
     this.ensureMilitary();
     this.log = [];
-    this.msg('Willkommen in der Pfahlstadt! Bau den Gezeitenturm aus, bevor die große Flut kommt.');
+    this.msg('Willkommen in der Pfahlstadt! Tipp: Vor dem Tor liegen Sammelstellen – tippe sie an und schicke Bewohner los.');
     this.save();
   }
 
@@ -553,6 +662,7 @@ export class Colony {
       this.advanceBuild(dt);
       if (s.expLeft > 0) { s.expLeft -= dt; if (s.expLeft <= 0) { s.expLeft = 0; this.finishExpedition(); } }
       this.military(dt, true);
+      this.gathering(dt, true);
     }
     const gains = s.res.map((v, i) => v - before[i]).map((g, i) => (Math.abs(g) >= 1 ? `${g > 0 ? '+' : ''}${Math.round(g)} ${RES[i]}` : '')).filter(Boolean).join('  ');
     this.msg(`Während du weg warst (${fmtTime(sec)}): ${gains}`);

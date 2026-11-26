@@ -31,6 +31,8 @@ export function plotYaw(i) {
   return Math.atan2(-p[0], -p[2]) / D2R;
 }
 
+const wyNow = (c) => c.water;
+
 export class World {
   constructor(r, colony) {
     this.r = r;
@@ -122,6 +124,10 @@ export class World {
     B = new Builder(); M.buoy(B, [0.15, 0.55, 0.25]); this.buoyGreen = r.upload(B);
     B = new Builder(); B.add('cube', [0, 0.5, 0], [1, 1, 1], [0.6, 0.5, 0.38]); this.ghostMesh = r.upload(B);
     B = new Builder(); B.add('cube', [0, 0, 0], [1, 1, 1], [0.3, 0.85, 1], { e: 2.5 }); this.selMesh = r.upload(B);
+    this.nodeMeshes = [0, 1, 2, 3].map((t) => { const b = new Builder(); M.resourceNode(b, t); return r.upload(b); });
+    B = new Builder(); M.basket(B); this.basketMesh = r.upload(B);
+    B = new Builder(); B.add('cylinder', [0, 0, 0], [1, 0.03, 1], [0.3, 0.85, 1], { e: 2 }); this.ringMesh = r.upload(B);
+    this.gPaths = new WeakMap();
     // Lichtkegel: Spitze im Ursprung, öffnet sich entlang +z (60 m)
     B = new Builder(); B.add('cone', [0, 0, 60], [9, 60, 4], [1, 1, 1], { rot: [-90, 0, 0] }); this.beamMesh = r.upload(B);
   }
@@ -255,7 +261,7 @@ export class World {
   // ---- Siedler laufen über die Stege ----
   updateVillagers(dt) {
     const c = this.c;
-    const want = Math.min(c.s.survivors, 36);
+    const want = Math.max(0, Math.min(c.s.survivors - c.gatherers, 36));
     while (this.villagers.length < want) {
       const a = Math.random() * 6.28, d = 3 + Math.random() * 4.5;
       this.villagers.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, yaw: 0, path: [], spoke: -1, wait: Math.random() * 2, speed: 1.5 + Math.random() * 0.6, phase: Math.random() * 10, mesh: Math.floor(Math.random() * COATS.length) });
@@ -355,6 +361,15 @@ export class World {
     this.rainCount = n;
   }
 
+  /// Bodenhöhe für Fußgänger (Plattform, Warft, Böschung, Watt)
+  groundAt(x, z) {
+    const c = this.c, r = Math.hypot(x, z), deck = c.deck, A = AREA.r;
+    if (r < 9.5) return deck;
+    if (r < A + 5) return deck - 0.9;
+    if (r < A + 16) return lerp(deck - 0.9, 0, (r - (A + 5)) / 11);
+    return 0;
+  }
+
   // ---------------- Kamera ----------------
 
   camera(aspect) {
@@ -399,6 +414,11 @@ export class World {
     const hx = a[0] + dir[0] * s, hz = a[2] + dir[2] * s;
     const hr = Math.hypot(hx, hz);
     if (hr < 9.8) return 0;
+    {
+      // Sammelstellen liegen tiefer: Strahl auf Bodenhöhe schneiden
+      const s0 = (0.3 - a[1]) / dir[1], gx = a[0] + dir[0] * s0, gz = a[2] + dir[2] * s0;
+      for (const n of this.c.s.nodes) if (Math.hypot(gx - n.x, gz - n.z) < 4.5) return -1000 - n.id;
+    }
     for (let i = 1; i < PLOTS; i++) {
       const p = plotPos(i), yaw = plotYaw(i) * D2R;
       const lx0 = hx - p[0], lz0 = hz - p[2];
@@ -455,6 +475,27 @@ export class World {
         draws.push({ mesh: this.ghostMesh, model: trs([pp[0], deck, pp[2]], [0, plotYaw(i), 0], [3.9, Math.max(0.05, prog * 2.6), 3.9]) });
       }
     });
+    const c2 = this.c;
+    for (const n of c2.s.nodes) {
+      const f = 0.55 + 0.45 * Math.min(1, n.amount / Math.max(1, n.max));
+      draws.push({ mesh: this.nodeMeshes[n.type], model: trs([n.x, n.h > 0.3 ? n.h - 0.35 : 0, n.z], [0, n.id * 47, 0], [f, f, f]), tint: c2.nodeFlooded(n) ? [0.6, 0.7, 0.8] : undefined });
+      if (this.selected === -1000 - n.id) draws.push({ mesh: this.ringMesh, model: trs([n.x, Math.max(n.h - 0.2, wyNow(c2)) + 0.05, n.z], null, [6, 1, 6]), emis: 0.6 + 0.4 * Math.sin(this.time * 4), noShadow: true });
+    }
+    const pathCache = {};
+    for (const g of c2.s.gath) {
+      const n = c2.nodeById(g.node);
+      let path = n ? (pathCache[n.id] || (pathCache[n.id] = c2.gatherPath(n))) : this.gPaths.get(g);
+      if (!path) continue;
+      this.gPaths.set(g, path);
+      const [x, z, yaw0] = c2.pathPoint(path, g.d);
+      let y = this.groundAt(x, z);
+      if (n && path.L - g.d < 5) y = lerp(y, n.h > 0.3 ? n.h - 0.1 : 0, 1 - (path.L - g.d) / 5);
+      const yaw = (g.phase === 'back' ? yaw0 + Math.PI : yaw0) / D2R;
+      const bob = g.phase === 'work' ? Math.abs(Math.sin(this.time * 6)) * 0.15 : Math.abs(Math.sin(this.time * 9 + g.d)) * 0.07;
+      const m = trs([x, y + bob, z], [g.phase === 'work' ? 25 : 0, yaw, 0], [1, 1, 1]);
+      draws.push({ mesh: this.villagerMeshes[(g.node + Math.floor(g.d * 0)) % this.villagerMeshes.length], model: m });
+      if (g.load > 0 || g.phase === 'work') draws.push({ mesh: this.basketMesh, model: m, noShadow: true });
+    }
     for (const v of this.villagers) {
       const m = trs([v.x, deck + (v.bob || 0), v.z], [0, v.yaw / D2R, 0], [1, 1, 1]);
       draws.push({ mesh: v.sick ? this.sickMesh : this.villagerMeshes[v.mesh], model: m });
