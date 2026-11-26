@@ -7,12 +7,13 @@ const $ = (sel) => document.querySelector(sel);
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const amount = (v) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : String(Math.floor(v)));
 const rate = (v) => { const a = Math.abs(v); const s = a >= 100 ? String(Math.round(a)) : a.toFixed(1).replace(/\.0$/, ''); return (v < 0 ? '−' : '+') + s; };
+const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
 const clock = (d) => { const m = Math.floor(d * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
 
 export class UI {
   constructor(colony, world, gfx) {
     this.c = colony; this.w = world; this.g = gfx;
-    this.selected = -1; this.menu = false; this.confirm = null; this.panelKey = '';
+    this.selected = -1; this.menu = false; this.confirm = null; this.panelKey = null;
     this.build();
   }
 
@@ -30,16 +31,30 @@ export class UI {
     this.panel = $('#panel');
 
     this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bGfx = $('#bGfx'); this.bMenu = $('#bMenu');
-    this.bBeacon.onclick = () => this.c.toggleBeacon();
-    this.bExp.onclick = () => this.c.startExpedition();
-    this.bGfx.onclick = () => this.g.cycle();
-    this.bMenu.onclick = () => { this.menu = !this.menu; this.confirm = null; if (this.menu) this.select(-1, true); this.panelKey = ''; };
-    this.panel.addEventListener('click', (e) => this.onPanelClick(e));
-    // während der Finger auf dem Panel liegt, nicht neu zeichnen (sonst geht der Klick verloren)
-    this.panel.addEventListener('pointerdown', () => (this.holding = true));
-    const release = () => setTimeout(() => (this.holding = false), 50);
-    this.panel.addEventListener('pointerup', release);
-    this.panel.addEventListener('pointercancel', release);
+    this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bGfx.dataset.a = 'gfx'; this.bMenu.dataset.a = 'menu';
+
+    // Eigene Tipp-Erkennung: Finger runter + Finger hoch auf demselben Knopf, wenig Bewegung.
+    // Robust auch dann, wenn sich der Knopftext zwischendurch ändert.
+    this.down = null;
+    document.addEventListener('pointerdown', (e) => {
+      const b = e.target.closest && e.target.closest('[data-a]');
+      if (!b) { this.down = null; return; }
+      this.down = { b, x: e.clientX, y: e.clientY, id: e.pointerId };
+      this.holding = true;
+    }, true);
+    document.addEventListener('pointerup', (e) => {
+      const d = this.down;
+      this.down = null;
+      setTimeout(() => (this.holding = false), 30);
+      if (!d || d.id !== e.pointerId) return;
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 18) return;
+      const r = d.b.getBoundingClientRect();
+      if (e.clientX < r.left - 10 || e.clientX > r.right + 10 || e.clientY < r.top - 10 || e.clientY > r.bottom + 10) return;
+      if (d.b.disabled || !d.b.isConnected) return;
+      e.preventDefault();
+      this.action(d.b.dataset.a, +d.b.dataset.v);
+    }, true);
+    document.addEventListener('pointercancel', () => { this.down = null; this.holding = false; }, true);
     this.lastLog = 0;
     const v = window.APP_VERSION || { name: 'dev', channel: 'test' };
     this.version = v;
@@ -47,22 +62,23 @@ export class UI {
   }
 
   select(i, keepMenu) {
-    this.selected = i; this.w.selected = i; this.confirm = null; this.panelKey = '';
+    this.selected = i; this.w.selected = i; this.confirm = null; this.panelKey = null;
     if (i >= 0 && !keepMenu) this.menu = false;
   }
 
-  onPanelClick(e) {
-    const b = e.target.closest('[data-a]');
-    if (!b || b.disabled) return;
-    const a = b.dataset.a, v = +b.dataset.v;
+  action(a, v) {
     const c = this.c;
-    if (a === 'close') { this.select(-1); this.menu = false; }
+    if (a === 'beacon') c.toggleBeacon();
+    else if (a === 'exp') c.startExpedition();
+    else if (a === 'gfx') this.g.cycle();
+    else if (a === 'menu') { this.menu = !this.menu; this.confirm = null; if (this.menu) this.select(-1, true); }
+    else if (a === 'close') { this.select(-1); this.menu = false; }
     else if (a === 'build') c.startBuild(this.selected, v);
     else if (a === 'up') c.startUpgrade(this.selected);
     else if (a === 'demo') { if (this.confirm === 'demo') { c.demolish(this.selected); this.select(-1); } else this.confirm = 'demo'; }
     else if (a === 'save') { c.save(); c.msg('Spielstand gespeichert.'); }
     else if (a === 'new') { if (this.confirm === 'new') { c.newGame(); this.menu = false; this.confirm = null; } else this.confirm = 'new'; }
-    this.panelKey = '';
+    this.panelKey = null;
   }
 
   costStr(cost) {
@@ -82,11 +98,11 @@ export class UI {
     });
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
     const tide = c.water < EBB ? 'Ebbe' : c.rising ? 'Flut steigt' : 'Wasser fällt';
-    this.line1.innerHTML = `Wasser <b>${c.water.toFixed(1)} m</b> (${tide}) &nbsp; Deck ${c.deck.toFixed(1)} m &nbsp; Abstand <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>`;
+    setHTML(this.line1, `Wasser <b>${c.water.toFixed(1)} m</b> (${tide}) &nbsp; Deck ${c.deck.toFixed(1)} m &nbsp; Abstand <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>`);
     let l2 = `Siedler <b>${s.survivors}/${c.capacity}</b> &nbsp; Krank <b>${s.sick}</b> &nbsp; Arbeit ${Math.round(c.efficiency * 100)}% &nbsp; Tag ${s.days} · ${clock(s.dayTime)}`;
     if (c.storm) l2 += ' &nbsp; <b style="color:#ff6060">STURMFLUT!</b>';
     else if (c.stormWarning) l2 += ` &nbsp; <span style="color:#ffc060">Sturm in ${Math.ceil(s.stormTimer)}s</span>`;
-    this.line2.innerHTML = l2;
+    setHTML(this.line2, l2);
 
     // Meldungen
     const now = c.time;
@@ -99,12 +115,12 @@ export class UI {
     }
 
     // Knöpfe
-    this.bBeacon.innerHTML = `<b>Leuchtfeuer</b><span>${s.beaconOn ? '<i style="color:#ffd27a">AN</i>' : '<i style="color:#9ab8c8">AUS</i>'}</span>`;
+    setHTML(this.bBeacon, `<b>Leuchtfeuer</b><span>${s.beaconOn ? '<i style="color:#ffd27a">AN</i>' : '<i style="color:#9ab8c8">AUS</i>'}</span>`);
     const blk = c.expeditionBlocker();
-    this.bExp.disabled = !!blk;
-    this.bExp.innerHTML = s.expLeft > 0 ? `<b>Im Watt</b><span>${fmtTime(s.expLeft)}</span>`
-      : blk === 'Wartet auf Ebbe' ? '<b>Wattwandern</b><span>wartet auf Ebbe</span>' : `<b>Wattwandern</b><span>${EXP_FOOD} Muscheln</span>`;
-    this.bGfx.innerHTML = `<b>Grafik</b><span>${this.g.auto ? 'Auto · ' : ''}${TIERS[this.g.tier]}</span>`;
+    if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
+    setHTML(this.bExp, s.expLeft > 0 ? `<b>Im Watt</b><span>${fmtTime(s.expLeft)}</span>`
+      : blk === 'Wartet auf Ebbe' ? '<b>Wattwandern</b><span>wartet auf Ebbe</span>' : `<b>Wattwandern</b><span>${EXP_FOOD} Muscheln</span>`);
+    setHTML(this.bGfx, `<b>Grafik</b><span>${this.g.auto ? 'Auto · ' : ''}${TIERS[this.g.tier]}</span>`);
 
     // Beschriftungen über den Gebäuden
     const deck = c.deck;
