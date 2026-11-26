@@ -53,6 +53,7 @@
   .btns.col { flex-direction: column; } .btns.col .btn { width: 100%; }
   #loading, #err { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0b1a20; gap: 10px; text-align: center; padding: 30px; }
   #err { display: none; z-index: 10; }
+  #badge { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 124px); background: #c2410c; color: #fff; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; pointer-events: none; letter-spacing: .04em; }
   .logo { font-size: 30px; font-weight: 900; letter-spacing: .02em; }
   .sub { color: var(--dim); }
 </style>
@@ -62,6 +63,7 @@
 <div id="labels"></div>
 <div id="top"><div class="res"></div><div class="l1"></div><div class="l2"></div></div>
 <div id="toasts"></div>
+<div id="badge" style="display:none"></div>
 <div id="panel" style="display:none"></div>
 <div id="bottom"><div class="row4">
   <button class="bb" id="bBeacon"></button>
@@ -71,6 +73,7 @@
 </div></div>
 <div id="loading"><div class="logo">Pfahlstadt</div><div class="sub">Ebbe &amp; Flut</div></div>
 <div id="err"><div class="logo">Pfahlstadt</div><p></p></div>
+<script src="version.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

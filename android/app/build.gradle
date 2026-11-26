@@ -2,18 +2,23 @@ plugins {
     id 'com.android.application'
 }
 
-def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+// Kanal "test" (nur für dich) oder "public" (für Freunde) – getrennte Apps, getrennte Spielstände
+def channel = (project.findProperty("channel") ?: "test").toString()
+def vName = (project.findProperty("vName") ?: "dev").toString()
+def vCode = (project.findProperty("vCode") ?: "1").toString().toInteger()
+def isPublic = channel == "public"
 
 android {
     namespace 'de.robertbaasner.pfahlstadt'
     compileSdk 34
 
     defaultConfig {
-        applicationId "de.robertbaasner.pfahlstadt"
+        applicationId isPublic ? "de.robertbaasner.pfahlstadt" : "de.robertbaasner.pfahlstadt.test"
         minSdk 26
         targetSdk 34
-        versionCode runNumber
-        versionName "1.0.${runNumber}"
+        versionCode vCode
+        versionName vName
+        resValue "string", "app_name", isPublic ? "Pfahlstadt" : "Pfahlstadt Test"
     }
 
     signingConfigs {

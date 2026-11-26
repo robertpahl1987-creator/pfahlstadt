@@ -41,6 +41,9 @@ export class UI {
     this.panel.addEventListener('pointerup', release);
     this.panel.addEventListener('pointercancel', release);
     this.lastLog = 0;
+    const v = window.APP_VERSION || { name: 'dev', channel: 'test' };
+    this.version = v;
+    if (v.channel !== 'public') { const b = $('#badge'); b.textContent = 'TEST ' + v.name; b.style.display = ''; }
   }
 
   select(i, keepMenu) {
@@ -183,6 +186,7 @@ export class UI {
       `<div class="inf">Grafikstufe: <b>${g.auto ? 'Automatisch → ' : ''}${TIERS[g.tier]}</b></div>
        <div class="inf">Auflösung: <b>${g.res[0]} × ${g.res[1]}</b> (Ultra: Supersampling, max. 8K)</div>
        <div class="inf">Bildrate: <b>${Math.round(g.fpsShown)} FPS</b></div>
+       <div class="inf">Version: <b>${this.version.name}</b>${this.version.channel === 'public' ? '' : ' (Testversion)'}</div>
        <div class="btns col"><button class="btn" data-a="save">Spiel speichern</button>
        <button class="btn ${this.confirm === 'new' ? 'danger' : 'ghost'}" data-a="new">${this.confirm === 'new' ? '<b>Wirklich neu anfangen? Alles geht verloren</b>' : 'Neues Spiel'}</button></div>
        <div class="sm">Tipp: Wattwandern geht nur bei Ebbe. Muscheln wachsen bei Ebbe, Taucher arbeiten bei Flut, Regenfänger lieben Stürme. Steigt das Wasser über das Deck, werden Siedler krank – bau den Gezeitenturm aus!</div>`;

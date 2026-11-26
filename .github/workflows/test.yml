@@ -1,0 +1,51 @@
+name: Testversion bauen
+
+# Läuft bei jeder Änderung automatisch. Ergebnis: "Pfahlstadt Test" (eigene App, nur für dich)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+
+      - name: Spiel bündeln
+        run: |
+          npx --yes esbuild@0.24.0 web/src/main.js --bundle --format=iife --target=es2020 --minify --outfile=web/game.js
+          mkdir -p android/app/src/main/assets
+          cp web/index.html web/game.js android/app/src/main/assets/
+          echo "window.APP_VERSION = { name: 'Test ${{ github.run_number }}', channel: 'test' };" > android/app/src/main/assets/version.js
+
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.9" }
+
+      - name: APK bauen
+        working-directory: android
+        run: gradle assembleRelease --no-daemon -Pchannel=test -PvName="test-${{ github.run_number }}" -PvCode=${{ github.run_number }}
+
+      - run: cp android/app/build/outputs/apk/release/app-release.apk Pfahlstadt-Test.apk
+
+      - uses: actions/upload-artifact@v4
+        with: { name: Pfahlstadt-Test-${{ github.run_number }}, path: Pfahlstadt-Test.apk }
+
+      - name: Test-Download aktualisieren
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test
+          name: Pfahlstadt TEST (nur für dich)
+          prerelease: true
+          make_latest: false
+          body: |
+            Neueste Testversion: Test ${{ github.run_number }} (${{ github.sha }})
+            Installiert sich als eigene App "Pfahlstadt Test" neben der Freunde-Version.
+          files: Pfahlstadt-Test.apk
