@@ -1,6 +1,7 @@
 // Oberfläche (HTML über der 3D-Ansicht) inkl. Seekarte, Kaserne und Berichten
-import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
+import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
 import { plotPos } from './world.js';
+import { towerHeight } from './models.js';
 import { TIERS } from './gfx.js';
 import { SeaMap } from './map.js';
 
@@ -9,7 +10,7 @@ const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) 
 const amount = (v) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : String(Math.floor(v)));
 const rate = (v) => { const a = Math.abs(v); const s = a >= 1000 ? (a / 1000).toFixed(1) + 'k' : String(Math.round(a)); return (v < 0 ? '−' : '+') + s; };
 const RES_IC = ['🪵', '🦪', '💧', '⚙️'];
-const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹'];
+const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹', '🌊'];
 const NODE_NAME = ['Treibholz', 'Muschelbank', 'Süßwassertümpel', 'Wrackteile'];
 const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
 const clock = (d) => { const m = Math.floor(d * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
@@ -256,7 +257,7 @@ export class UI {
     this.gd.style.left = `${Math.min(97, (c.deck / top) * 100)}%`;
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
     const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? 'Ebbe' : c.rising ? 'Flut ↑' : 'Flut ↓';
-    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
+    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
     let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${s.troops[0] + s.troops[1]}</b> · ${clock(s.dayTime)}`;
     if (this.o.active) st += this.o.incoming ? ` · <b style="color:#ff6060">⚠ Angriff!</b>` : this.o.status === 'online' ? ' <span style="color:#8ef0a0">●</span>' : ' <span style="color:#ffb070">●</span>';
     setHTML(this.st, st);
@@ -271,7 +272,7 @@ export class UI {
     }
 
     const btn = (el, ic, label, sub) => setHTML(el, `<span class="ic">${ic}</span><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}`);
-    btn(this.bBeacon, '🔥', 'Feuer', s.beaconOn ? 'an' : 'aus');
+    btn(this.bBeacon, '💡', 'Licht', s.beaconOn ? 'an' : 'aus');
     this.bBeacon.classList.toggle('on', !!s.beaconOn);
     const blk = c.expeditionBlocker();
     if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
@@ -296,7 +297,7 @@ export class UI {
       const p = s.plots[i], el = this.labelEls[i];
       if (p.type < 0 || (this.w.dist > 120 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
       const pp = plotPos(i);
-      const tall = i === 0 ? 15 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
+      const tall = i === DAMM ? c.damTop - deck + 3 : i === 0 ? towerHeight(Math.max(1, p.level)) + 5 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
       const sp = this.w.screenPos([pp[0], deck + tall, pp[2]], cw, ch);
       if (!sp || sp[0] < -40 || sp[0] > cw + 40 || sp[1] < 60 || sp[1] > ch - 60) { el.style.display = 'none'; continue; }
       const near = this.w.dist < 50 || i === this.selected;
@@ -409,7 +410,7 @@ export class UI {
         return this.head('Äußerer Bauplatz') + `<div class="desc">Dieser Platz liegt im äußeren Ring. Er wird frei, sobald dein Gezeitenturm Stufe ${OUTER_LEVEL} erreicht.</div>`;
       if (i >= RING3 && i < WALL && c.builtCount < c.ring3Needed(i))
         return this.head('Gelände (noch nicht erschlossen)') + `<div class="desc">Deine Warft wächst mit jedem Neubau. Dieser Platz wird frei, wenn du noch <b>${c.ring3Needed(i) - c.builtCount}</b> Gebäude baust. Geländeradius jetzt: ${Math.round(c.areaRadius)} m.</div>`;
-      const types = i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
+      const types = i === DAMM ? [T.DAMM] : i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
       let rows = '';
       for (const t of types) {
         const d = DEFS[t], blk = c.buildBlocker(i, t);
@@ -418,7 +419,7 @@ export class UI {
           ${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>
           <button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button></div>`;
       }
-      const title = i === WALL ? 'Festung' : i >= TOWERS ? 'Turmplatz auf der Mauer' : i >= RING3 ? 'Bauplatz auf der Warft' : i >= INNER ? 'Freier Bauplatz (außen)' : 'Freier Bauplatz';
+      const title = i === DAMM ? 'Dammplatz' : i === WALL ? 'Festung' : i >= TOWERS ? 'Turmplatz auf der Mauer' : i >= RING3 ? 'Bauplatz auf der Warft' : i >= INNER ? 'Freier Bauplatz (außen)' : 'Freier Bauplatz';
       const intro = i === WALL ? '<div class="desc">Baue eine Mauer mit Tor rund um dein ganzes Gelände. Sie wächst mit, wenn die Warft größer wird.</div>' : '';
       return this.head(title) + intro + `<div class="list">${rows}</div>`;
     }
@@ -472,7 +473,7 @@ export class UI {
   info(t, L) {
     const c = this.c, d = DEFS[t];
     switch (t) {
-      case T.TURM: return [`Deckhöhe der Stadt: <b>${deckFor(L).toFixed(2)} m</b> (nächste Stufe ${deckFor(L + 1).toFixed(2)} m)`, `Leuchtfeuer verbraucht ${Math.round(beaconWood(L) * 60)} Holz/min`, `Andere Gebäude bis Stufe ${L}`, L < OUTER_LEVEL ? `Äußerer Bauring ab Stufe ${OUTER_LEVEL}` : 'Äußerer Bauring ist frei'];
+      case T.TURM: return [`Deckhöhe der Stadt: <b>${deckFor(L).toFixed(2)} m</b> (nächste Stufe ${deckFor(L + 1).toFixed(2)} m)`, `Leuchtturm-Licht verbraucht ${Math.round(beaconWood(L) * 60)} Holz/min`, `Andere Gebäude bis Stufe ${L}`, L < OUTER_LEVEL ? `Äußerer Bauring ab Stufe ${OUTER_LEVEL}` : 'Äußerer Bauring ist frei'];
       case T.HAUS: return [`Platz für <b>${6 * L}</b> Siedler`];
       case T.HEILER: return [`Heilung etwa ${1 + 5 * L}× so schnell`, `Arbeiter: ${d.workers * L}`];
       case T.RAUCH: return [`Muschelverbrauch −${Math.min(50, 8 * L)} %`, `Arbeiter: ${d.workers * L}`];
@@ -480,6 +481,7 @@ export class UI {
       case T.KASERNE: return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller · Schlange bis ${10 * L}`];
       case T.WACHTURM: return [`Verteidigung der Stadt <b>+${12 * L} %</b>`, `Aktuelle Verteidigung: <b>${c.defense}</b>`, c.raidIn !== null ? `Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}` : 'Piraten greifen ab Tag 2 an'];
       case T.LAGER: return [`Lagerplatz je Rohstoff: <b>${c.storage}</b>`];
+      case T.DAMM: return [`Schützt bis Wasserstand <b>${damTopFor(L).toFixed(1)} m</b> (nächste Stufe ${damTopFor(L + 1).toFixed(1)} m)`, `Jetzt: Wasser ${c.water.toFixed(1)} m · ${c.damHolds ? '<b style="color:#8ef0a0">Damm hält die Flut ab</b>' : c.water > c.damTop ? '<b style="color:#ff6a6a">Wasser läuft über den Damm!</b>' : 'Stadt liegt trocken'}`];
       case T.MAUER: return [`${L <= 3 ? 'Holzpalisade' : L <= 7 ? 'Steinwall' : 'Festungswall'} · Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Geländeradius: ${Math.round(c.areaRadius)} m`];
       case T.ABWEHR: return [`Verteidigung <b>+${40 * L}</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`];
       default:
@@ -676,8 +678,8 @@ export class UI {
     let body;
     if (tab === 'mine') body = this.cityOverviewHtml();
     else {
-      const types = [...CITY_TYPES, T.MAUER, T.ABWEHR];
-      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]]];
+      const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
+      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]], ['Schutz vor der Flut', [T.DAMM]]];
       body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt. Der Platz wird automatisch gewählt.</div>`;
       for (const [title, list] of groups) {
         body += `<div class="sub2">${title}</div>`;
@@ -689,6 +691,7 @@ export class UI {
             if (c.activeBuilds >= 2) why = 'Alle Bautrupps beschäftigt';
             else if (!c.canAfford(costFor(t, 1))) why = '';
             else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
+            else if (t === T.DAMM) why = c.s.plots[DAMM].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
             else if (t === T.ABWEHR && c.levels(T.MAUER) <= 0) why = 'Erst die Festungsmauer bauen';
             else why = 'Kein freier Platz – baue mehr, dann wächst dein Gelände';
           }
@@ -708,6 +711,7 @@ export class UI {
       ['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]],
       ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
       ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]],
+      ['Schutz vor der Flut', [T.DAMM]],
     ];
     let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt · Gelände ${Math.round(c.areaRadius)} m · freie Bewohner ${c.freeVillagers}</div>`;
     for (const [title, types] of groups) {

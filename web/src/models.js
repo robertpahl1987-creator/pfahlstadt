@@ -1,5 +1,7 @@
 // Alle 3D-Modelle, aus Grundformen zusammengesetzt (Maße wie in der Unity-Fassung).
 import { T } from './game.js';
+import { frustum } from './geo.js';
+const FR55 = frustum(0.55);
 
 export const C = {
   sand: [0.62, 0.57, 0.47], wetSand: [0.42, 0.39, 0.33], plank: [0.52, 0.4, 0.27], drift: [0.62, 0.56, 0.48],
@@ -289,38 +291,131 @@ export function basket(B) {
   B.add('cylinder', [0, 1.05, -0.32], [0.42, 0.25, 0.42], [0.72, 0.6, 0.35]);
 }
 
-export const towerHeight = (level) => 9 + 0.5 * level;
+// Leuchtturm wächst mit dem Ausbau: Holzbake (1–2) → Steinturm (3–5) → klassischer Leuchtturm (6–8) → moderner Turm (9–10)
+const TH = [4.5, 4.5, 5.5, 8, 9.5, 11, 13, 14.5, 16, 20, 23];
+export const towerHeight = (level) => TH[Math.max(1, Math.min(10, level))];
+export const towerEra = (level) => (level <= 2 ? 0 : level <= 5 ? 1 : level <= 8 ? 2 : 3);
+export const lampHeight = (level) => towerHeight(level) + (towerEra(level) === 0 ? 0.7 : towerEra(level) === 3 ? 2.0 : 1.2);
 
 /// Leuchtturm (ohne Laterne – die wird dynamisch gezeichnet)
 export function tower(B, level) {
-  const H = towerHeight(level), bands = 6;
-  for (let i = 0; i < bands; i++) {
-    const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
-    B.add('cylinder', [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
+  const H = towerHeight(level), era = towerEra(level);
+  const wood = [0.55, 0.42, 0.28], stone = [0.5, 0.49, 0.46], stoneD = [0.38, 0.37, 0.35], concrete = [0.86, 0.87, 0.88], steel = [0.45, 0.48, 0.52];
+  if (era === 0) {
+    // einfache Holzbake: vier Pfosten, Streben, Plattform mit Feuerkorb
+    const r = 1.1 - 0.1 * (level - 1);
+    for (let i = 0; i < 4; i++) {
+      const sx = i & 1 ? 1 : -1, sz = i & 2 ? 1 : -1;
+      B.add('cube', [sx * r, H / 2, sz * r], [0.22, H, 0.22], wood, { rot: [sz * -4, 0, sx * 4] });
+    }
+    for (let k = 1; k <= 2; k++) {
+      const y = (H * k) / 3;
+      B.add('cube', [0, y, r], [r * 2, 0.12, 0.12], wood); B.add('cube', [0, y, -r], [r * 2, 0.12, 0.12], wood);
+      B.add('cube', [r, y, 0], [0.12, 0.12, r * 2], wood); B.add('cube', [-r, y, 0], [0.12, 0.12, r * 2], wood);
+      B.add('cube', [0, y - H / 6, r], [r * 2.3, 0.1, 0.1], wood, { rot: [0, 0, 35] });
+      B.add('cube', [r, y - H / 6, 0], [0.1, 0.1, r * 2.3], wood, { rot: [35, 0, 0] });
+    }
+    B.add('cube', [0, H, 0], [r * 2.6, 0.2, r * 2.6], C.plank);
+    for (let i = 0; i < 4; i++) { const a = (i * Math.PI) / 2 + Math.PI / 4; B.add('cube', [Math.cos(a) * 0.7, H + 0.45, Math.sin(a) * 0.7], [0.08, 0.9, 0.08], C.dark); }
+    B.add('cube', [0, 0.25, 0], [r * 2.6, 0.5, r * 2.6], C.drift);
+    return;
   }
-  B.add('cube', [0, 0.9, 1.68], [1, 1.8, 0.12], C.tar);
-  for (let i = 1; i < 4; i++) {
-    const y = (H * i) / 4.5, rad = (3.4 + (2.3 - 3.4) * (y / H)) * 0.5 + 0.02;
-    B.add('cube', [0, y, rad], [0.4, 0.6, 0.06], C.window, { e: 1.4 });
+  if (era === 1) {
+    // Steinturm aus groben Lagen, Holzdach
+    const layers = Math.round(H / 1.1);
+    for (let i = 0; i < layers; i++) {
+      const t = i / layers, rad = 2.7 - 0.7 * t, segH = H / layers;
+      B.add('cylLow', [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 3 === 0 ? stoneD : stone, { g: 0.08, rot: [0, i * 13, 0] });
+    }
+    B.add('cube', [0, 0.95, 1.6], [0.9, 1.9, 0.14], C.tar);
+    for (let i = 1; i < 3; i++) B.add('cube', [0, (H * i) / 3, 2.7 - 0.7 * (i / 3) - 0.02], [0.35, 0.55, 0.06], C.window, { e: 1.2 });
+    B.add('cylinder', [0, H + 0.1, 0], [2.6, 0.14, 2.6], stoneD);
+    for (let i = 0; i < 8; i++) { const a = (i * Math.PI * 2) / 8; B.add('cube', [Math.cos(a) * 1.15, H + 1.2, Math.sin(a) * 1.15], [0.12, 2.2, 0.12], wood); }
+    B.add('cone', [0, H + 2.8, 0], [2.6, 1.2, 2.6], C.roofGrey, { g: 0.2 });
+    return;
   }
-  B.add('cylinder', [0, H + 0.1, 0], [3.4, 0.12, 3.4], C.dark, { g: 0.5 });
-  for (let i = 0; i < 16; i++) {
-    const a = (i * Math.PI * 2) / 16;
-    B.add('cube', [Math.cos(a) * 1.6, H + 0.55, Math.sin(a) * 1.6], [0.07, 0.8, 0.07], C.dark);
+  if (era === 2) {
+    // klassischer rot-weißer Leuchtturm mit Galerie
+    const bands = 6 + (level - 6);
+    for (let i = 0; i < bands; i++) {
+      const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
+      B.add('cylinder', [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
+    }
+    B.add('cube', [0, 0.9, 1.68], [1, 1.8, 0.12], C.tar);
+    for (let i = 1; i < 4; i++) {
+      const y = (H * i) / 4.5, rad = (3.4 + (2.3 - 3.4) * (y / H)) * 0.5 + 0.02;
+      B.add('cube', [0, y, rad], [0.4, 0.6, 0.06], C.window, { e: 1.4 });
+    }
+    B.add('cylinder', [0, H + 0.1, 0], [3.4, 0.12, 3.4], C.dark, { g: 0.5 });
+    for (let i = 0; i < 16; i++) { const a = (i * Math.PI * 2) / 16; B.add('cube', [Math.cos(a) * 1.6, H + 0.55, Math.sin(a) * 1.6], [0.07, 0.8, 0.07], C.dark); }
+    B.add('cylinder', [0, H + 0.95, 0], [3.25, 0.04, 3.25], C.dark);
+    B.add('cone', [0, H + 2.2, 0], [2.6, 1.5, 2.6], C.red, { g: 0.35 });
+    B.add('sphere', [0, H + 3.8, 0], [0.35, 0.35, 0.35], C.dark, { g: 0.6 });
+    return;
   }
-  B.add('cylinder', [0, H + 0.95, 0], [3.25, 0.04, 3.25], C.dark);
-  B.add('cone', [0, H + 2.2, 0], [2.6, 1.5, 2.6], C.red, { g: 0.35 });
-  B.add('sphere', [0, H + 3.8, 0], [0.35, 0.35, 0.35], C.dark, { g: 0.6 });
+  // moderner Turm: schlanker weißer Betonschaft, Stahlringe, Glaskanzel, Antenne
+  B.add('cylinder', [0, 0.6, 0], [5.2, 0.6, 5.2], concrete, { g: 0.3 });
+  B.add(FR55, [0, 1.2, 0], [4.4, H - 1.2, 4.4], concrete, { g: 0.5 });
+  const rings = level === 10 ? 3 : 2;
+  for (let i = 1; i <= rings; i++) { const y = 1.2 + ((H - 1.2) * i) / (rings + 1), rad = (2.2 - 1.0 * ((y - 1.2) / (H - 1.2))) ; B.add('cylinder', [0, y, 0], [rad * 2 + 0.15, 0.25, rad * 2 + 0.15], C.red, { g: 0.4 }); }
+  for (let i = 1; i < 6; i++) { const y = (H * i) / 6.5, rad = 2.2 - 1.0 * ((y - 1.2) / (H - 1.2)); B.add('cube', [0, y, rad - 0.02], [0.3, 0.9, 0.06], [0.55, 0.8, 0.95], { e: 0.9, g: 0.9 }); }
+  B.add('cube', [0, 1.3, 2.3], [1.2, 2.4, 0.14], steel, { g: 0.7 });
+  B.add('cylinder', [0, H + 0.12, 0], [3.8, 0.12, 3.8], steel, { g: 0.7 });
+  for (let i = 0; i < 20; i++) { const a = (i * Math.PI * 2) / 20; B.add('cube', [Math.cos(a) * 1.85, H + 0.6, Math.sin(a) * 1.85], [0.05, 0.9, 0.05], steel, { g: 0.8 }); }
+  B.add('cylinder', [0, H + 1.05, 0], [3.7, 0.04, 3.7], steel, { g: 0.8 });
+  B.add('cylinder', [0, H + 3.0, 0], [2.6, 0.1, 2.6], steel, { g: 0.8 });
+  B.add('sphere', [0, H + 3.1, 0], [2.4, 1.0, 2.4], concrete, { g: 0.7 });
+  B.add('cube', [0, H + 5.0, 0], [0.08, 3, 0.08], steel);
+  B.add('sphere', [0, H + 6.5, 0], [0.25, 0.25, 0.25], C.red, { e: 2.5 });
+  B.add('cube', [0.9, H + 4.0, 0], [1.4, 0.08, 0.08], steel);
 }
 
 /// Laterne (eigenes Mesh, damit sie flackern kann)
 export function lantern(B, level) {
-  const H = towerHeight(level);
+  const H = towerHeight(level), era = towerEra(level);
+  if (era === 0) {
+    B.add('cylinder', [0, H + 0.55, 0], [1.0, 0.35, 1.0], [1, 0.6, 0.25], { e: 3 });
+    B.add('sphere', [0, H + 0.95, 0], [0.8, 0.6, 0.8], [1, 0.75, 0.35], { e: 3.5 });
+    return;
+  }
+  if (era === 3) {
+    B.add('cylinder', [0, H + 2.0, 0], [2.1, 0.95, 2.1], [0.85, 0.95, 1], { e: 3.2, g: 1 });
+    for (let i = 0; i < 8; i++) { const a = (i * Math.PI * 2) / 8; B.add('cube', [Math.cos(a) * 1.05, H + 2.0, Math.sin(a) * 1.05], [0.05, 1.9, 0.05], C.dark); }
+    return;
+  }
   B.add('cylinder', [0, H + 1.2, 0], [1.9, 1, 1.9], [1, 0.85, 0.45], { e: 3 });
   for (let i = 0; i < 6; i++) {
     const a = (i * Math.PI * 2) / 6;
     B.add('cube', [Math.cos(a) * 0.95, H + 1.2, Math.sin(a) * 0.95], [0.08, 2, 0.08], C.dark);
   }
+}
+
+/// Damm ganz außen: Erdwall mit Grasnarbe, ab Stufe 4 Steinpackung, ab Stufe 8 Betonkrone; Sieltor am Weg (−z)
+export function dike(B, level, R, top) {
+  const base = -1.2, H = top - base, N = 80, gap = 0.075;
+  const grass = [0.36, 0.5, 0.27], earth = [0.5, 0.44, 0.33], stone = [0.46, 0.46, 0.44], concrete = [0.78, 0.78, 0.76];
+  const seg = (2 * Math.PI * R) / N * 1.08;
+  for (let k = 0; k < N; k++) {
+    const a = ((k + 0.5) / N) * Math.PI * 2;
+    if (Math.abs(a - Math.PI) < gap) continue;
+    const x = Math.sin(a), z = Math.cos(a), yaw = a / (Math.PI / 180);
+    const lay = (y0, h, w, off, col) => B.add('cube', [x * (R + off), y0 + h / 2, z * (R + off)], [seg, h, w], col, { rot: [0, yaw, 0], g: 0.08 });
+    lay(base, H * 0.4, 9, 0, level >= 4 ? stone : earth);
+    lay(base + H * 0.4, H * 0.35, 6.5, 0.3, level >= 4 ? stone : earth);
+    lay(base + H * 0.75, H * 0.25, 4, 0.3, grass);
+    if (level >= 4) lay(base + H * 0.4, H * 0.35, 1, -2.8, grass);
+    if (level >= 8) lay(top, 0.9, 0.6, 2.0, concrete);
+  }
+  // Sieltor
+  const zc = -R;
+  for (const s of [-1, 1]) {
+    const xs = s * Math.sin(gap) * R;
+    B.add('cube', [xs, base + (H + 1.5) / 2, zc], [1.6, H + 1.5, 7], level >= 4 ? concrete : C.plank, { g: 0.2 });
+  }
+  const w = Math.sin(gap) * R * 2;
+  B.add('cube', [0, top + 1.2, zc], [w + 1.6, 0.6, 1.4], level >= 4 ? concrete : C.plank);
+  B.add('cube', [0, top - 0.6, zc + 2.6], [w, H * 0.5, 0.35], level >= 8 ? [0.4, 0.44, 0.5] : C.tar, { g: 0.5 });
+  B.add('cube', [0, base + 0.2, zc], [w, 0.4, 7], earth);
 }
 
 export function scaffold(B, half, newBuild) {

@@ -3,7 +3,7 @@ export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
 export const RES_COL = ['#E2B477', '#F2A08C', '#7FD3F0', '#C7CCD6'];
 export const HOLZ = 0, MUSCHELN = 1, WASSER = 2, METALL = 3;
 
-export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13 };
+export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14 };
 
 export const DEFS = [
   { name: 'Gezeitenturm', short: 'Herz der Stadt', desc: 'Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt höher über das Wasser.', cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
@@ -20,7 +20,9 @@ export const DEFS = [
   { name: 'Lager', short: '+1500 Lagerplatz je Stufe', desc: 'Schuppen, Kisten und Fässer: mehr Platz für jeden Rohstoff (+1500 pro Stufe).', cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 0, build: 6 },
   { name: 'Festungsmauer', short: 'Mauer mit Tor', desc: 'Umschließt dein ganzes Gelände. Stufe 1–3 Holzpalisade, 4–7 Steinwall, 8–10 Festungswall. +15 % Verteidigung pro Stufe.', cost: [200, 0, 0, 40], prod: -1, rate: 0, workers: 0, build: 12 },
   { name: 'Abwehrturm', short: 'Turm auf der Mauer', desc: 'Steinturm mit Harpunen-Schleuder auf der Festungsmauer. +40 Verteidigung pro Stufe.', cost: [160, 0, 0, 50], prod: -1, rate: 0, workers: 1, build: 10 },
+  { name: 'Damm', short: 'hält Flut & Sturmflut ab', desc: 'Erddamm ganz außen um die Warft, mit Sieltor. Solange das Wasser nicht über den Damm steigt, bleibt deine Stadt trocken. Jede Stufe macht ihn 40 cm höher.', cost: [240, 0, 0, 30], prod: -1, rate: 0, workers: 0, build: 12 },
 ];
+export const damTopFor = (lvl) => (lvl > 0 ? 3.0 + 0.4 * lvl : -99);
 export const CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 // ---------- Militär ----------
@@ -60,7 +62,8 @@ export const rateAt = (t, lvl) => (lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 
 export const deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
 export const beaconWood = (lvl) => 0.04 + 0.04 * lvl;
 
-export const PLOTS = 52, INNER = 13, RING3 = 25, WALL = 43, TOWERS = 44, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
+export const DAMM = 52;
+export const PLOTS = 53, INNER = 13, RING3 = 25, WALL = 43, TOWERS = 44, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
 const KEY = 'pfahlstadt_save_v1';
 
 export function fmtTime(s) {
@@ -104,7 +107,11 @@ export class Colony {
     return b + this.troopTotal * 2 + this.defense;
   }
   get deck() { return deckFor(this.towerLevel); }
-  get freeboard() { return this.deck - this.water; }
+  get damTop() { return damTopFor(this.levels(T.DAMM)); }
+  /// Wasser innerhalb des Damms: hält der Damm, bleibt die Stadt trocken
+  get damHolds() { return this.water > this.deck && this.water <= this.damTop; }
+  get inWater() { return this.damHolds ? this.deck - 0.35 : this.water; }
+  get freeboard() { return this.deck - this.inWater; }
   get storm() { return this.s.stormLeft > 0; }
   get stormWarning() { return !this.storm && this.s.stormTimer < 30; }
   get healthy() { return Math.max(0, this.s.survivors - this.s.sick); }
@@ -129,7 +136,7 @@ export class Colony {
     }
 
     this.updateWater();
-    if (this.wasBurning && !this.beaconBurning && s.beaconOn) this.msg('Kein Holz mehr – das Leuchtfeuer erlischt!');
+    if (this.wasBurning && !this.beaconBurning && s.beaconOn) this.msg('Kein Holz mehr – das Licht im Leuchtturm geht aus!');
     this.wasBurning = this.beaconBurning;
 
     this.applyRates(this.computeRates(false), dt);
@@ -258,11 +265,13 @@ export class Colony {
   buildBlocker(plot, t) {
     if (plot === 0 || t === T.TURM) return 'Nicht möglich';
     if (this.s.plots[plot].type >= 0) return 'Platz belegt';
+    if (plot === DAMM && t !== T.DAMM) return 'Hier entsteht der Damm';
+    if (plot !== DAMM && t === T.DAMM) return 'Nur am Dammplatz';
     if (plot === WALL && t !== T.MAUER) return 'Hier steht die Festungsmauer';
     if (plot !== WALL && t === T.MAUER) return 'Nur am Mauerplatz';
-    if (plot >= TOWERS && t !== T.ABWEHR) return 'Hier passen nur Abwehrtürme';
+    if (plot >= TOWERS && plot < DAMM && t !== T.ABWEHR) return 'Hier passen nur Abwehrtürme';
     if (plot < TOWERS && t === T.ABWEHR) return 'Nur auf der Mauer';
-    if (plot >= TOWERS && this.levels(T.MAUER) <= 0) return 'Erst die Festungsmauer bauen';
+    if (plot >= TOWERS && plot < DAMM && this.levels(T.MAUER) <= 0) return 'Erst die Festungsmauer bauen';
     if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `Äußerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
     if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gelände zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Gebäude bauen`;
     if (this.activeBuilds >= MAX_BUILDS) return 'Alle Bautrupps beschäftigt';
@@ -308,7 +317,7 @@ export class Colony {
 
   toggleBeacon() {
     this.s.beaconOn = !this.s.beaconOn;
-    this.msg(this.s.beaconOn ? 'Leuchtfeuer entzündet.' : 'Leuchtfeuer gelöscht – Holz wird gespart, aber keine Boote finden her.');
+    this.msg(this.s.beaconOn ? 'Leuchtturm-Licht eingeschaltet.' : 'Leuchtturm-Licht aus – Holz wird gespart, aber keine Boote finden her.');
     this.wasBurning = this.beaconBurning;
   }
 

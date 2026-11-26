@@ -819,7 +819,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var MUSCHELN = 1;
   var WASSER = 2;
   var METALL = 3;
-  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13 };
+  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14 };
   var DEFS = [
     { name: "Gezeitenturm", short: "Herz der Stadt", desc: "Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt h\xF6her \xFCber das Wasser.", cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
     { name: "Treibholzsammler", short: "+Holz", desc: "Fischt angeschwemmtes Holz aus dem Wasser.", cost: [40, 0, 0, 0], prod: HOLZ, rate: 0.9, workers: 2, build: 6 },
@@ -834,8 +834,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { name: "Wachturm", short: "+12 % Verteidigung je Stufe", desc: "Sp\xE4her und Signalh\xF6rner: Deine Stadt verteidigt sich besser gegen \xDCberf\xE4lle (+12 % pro Stufe).", cost: [130, 0, 0, 40], prod: -1, rate: 0, workers: 1, build: 8 },
     { name: "Lager", short: "+1500 Lagerplatz je Stufe", desc: "Schuppen, Kisten und F\xE4sser: mehr Platz f\xFCr jeden Rohstoff (+1500 pro Stufe).", cost: [100, 0, 0, 10], prod: -1, rate: 0, workers: 0, build: 6 },
     { name: "Festungsmauer", short: "Mauer mit Tor", desc: "Umschlie\xDFt dein ganzes Gel\xE4nde. Stufe 1\u20133 Holzpalisade, 4\u20137 Steinwall, 8\u201310 Festungswall. +15 % Verteidigung pro Stufe.", cost: [200, 0, 0, 40], prod: -1, rate: 0, workers: 0, build: 12 },
-    { name: "Abwehrturm", short: "Turm auf der Mauer", desc: "Steinturm mit Harpunen-Schleuder auf der Festungsmauer. +40 Verteidigung pro Stufe.", cost: [160, 0, 0, 50], prod: -1, rate: 0, workers: 1, build: 10 }
+    { name: "Abwehrturm", short: "Turm auf der Mauer", desc: "Steinturm mit Harpunen-Schleuder auf der Festungsmauer. +40 Verteidigung pro Stufe.", cost: [160, 0, 0, 50], prod: -1, rate: 0, workers: 1, build: 10 },
+    { name: "Damm", short: "h\xE4lt Flut & Sturmflut ab", desc: "Erddamm ganz au\xDFen um die Warft, mit Sieltor. Solange das Wasser nicht \xFCber den Damm steigt, bleibt deine Stadt trocken. Jede Stufe macht ihn 40 cm h\xF6her.", cost: [240, 0, 0, 30], prod: -1, rate: 0, workers: 0, build: 12 }
   ];
+  var damTopFor = (lvl) => lvl > 0 ? 3 + 0.4 * lvl : -99;
   var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   var UNITS = [
     { name: "Harpunier", att: 10, def: 5, cost: [25, 15, 0, 4], time: 6 },
@@ -902,7 +904,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var rateAt = (t, lvl) => lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 * (lvl - 1));
   var deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, lvl);
   var beaconWood = (lvl) => 0.04 + 0.04 * lvl;
-  var PLOTS = 52;
+  var DAMM = 52;
+  var PLOTS = 53;
   var INNER = 13;
   var RING3 = 25;
   var WALL = 43;
@@ -993,8 +996,18 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     get deck() {
       return deckFor(this.towerLevel);
     }
+    get damTop() {
+      return damTopFor(this.levels(T.DAMM));
+    }
+    /// Wasser innerhalb des Damms: hält der Damm, bleibt die Stadt trocken
+    get damHolds() {
+      return this.water > this.deck && this.water <= this.damTop;
+    }
+    get inWater() {
+      return this.damHolds ? this.deck - 0.35 : this.water;
+    }
     get freeboard() {
-      return this.deck - this.water;
+      return this.deck - this.inWater;
     }
     get storm() {
       return this.s.stormLeft > 0;
@@ -1038,7 +1051,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
       }
       this.updateWater();
-      if (this.wasBurning && !this.beaconBurning && s.beaconOn) this.msg("Kein Holz mehr \u2013 das Leuchtfeuer erlischt!");
+      if (this.wasBurning && !this.beaconBurning && s.beaconOn) this.msg("Kein Holz mehr \u2013 das Licht im Leuchtturm geht aus!");
       this.wasBurning = this.beaconBurning;
       this.applyRates(this.computeRates(false), dt);
       this.advanceBuild(dt);
@@ -1185,11 +1198,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     buildBlocker(plot, t) {
       if (plot === 0 || t === T.TURM) return "Nicht m\xF6glich";
       if (this.s.plots[plot].type >= 0) return "Platz belegt";
+      if (plot === DAMM && t !== T.DAMM) return "Hier entsteht der Damm";
+      if (plot !== DAMM && t === T.DAMM) return "Nur am Dammplatz";
       if (plot === WALL && t !== T.MAUER) return "Hier steht die Festungsmauer";
       if (plot !== WALL && t === T.MAUER) return "Nur am Mauerplatz";
-      if (plot >= TOWERS && t !== T.ABWEHR) return "Hier passen nur Abwehrt\xFCrme";
+      if (plot >= TOWERS && plot < DAMM && t !== T.ABWEHR) return "Hier passen nur Abwehrt\xFCrme";
       if (plot < TOWERS && t === T.ABWEHR) return "Nur auf der Mauer";
-      if (plot >= TOWERS && this.levels(T.MAUER) <= 0) return "Erst die Festungsmauer bauen";
+      if (plot >= TOWERS && plot < DAMM && this.levels(T.MAUER) <= 0) return "Erst die Festungsmauer bauen";
       if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `\xC4u\xDFerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
       if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gel\xE4nde zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Geb\xE4ude bauen`;
       if (this.activeBuilds >= MAX_BUILDS) return "Alle Bautrupps besch\xE4ftigt";
@@ -1230,7 +1245,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     toggleBeacon() {
       this.s.beaconOn = !this.s.beaconOn;
-      this.msg(this.s.beaconOn ? "Leuchtfeuer entz\xFCndet." : "Leuchtfeuer gel\xF6scht \u2013 Holz wird gespart, aber keine Boote finden her.");
+      this.msg(this.s.beaconOn ? "Leuchtturm-Licht eingeschaltet." : "Leuchtturm-Licht aus \u2013 Holz wird gespart, aber keine Boote finden her.");
       this.wasBurning = this.beaconBurning;
     }
     expeditionBlocker() {
@@ -1683,6 +1698,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   };
 
   // src/models.js
+  var FR55 = frustum(0.55);
   var C = {
     sand: [0.62, 0.57, 0.47],
     wetSand: [0.42, 0.39, 0.33],
@@ -1950,34 +1966,142 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   function basket(B) {
     B.add("cylinder", [0, 1.05, -0.32], [0.42, 0.25, 0.42], [0.72, 0.6, 0.35]);
   }
-  var towerHeight = (level) => 9 + 0.5 * level;
+  var TH = [4.5, 4.5, 5.5, 8, 9.5, 11, 13, 14.5, 16, 20, 23];
+  var towerHeight = (level) => TH[Math.max(1, Math.min(10, level))];
+  var towerEra = (level) => level <= 2 ? 0 : level <= 5 ? 1 : level <= 8 ? 2 : 3;
+  var lampHeight = (level) => towerHeight(level) + (towerEra(level) === 0 ? 0.7 : towerEra(level) === 3 ? 2 : 1.2);
   function tower(B, level) {
-    const H = towerHeight(level), bands = 6;
-    for (let i = 0; i < bands; i++) {
-      const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
-      B.add("cylinder", [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
+    const H = towerHeight(level), era = towerEra(level);
+    const wood = [0.55, 0.42, 0.28], stone = [0.5, 0.49, 0.46], stoneD = [0.38, 0.37, 0.35], concrete = [0.86, 0.87, 0.88], steel = [0.45, 0.48, 0.52];
+    if (era === 0) {
+      const r = 1.1 - 0.1 * (level - 1);
+      for (let i = 0; i < 4; i++) {
+        const sx = i & 1 ? 1 : -1, sz = i & 2 ? 1 : -1;
+        B.add("cube", [sx * r, H / 2, sz * r], [0.22, H, 0.22], wood, { rot: [sz * -4, 0, sx * 4] });
+      }
+      for (let k = 1; k <= 2; k++) {
+        const y = H * k / 3;
+        B.add("cube", [0, y, r], [r * 2, 0.12, 0.12], wood);
+        B.add("cube", [0, y, -r], [r * 2, 0.12, 0.12], wood);
+        B.add("cube", [r, y, 0], [0.12, 0.12, r * 2], wood);
+        B.add("cube", [-r, y, 0], [0.12, 0.12, r * 2], wood);
+        B.add("cube", [0, y - H / 6, r], [r * 2.3, 0.1, 0.1], wood, { rot: [0, 0, 35] });
+        B.add("cube", [r, y - H / 6, 0], [0.1, 0.1, r * 2.3], wood, { rot: [35, 0, 0] });
+      }
+      B.add("cube", [0, H, 0], [r * 2.6, 0.2, r * 2.6], C.plank);
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2 + Math.PI / 4;
+        B.add("cube", [Math.cos(a) * 0.7, H + 0.45, Math.sin(a) * 0.7], [0.08, 0.9, 0.08], C.dark);
+      }
+      B.add("cube", [0, 0.25, 0], [r * 2.6, 0.5, r * 2.6], C.drift);
+      return;
     }
-    B.add("cube", [0, 0.9, 1.68], [1, 1.8, 0.12], C.tar);
-    for (let i = 1; i < 4; i++) {
-      const y = H * i / 4.5, rad = (3.4 + (2.3 - 3.4) * (y / H)) * 0.5 + 0.02;
-      B.add("cube", [0, y, rad], [0.4, 0.6, 0.06], C.window, { e: 1.4 });
+    if (era === 1) {
+      const layers = Math.round(H / 1.1);
+      for (let i = 0; i < layers; i++) {
+        const t = i / layers, rad = 2.7 - 0.7 * t, segH = H / layers;
+        B.add("cylLow", [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 3 === 0 ? stoneD : stone, { g: 0.08, rot: [0, i * 13, 0] });
+      }
+      B.add("cube", [0, 0.95, 1.6], [0.9, 1.9, 0.14], C.tar);
+      for (let i = 1; i < 3; i++) B.add("cube", [0, H * i / 3, 2.7 - 0.7 * (i / 3) - 0.02], [0.35, 0.55, 0.06], C.window, { e: 1.2 });
+      B.add("cylinder", [0, H + 0.1, 0], [2.6, 0.14, 2.6], stoneD);
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI * 2 / 8;
+        B.add("cube", [Math.cos(a) * 1.15, H + 1.2, Math.sin(a) * 1.15], [0.12, 2.2, 0.12], wood);
+      }
+      B.add("cone", [0, H + 2.8, 0], [2.6, 1.2, 2.6], C.roofGrey, { g: 0.2 });
+      return;
     }
-    B.add("cylinder", [0, H + 0.1, 0], [3.4, 0.12, 3.4], C.dark, { g: 0.5 });
-    for (let i = 0; i < 16; i++) {
-      const a = i * Math.PI * 2 / 16;
-      B.add("cube", [Math.cos(a) * 1.6, H + 0.55, Math.sin(a) * 1.6], [0.07, 0.8, 0.07], C.dark);
+    if (era === 2) {
+      const bands = 6 + (level - 6);
+      for (let i = 0; i < bands; i++) {
+        const rad = 3.4 + (2.3 - 3.4) * (i / bands), segH = H / bands;
+        B.add("cylinder", [0, segH * (i + 0.5), 0], [rad, segH / 2, rad], i % 2 === 0 ? C.red : C.white, { g: 0.35 });
+      }
+      B.add("cube", [0, 0.9, 1.68], [1, 1.8, 0.12], C.tar);
+      for (let i = 1; i < 4; i++) {
+        const y = H * i / 4.5, rad = (3.4 + (2.3 - 3.4) * (y / H)) * 0.5 + 0.02;
+        B.add("cube", [0, y, rad], [0.4, 0.6, 0.06], C.window, { e: 1.4 });
+      }
+      B.add("cylinder", [0, H + 0.1, 0], [3.4, 0.12, 3.4], C.dark, { g: 0.5 });
+      for (let i = 0; i < 16; i++) {
+        const a = i * Math.PI * 2 / 16;
+        B.add("cube", [Math.cos(a) * 1.6, H + 0.55, Math.sin(a) * 1.6], [0.07, 0.8, 0.07], C.dark);
+      }
+      B.add("cylinder", [0, H + 0.95, 0], [3.25, 0.04, 3.25], C.dark);
+      B.add("cone", [0, H + 2.2, 0], [2.6, 1.5, 2.6], C.red, { g: 0.35 });
+      B.add("sphere", [0, H + 3.8, 0], [0.35, 0.35, 0.35], C.dark, { g: 0.6 });
+      return;
     }
-    B.add("cylinder", [0, H + 0.95, 0], [3.25, 0.04, 3.25], C.dark);
-    B.add("cone", [0, H + 2.2, 0], [2.6, 1.5, 2.6], C.red, { g: 0.35 });
-    B.add("sphere", [0, H + 3.8, 0], [0.35, 0.35, 0.35], C.dark, { g: 0.6 });
+    B.add("cylinder", [0, 0.6, 0], [5.2, 0.6, 5.2], concrete, { g: 0.3 });
+    B.add(FR55, [0, 1.2, 0], [4.4, H - 1.2, 4.4], concrete, { g: 0.5 });
+    const rings = level === 10 ? 3 : 2;
+    for (let i = 1; i <= rings; i++) {
+      const y = 1.2 + (H - 1.2) * i / (rings + 1), rad = 2.2 - 1 * ((y - 1.2) / (H - 1.2));
+      B.add("cylinder", [0, y, 0], [rad * 2 + 0.15, 0.25, rad * 2 + 0.15], C.red, { g: 0.4 });
+    }
+    for (let i = 1; i < 6; i++) {
+      const y = H * i / 6.5, rad = 2.2 - 1 * ((y - 1.2) / (H - 1.2));
+      B.add("cube", [0, y, rad - 0.02], [0.3, 0.9, 0.06], [0.55, 0.8, 0.95], { e: 0.9, g: 0.9 });
+    }
+    B.add("cube", [0, 1.3, 2.3], [1.2, 2.4, 0.14], steel, { g: 0.7 });
+    B.add("cylinder", [0, H + 0.12, 0], [3.8, 0.12, 3.8], steel, { g: 0.7 });
+    for (let i = 0; i < 20; i++) {
+      const a = i * Math.PI * 2 / 20;
+      B.add("cube", [Math.cos(a) * 1.85, H + 0.6, Math.sin(a) * 1.85], [0.05, 0.9, 0.05], steel, { g: 0.8 });
+    }
+    B.add("cylinder", [0, H + 1.05, 0], [3.7, 0.04, 3.7], steel, { g: 0.8 });
+    B.add("cylinder", [0, H + 3, 0], [2.6, 0.1, 2.6], steel, { g: 0.8 });
+    B.add("sphere", [0, H + 3.1, 0], [2.4, 1, 2.4], concrete, { g: 0.7 });
+    B.add("cube", [0, H + 5, 0], [0.08, 3, 0.08], steel);
+    B.add("sphere", [0, H + 6.5, 0], [0.25, 0.25, 0.25], C.red, { e: 2.5 });
+    B.add("cube", [0.9, H + 4, 0], [1.4, 0.08, 0.08], steel);
   }
   function lantern(B, level) {
-    const H = towerHeight(level);
+    const H = towerHeight(level), era = towerEra(level);
+    if (era === 0) {
+      B.add("cylinder", [0, H + 0.55, 0], [1, 0.35, 1], [1, 0.6, 0.25], { e: 3 });
+      B.add("sphere", [0, H + 0.95, 0], [0.8, 0.6, 0.8], [1, 0.75, 0.35], { e: 3.5 });
+      return;
+    }
+    if (era === 3) {
+      B.add("cylinder", [0, H + 2, 0], [2.1, 0.95, 2.1], [0.85, 0.95, 1], { e: 3.2, g: 1 });
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI * 2 / 8;
+        B.add("cube", [Math.cos(a) * 1.05, H + 2, Math.sin(a) * 1.05], [0.05, 1.9, 0.05], C.dark);
+      }
+      return;
+    }
     B.add("cylinder", [0, H + 1.2, 0], [1.9, 1, 1.9], [1, 0.85, 0.45], { e: 3 });
     for (let i = 0; i < 6; i++) {
       const a = i * Math.PI * 2 / 6;
       B.add("cube", [Math.cos(a) * 0.95, H + 1.2, Math.sin(a) * 0.95], [0.08, 2, 0.08], C.dark);
     }
+  }
+  function dike(B, level, R, top) {
+    const base = -1.2, H = top - base, N = 80, gap = 0.075;
+    const grass = [0.36, 0.5, 0.27], earth = [0.5, 0.44, 0.33], stone = [0.46, 0.46, 0.44], concrete = [0.78, 0.78, 0.76];
+    const seg = 2 * Math.PI * R / N * 1.08;
+    for (let k = 0; k < N; k++) {
+      const a = (k + 0.5) / N * Math.PI * 2;
+      if (Math.abs(a - Math.PI) < gap) continue;
+      const x = Math.sin(a), z = Math.cos(a), yaw = a / (Math.PI / 180);
+      const lay = (y0, h2, w2, off, col) => B.add("cube", [x * (R + off), y0 + h2 / 2, z * (R + off)], [seg, h2, w2], col, { rot: [0, yaw, 0], g: 0.08 });
+      lay(base, H * 0.4, 9, 0, level >= 4 ? stone : earth);
+      lay(base + H * 0.4, H * 0.35, 6.5, 0.3, level >= 4 ? stone : earth);
+      lay(base + H * 0.75, H * 0.25, 4, 0.3, grass);
+      if (level >= 4) lay(base + H * 0.4, H * 0.35, 1, -2.8, grass);
+      if (level >= 8) lay(top, 0.9, 0.6, 2, concrete);
+    }
+    const zc = -R;
+    for (const s of [-1, 1]) {
+      const xs = s * Math.sin(gap) * R;
+      B.add("cube", [xs, base + (H + 1.5) / 2, zc], [1.6, H + 1.5, 7], level >= 4 ? concrete : C.plank, { g: 0.2 });
+    }
+    const w = Math.sin(gap) * R * 2;
+    B.add("cube", [0, top + 1.2, zc], [w + 1.6, 0.6, 1.4], level >= 4 ? concrete : C.plank);
+    B.add("cube", [0, top - 0.6, zc + 2.6], [w, H * 0.5, 0.35], level >= 8 ? [0.4, 0.44, 0.5] : C.tar, { g: 0.5 });
+    B.add("cube", [0, base + 0.2, zc], [w, 0.4, 7], earth);
   }
   function scaffold(B, half, newBuild) {
     const wood = [0.65, 0.5, 0.3];
@@ -2022,15 +2146,16 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
   var AREA = { r: 45 };
   var wallRadius = () => AREA.r + 3;
+  var damRadius = () => AREA.r + 20;
   function plotAngle(i) {
     if (i < INNER) return (i - 1) * Math.PI * 2 / 12;
     if (i < RING3) return (i - INNER + 0.5) * Math.PI * 2 / 12;
     if (i < WALL) return (i - RING3 + 0.5) * Math.PI * 2 / 18;
-    if (i === WALL) return Math.PI;
+    if (i === WALL || i === DAMM) return Math.PI;
     return (i - TOWERS + 0.5) * Math.PI * 2 / 8;
   }
   function plotRadius(i) {
-    return i === 0 ? 0 : i < INNER ? RING : i < RING3 ? RING2 : i < WALL ? RING3R : wallRadius();
+    return i === 0 ? 0 : i < INNER ? RING : i < RING3 ? RING2 : i < WALL ? RING3R : i === DAMM ? damRadius() : wallRadius();
   }
   function plotPos(i) {
     if (i === 0) return [0, 0, 0];
@@ -2249,13 +2374,19 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         L.push([0, deck, 0]);
         lantern(L, Math.max(1, p.level));
         this.lanternMesh = this.r.upload(L);
-        this.lampPos = [0, deck + towerHeight(Math.max(1, p.level)) + 1.2, 0];
+        this.lampPos = [0, deck + lampHeight(Math.max(1, p.level)), 0];
+      } else if (i === DAMM) {
       } else if (i >= TOWERS) {
         if (p.type >= 0 && p.level > 0) defenseTower(B, p.level);
         else if (this.c.levels(T.MAUER) > 0) B.add("cylinder", [0, -0.75, 0], [3.6, 0.15, 3.6], [0.5, 0.5, 0.5]);
       } else if (i === WALL) {
       } else if (p.type >= 0 && p.level > 0) building(B, p.type, p.level);
-      if (p.buildLeft > 0 && i !== WALL) scaffold(B, i === 0 ? 4.5 : 3, p.level === 0);
+      if (p.buildLeft > 0 && i === DAMM) {
+        B.push([0, -deck - 1.2, 0]);
+        scaffold(B, 4.5, p.level === 0);
+        B.pop();
+      }
+      if (p.buildLeft > 0 && i !== WALL && i !== DAMM) scaffold(B, i === 0 ? 4.5 : 3, p.level === 0);
       if (p.buildLeft > 0 && i === WALL) {
         B.push([0, -0.9, 0]);
         scaffold(B, 4.5, false);
@@ -2275,6 +2406,17 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.infraDeck !== deck || this.infraArea !== AREA.r) this.buildInfra(deck, AREA.r);
       const wl = c.levels(T.MAUER);
       if (this.wallKey !== `${wl}|${AREA.r}|${deck}`) this.buildWall(wl, deck);
+      const dl = c.levels(T.DAMM);
+      if (this.damKey !== `${dl}|${AREA.r}`) {
+        this.r.free(this.damMesh);
+        this.damMesh = null;
+        if (dl > 0) {
+          const B = new Builder();
+          dike(B, dl, damRadius(), damTopFor(dl));
+          this.damMesh = this.r.upload(B);
+        }
+        this.damKey = `${dl}|${AREA.r}`;
+      }
       for (let i = 0; i < PLOTS; i++) {
         const p = c.s.plots[i], sh = this.shown[i];
         const moved = i >= WALL && (sh.area !== AREA.r || sh.wall !== wl);
@@ -2481,6 +2623,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (Math.abs(lx) < 4.4 && Math.abs(lz) < 4.4) return i;
       }
       if (Math.abs(hr - wallRadius()) < 3.5) return WALL;
+      if (this.c.s.plots[DAMM].type >= 0 && Math.abs(hr - damRadius()) < 6) return DAMM;
       return -1;
     }
     screenPos(p, w, h2) {
@@ -2511,6 +2654,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       draws.push({ mesh: this.envMesh });
       draws.push({ mesh: this.infraMesh });
       if (this.wallMesh) draws.push({ mesh: this.wallMesh });
+      if (this.damMesh) draws.push({ mesh: this.damMesh });
       for (const m of this.plotMesh) if (m) draws.push({ mesh: m });
       if (this.lanternMesh) draws.push({ mesh: this.lanternMesh, emis: burn ? 0.8 + flick * 0.6 : 0.02, noShadow: true });
       const deck = c.deck;
@@ -2555,7 +2699,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         draws.push({ mesh: this.gullWingL, model: mul(body, trs(null, [0, 0, w], null)), noShadow: true });
         draws.push({ mesh: this.gullWingR, model: mul(body, trs(null, [0, 0, -w], null)), noShadow: true });
       }
-      const wy = c.water + Math.sin(this.time * 0.9) * 0.05;
+      const wy = c.inWater + Math.sin(this.time * 0.9) * 0.05;
       this.buoys.forEach((b, i) => {
         const tilt = 6 + 14 * sb;
         const m = trs([b.x, Math.max(0, wy) - 0.2 + Math.sin(this.time * 1.5 + i) * 0.1, b.z], [Math.sin(this.time * 1.2 + i) * tilt, 0, Math.cos(this.time + i) * tilt], [1, 1, 1]);
@@ -2961,7 +3105,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     return (v < 0 ? "\u2212" : "+") + s;
   };
   var RES_IC = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
-  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}"];
+  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}"];
   var NODE_NAME = ["Treibholz", "Muschelbank", "S\xFC\xDFwassert\xFCmpel", "Wrackteile"];
   var setHTML = (el, html) => {
     if (el._h !== html) {
@@ -3420,7 +3564,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.gd.style.left = `${Math.min(97, c.deck / top * 100)}%`;
       const fb = c.freeboard, fbCol = fb >= 0.5 ? "#8ef0a0" : fb >= 0 ? "#ffd27a" : "#ff6a6a";
       const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? "Ebbe" : c.rising ? "Flut \u2191" : "Flut \u2193";
-      setHTML(this.tl, `${tide} \xB7 <b style="color:${fbCol}">${fb >= 0 ? "+" : ""}${fb.toFixed(1)} m</b>${c.stormWarning ? ' \xB7 <span style="color:#ffc060">Sturm naht</span>' : ""}${c.raidIn !== null && c.raidIn < 30 ? ' \xB7 <b style="color:#ff6060">Piraten!</b>' : ""}`);
+      setHTML(this.tl, `${tide} \xB7 <b style="color:${fbCol}">${fb >= 0 ? "+" : ""}${fb.toFixed(1)} m</b>${c.damHolds ? ' \xB7 <span style="color:#8ef0a0">\u{1F30A} Damm h\xE4lt</span>' : ""}${c.stormWarning ? ' \xB7 <span style="color:#ffc060">Sturm naht</span>' : ""}${c.raidIn !== null && c.raidIn < 30 ? ' \xB7 <b style="color:#ff6060">Piraten!</b>' : ""}`);
       let st = `\u{1F465} <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` \u{1F912}${s.sick}` : ""} \xB7 \u2694 <b>${s.troops[0] + s.troops[1]}</b> \xB7 ${clock(s.dayTime)}`;
       if (this.o.active) st += this.o.incoming ? ` \xB7 <b style="color:#ff6060">\u26A0 Angriff!</b>` : this.o.status === "online" ? ' <span style="color:#8ef0a0">\u25CF</span>' : ' <span style="color:#ffb070">\u25CF</span>';
       setHTML(this.st, st);
@@ -3433,7 +3577,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         for (const e of recent) this.toasts.appendChild(h("div", "toast", e.text));
       }
       const btn = (el, ic, label, sub2) => setHTML(el, `<span class="ic">${ic}</span><b>${label}</b>${sub2 ? `<span>${sub2}</span>` : ""}`);
-      btn(this.bBeacon, "\u{1F525}", "Feuer", s.beaconOn ? "an" : "aus");
+      btn(this.bBeacon, "\u{1F4A1}", "Licht", s.beaconOn ? "an" : "aus");
       this.bBeacon.classList.toggle("on", !!s.beaconOn);
       const blk = c.expeditionBlocker();
       if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
@@ -3460,7 +3604,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           continue;
         }
         const pp = plotPos(i);
-        const tall = i === 0 ? 15 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
+        const tall = i === DAMM ? c.damTop - deck + 3 : i === 0 ? towerHeight(Math.max(1, p.level)) + 5 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
         const sp = this.w.screenPos([pp[0], deck + tall, pp[2]], cw, ch);
         if (!sp || sp[0] < -40 || sp[0] > cw + 40 || sp[1] < 60 || sp[1] > ch - 60) {
           el.style.display = "none";
@@ -3586,7 +3730,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return this.head("\xC4u\xDFerer Bauplatz") + `<div class="desc">Dieser Platz liegt im \xE4u\xDFeren Ring. Er wird frei, sobald dein Gezeitenturm Stufe ${OUTER_LEVEL} erreicht.</div>`;
         if (i >= RING3 && i < WALL && c.builtCount < c.ring3Needed(i))
           return this.head("Gel\xE4nde (noch nicht erschlossen)") + `<div class="desc">Deine Warft w\xE4chst mit jedem Neubau. Dieser Platz wird frei, wenn du noch <b>${c.ring3Needed(i) - c.builtCount}</b> Geb\xE4ude baust. Gel\xE4nderadius jetzt: ${Math.round(c.areaRadius)} m.</div>`;
-        const types = i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
+        const types = i === DAMM ? [T.DAMM] : i === WALL ? [T.MAUER] : i >= TOWERS ? [T.ABWEHR] : CITY_TYPES;
         let rows = "";
         for (const t of types) {
           const d2 = DEFS[t], blk = c.buildBlocker(i, t);
@@ -3595,7 +3739,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           ${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div>
           <button class="btn" data-a="build" data-v="${t}" ${blk ? "disabled" : ""}>Bauen</button></div>`;
         }
-        const title = i === WALL ? "Festung" : i >= TOWERS ? "Turmplatz auf der Mauer" : i >= RING3 ? "Bauplatz auf der Warft" : i >= INNER ? "Freier Bauplatz (au\xDFen)" : "Freier Bauplatz";
+        const title = i === DAMM ? "Dammplatz" : i === WALL ? "Festung" : i >= TOWERS ? "Turmplatz auf der Mauer" : i >= RING3 ? "Bauplatz auf der Warft" : i >= INNER ? "Freier Bauplatz (au\xDFen)" : "Freier Bauplatz";
         const intro = i === WALL ? '<div class="desc">Baue eine Mauer mit Tor rund um dein ganzes Gel\xE4nde. Sie w\xE4chst mit, wenn die Warft gr\xF6\xDFer wird.</div>' : "";
         return this.head(title) + intro + `<div class="list">${rows}</div>`;
       }
@@ -3649,7 +3793,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const c = this.c, d = DEFS[t];
       switch (t) {
         case T.TURM:
-          return [`Deckh\xF6he der Stadt: <b>${deckFor(L).toFixed(2)} m</b> (n\xE4chste Stufe ${deckFor(L + 1).toFixed(2)} m)`, `Leuchtfeuer verbraucht ${Math.round(beaconWood(L) * 60)} Holz/min`, `Andere Geb\xE4ude bis Stufe ${L}`, L < OUTER_LEVEL ? `\xC4u\xDFerer Bauring ab Stufe ${OUTER_LEVEL}` : "\xC4u\xDFerer Bauring ist frei"];
+          return [`Deckh\xF6he der Stadt: <b>${deckFor(L).toFixed(2)} m</b> (n\xE4chste Stufe ${deckFor(L + 1).toFixed(2)} m)`, `Leuchtturm-Licht verbraucht ${Math.round(beaconWood(L) * 60)} Holz/min`, `Andere Geb\xE4ude bis Stufe ${L}`, L < OUTER_LEVEL ? `\xC4u\xDFerer Bauring ab Stufe ${OUTER_LEVEL}` : "\xC4u\xDFerer Bauring ist frei"];
         case T.HAUS:
           return [`Platz f\xFCr <b>${6 * L}</b> Siedler`];
         case T.HEILER:
@@ -3664,6 +3808,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return [`Verteidigung der Stadt <b>+${12 * L} %</b>`, `Aktuelle Verteidigung: <b>${c.defense}</b>`, c.raidIn !== null ? `N\xE4chster Piraten\xFCberfall in etwa ${fmtTime(c.raidIn)}` : "Piraten greifen ab Tag 2 an"];
         case T.LAGER:
           return [`Lagerplatz je Rohstoff: <b>${c.storage}</b>`];
+        case T.DAMM:
+          return [`Sch\xFCtzt bis Wasserstand <b>${damTopFor(L).toFixed(1)} m</b> (n\xE4chste Stufe ${damTopFor(L + 1).toFixed(1)} m)`, `Jetzt: Wasser ${c.water.toFixed(1)} m \xB7 ${c.damHolds ? '<b style="color:#8ef0a0">Damm h\xE4lt die Flut ab</b>' : c.water > c.damTop ? '<b style="color:#ff6a6a">Wasser l\xE4uft \xFCber den Damm!</b>' : "Stadt liegt trocken"}`];
         case T.MAUER:
           return [`${L <= 3 ? "Holzpalisade" : L <= 7 ? "Steinwall" : "Festungswall"} \xB7 Verteidigung <b>+${15 * L} %</b>`, `Stadtverteidigung gesamt: <b>${c.defense}</b>`, `Gel\xE4nderadius: ${Math.round(c.areaRadius)} m`];
         case T.ABWEHR:
@@ -3843,8 +3989,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       let body;
       if (tab === "mine") body = this.cityOverviewHtml();
       else {
-        const types = [...CITY_TYPES, T.MAUER, T.ABWEHR];
-        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Verteidigung", [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]]];
+        const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
+        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Verteidigung", [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]]];
         body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt. Der Platz wird automatisch gew\xE4hlt.</div>`;
         for (const [title, list] of groups) {
           body += `<div class="sub2">${title}</div>`;
@@ -3856,6 +4002,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
               if (c.activeBuilds >= 2) why = "Alle Bautrupps besch\xE4ftigt";
               else if (!c.canAfford(costFor(t, 1))) why = "";
               else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? "Schon gebaut \u2013 Ausbau unter \u201EMeine Geb\xE4ude\u201C" : "Nicht m\xF6glich";
+              else if (t === T.DAMM) why = c.s.plots[DAMM].type >= 0 ? "Schon gebaut \u2013 Ausbau unter \u201EMeine Geb\xE4ude\u201C" : "Nicht m\xF6glich";
               else if (t === T.ABWEHR && c.levels(T.MAUER) <= 0) why = "Erst die Festungsmauer bauen";
               else why = "Kein freier Platz \u2013 baue mehr, dann w\xE4chst dein Gel\xE4nde";
             }
@@ -3873,7 +4020,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         ["Herz der Stadt", [T.TURM]],
         ["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]],
         ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
-        ["Verteidigung", [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]]
+        ["Verteidigung", [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]],
+        ["Schutz vor der Flut", [T.DAMM]]
       ];
       let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt \xB7 Gel\xE4nde ${Math.round(c.areaRadius)} m \xB7 freie Bewohner ${c.freeVillagers}</div>`;
       for (const [title, types] of groups) {

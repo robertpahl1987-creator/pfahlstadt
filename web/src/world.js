@@ -2,7 +2,7 @@
 import { Builder, frustum } from './geo.js';
 import * as M from './models.js';
 import { C } from './models.js';
-import { PLOTS, INNER, RING3, WALL, TOWERS, T, deckFor } from './game.js';
+import { PLOTS, INNER, RING3, WALL, TOWERS, DAMM, T, deckFor, damTopFor } from './game.js';
 import { trs, mul, perspective, lookAt, invert, normalMat, clamp, clamp01, lerp, lerpC, mulC, moveTowards, rng, noise1, D2R, project } from './math.js';
 
 export const RING = 20, RING2 = 34, RING3R = 47;
@@ -11,14 +11,15 @@ const COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.
 /// Geländeradius (wächst mit jedem Neubau) – wird von der Welt laufend gesetzt
 export const AREA = { r: 45 };
 export const wallRadius = () => AREA.r + 3;
+export const damRadius = () => AREA.r + 20;
 export function plotAngle(i) {
   if (i < INNER) return ((i - 1) * Math.PI * 2) / 12;
   if (i < RING3) return ((i - INNER + 0.5) * Math.PI * 2) / 12;
   if (i < WALL) return ((i - RING3 + 0.5) * Math.PI * 2) / 18;
-  if (i === WALL) return Math.PI;
+  if (i === WALL || i === DAMM) return Math.PI;
   return ((i - TOWERS + 0.5) * Math.PI * 2) / 8;
 }
-export function plotRadius(i) { return i === 0 ? 0 : i < INNER ? RING : i < RING3 ? RING2 : i < WALL ? RING3R : wallRadius(); }
+export function plotRadius(i) { return i === 0 ? 0 : i < INNER ? RING : i < RING3 ? RING2 : i < WALL ? RING3R : i === DAMM ? damRadius() : wallRadius(); }
 export function plotPos(i) {
   if (i === 0) return [0, 0, 0];
   const a = plotAngle(i), r = plotRadius(i);
@@ -220,14 +221,17 @@ export class World {
       M.tower(B, Math.max(1, p.level));
       const L = new Builder(); L.push([0, deck, 0]); M.lantern(L, Math.max(1, p.level));
       this.lanternMesh = this.r.upload(L);
-      this.lampPos = [0, deck + M.towerHeight(Math.max(1, p.level)) + 1.2, 0];
+      this.lampPos = [0, deck + M.lampHeight(Math.max(1, p.level)), 0];
+    } else if (i === DAMM) {
+      // Damm ist ein eigenes Mesh
     } else if (i >= TOWERS) {
       if (p.type >= 0 && p.level > 0) M.defenseTower(B, p.level);
       else if (this.c.levels(T.MAUER) > 0) B.add('cylinder', [0, -0.75, 0], [3.6, 0.15, 3.6], [0.5, 0.5, 0.5]);
     } else if (i === WALL) {
       // Mauer ist ein eigenes Mesh
     } else if (p.type >= 0 && p.level > 0) M.building(B, p.type, p.level);
-    if (p.buildLeft > 0 && i !== WALL) M.scaffold(B, i === 0 ? 4.5 : 3, p.level === 0);
+    if (p.buildLeft > 0 && i === DAMM) { B.push([0, -deck - 1.2, 0]); M.scaffold(B, 4.5, p.level === 0); B.pop(); }
+    if (p.buildLeft > 0 && i !== WALL && i !== DAMM) M.scaffold(B, i === 0 ? 4.5 : 3, p.level === 0);
     if (p.buildLeft > 0 && i === WALL) { B.push([0, -0.9, 0]); M.scaffold(B, 4.5, false); B.pop(); }
     B.pop();
     this.plotMesh[i] = this.r.upload(B);
@@ -245,6 +249,12 @@ export class World {
     if (this.infraDeck !== deck || this.infraArea !== AREA.r) this.buildInfra(deck, AREA.r);
     const wl = c.levels(T.MAUER);
     if (this.wallKey !== `${wl}|${AREA.r}|${deck}`) this.buildWall(wl, deck);
+    const dl = c.levels(T.DAMM);
+    if (this.damKey !== `${dl}|${AREA.r}`) {
+      this.r.free(this.damMesh); this.damMesh = null;
+      if (dl > 0) { const B = new Builder(); M.dike(B, dl, damRadius(), damTopFor(dl)); this.damMesh = this.r.upload(B); }
+      this.damKey = `${dl}|${AREA.r}`;
+    }
     for (let i = 0; i < PLOTS; i++) {
       const p = c.s.plots[i], sh = this.shown[i];
       const moved = i >= WALL && (sh.area !== AREA.r || sh.wall !== wl);
@@ -426,6 +436,7 @@ export class World {
       if (Math.abs(lx) < 4.4 && Math.abs(lz) < 4.4) return i;
     }
     if (Math.abs(hr - wallRadius()) < 3.5) return WALL;
+    if (this.c.s.plots[DAMM].type >= 0 && Math.abs(hr - damRadius()) < 6) return DAMM;
     return -1;
   }
 
@@ -463,6 +474,7 @@ export class World {
     draws.push({ mesh: this.envMesh });
     draws.push({ mesh: this.infraMesh });
     if (this.wallMesh) draws.push({ mesh: this.wallMesh });
+    if (this.damMesh) draws.push({ mesh: this.damMesh });
     for (const m of this.plotMesh) if (m) draws.push({ mesh: m });
     if (this.lanternMesh) draws.push({ mesh: this.lanternMesh, emis: burn ? 0.8 + flick * 0.6 : 0.02, noShadow: true });
 
@@ -509,7 +521,7 @@ export class World {
       draws.push({ mesh: this.gullWingL, model: mul(body, trs(null, [0, 0, w], null)), noShadow: true });
       draws.push({ mesh: this.gullWingR, model: mul(body, trs(null, [0, 0, -w], null)), noShadow: true });
     }
-    const wy = c.water + Math.sin(this.time * 0.9) * 0.05;
+    const wy = c.inWater + Math.sin(this.time * 0.9) * 0.05;
     this.buoys.forEach((b, i) => {
       const tilt = 6 + 14 * sb;
       const m = trs([b.x, Math.max(0, wy) - 0.2 + Math.sin(this.time * 1.5 + i) * 0.1, b.z], [Math.sin(this.time * 1.2 + i) * tilt, 0, Math.cos(this.time + i) * tilt], [1, 1, 1]);
