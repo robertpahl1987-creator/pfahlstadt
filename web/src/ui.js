@@ -40,7 +40,8 @@ export class UI {
     this.mapEl = $('#map');
     this.sea = new SeaMap($('#mapc'), this.c, this.o);
 
-    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu');
+    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild');
+    this.bBuild.dataset.a = 'buildings';
     this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bMap.dataset.a = 'map'; this.bAlly.dataset.a = 'ally'; this.bMenu.dataset.a = 'menu';
     this.login = $('#login');
     document.addEventListener('keydown', (e) => {
@@ -157,8 +158,15 @@ export class UI {
     else if (a === 'ally') this.openMode('ally');
     else if (a === 'rank') this.openMenu('rank');
     else if (a === 'account') this.openMenu('settings');
-    else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu(this.menuTab || 'stadt'); }
+    else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu(this.menuTab && this.menuTab !== 'stadt' ? this.menuTab : 'truppen'); }
     else if (a === 'tab') this.openMenu(ds.t);
+    else if (a === 'buildings') { if (this.mode === 'build') { this.mode = null; } else { this.openMode('build'); this.buildTab = this.buildTab || 'mine'; } }
+    else if (a === 'btab') this.buildTab = ds.t;
+    else if (a === 'quickbuild') {
+      const t = +ds.v, i = this.freePlotFor(t);
+      if (i < 0) c.msg('Kein passender freier Bauplatz – baue mehr, damit dein Gelände wächst.');
+      else if (c.startBuild(i, t)) { const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; }
+    }
     else if (a === 'goto') { const i = +ds.i; this.menu = false; const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.w.dist = Math.min(this.w.dist, 45); this.select(i); }
     else if (a === 'upq') c.startUpgrade(+ds.i);
     else if (a === 'close') {
@@ -269,6 +277,7 @@ export class UI {
     const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
     btn(this.bAlly, '🤝', 'Allianz', !this.o.active ? 'offline' : al ? '[' + al.tag + ']' : '');
     btn(this.bMenu, '☰', 'Menü', '');
+    btn(this.bBuild, '🏗️', 'Gebäude', c.activeBuilds ? `🔨 ${c.activeBuilds}/2` : '');
     this.renderPanel();
   }
 
@@ -309,6 +318,7 @@ export class UI {
     let html = '';
     if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.terrHtml()) : this.mapHtml();
     else if (this.mode === 'ally') html = this.allyHtml();
+    else if (this.mode === 'build') html = this.buildingsHtml();
     else if (this.mode === 'rank') html = this.rankHtml();
     else if (this.mode === 'account') html = this.accountHtml();
     else if (this.menu) html = this.menuHtml();
@@ -571,16 +581,54 @@ export class UI {
   }
 
   menuHtml() {
-    const tab = this.menuTab || 'stadt';
-    const tabs = [['stadt', '🏘️', 'Stadt'], ['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rang'], ['settings', '⚙️', 'Einstell.']];
-    const bar = `<div class="tabs">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="tab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
+    const tab = this.menuTab && this.menuTab !== 'stadt' ? this.menuTab : 'truppen';
+    const tabs = [['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rang'], ['settings', '⚙️', 'Einstell.']];
+    const bar = `<div class="tabs four">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="tab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
     let body = '';
-    if (tab === 'stadt') body = this.cityOverviewHtml();
-    else if (tab === 'truppen') body = this.troopsTabHtml();
+    if (tab === 'truppen') body = this.troopsTabHtml();
     else if (tab === 'reports') body = this.reportsHtml().replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
     else if (tab === 'rank') body = this.rankHtml().replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
     else body = this.settingsHtml();
     return `<div class="ph"><div class="pt">Menü</div><button class="x" data-a="close">✕</button></div>${bar}<div class="tabbody">${body}</div>`;
+  }
+
+  freePlotFor(t) {
+    const c = this.c, s = c.s;
+    const order = [];
+    for (let i = 1; i < s.plots.length; i++) order.push(i);
+    for (const i of order) if (s.plots[i].type < 0 && !c.buildBlocker(i, t)) return i;
+    return -1;
+  }
+
+  buildingsHtml() {
+    const c = this.c, tab = this.buildTab || 'mine';
+    const bar = `<div class="tabs two">${[['mine', '🏘️', 'Meine Gebäude'], ['new', '➕', 'Neu bauen']].map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="btab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
+    let body;
+    if (tab === 'mine') body = this.cityOverviewHtml();
+    else {
+      const types = [...CITY_TYPES, T.MAUER, T.ABWEHR];
+      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Verteidigung', [T.KASERNE, T.WACHTURM, T.MAUER, T.ABWEHR]]];
+      body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt. Der Platz wird automatisch gewählt.</div>`;
+      for (const [title, list] of groups) {
+        body += `<div class="sub2">${title}</div>`;
+        for (const t of list) {
+          if (!types.includes(t)) continue;
+          const d = DEFS[t], free = this.freePlotFor(t);
+          let why = '';
+          if (free < 0) {
+            if (c.activeBuilds >= 2) why = 'Alle Bautrupps beschäftigt';
+            else if (!c.canAfford(costFor(t, 1))) why = '';
+            else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
+            else if (t === T.ABWEHR && c.levels(T.MAUER) <= 0) why = 'Erst die Festungsmauer bauen';
+            else why = 'Kein freier Platz – baue mehr, dann wächst dein Gelände';
+          }
+          body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${d.short}</span></div>
+            <div class="sm">${this.costStr(costFor(t, 1))} · ${fmtTime(buildTime(t, 1))}</div>${why ? `<div class="warn">${why}</div>` : ''}</div>
+            <button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? 'disabled' : ''}>Bauen</button></div>`;
+        }
+      }
+    }
+    return `<div class="ph"><div class="pt">🏗️ Gebäude</div><button class="x" data-a="close">✕</button></div>${bar}<div class="tabbody">${body}</div>`;
   }
 
   cityOverviewHtml() {
@@ -606,7 +654,7 @@ export class UI {
       if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join('');
     }
     const free = s.plots.findIndex((p, i) => i > 0 && i < WALL && p.type < 0 && !c.buildBlocker(i, T.HAUS)?.startsWith('Gelände') && !c.buildBlocker(i, T.HAUS)?.startsWith('Äußerer'));
-    out += `<div class="sm" style="margin-top:10px">Neu bauen: tippe in der Stadt auf eine freie Holzplattform.${free > 0 ? '' : ' Gerade ist kein Platz frei.'}</div>`;
+    out += `<div class="sm" style="margin-top:10px">Neu bauen: Reiter „Neu bauen“ oder in der Stadt auf eine freie Plattform tippen.${free > 0 ? '' : ' Gerade ist kein Platz frei.'}</div>`;
     if (free > 0) out += `<div class="btns"><button class="btn ghost" data-a="goto" data-i="${free}">Freien Bauplatz zeigen</button></div>`;
     return out;
   }
@@ -618,7 +666,7 @@ export class UI {
     if (c.levels(T.KASERNE) <= 0) out += `<div class="inf">Zu Hause: <b>${s.troops[0]}</b> Harpuniere · <b>${s.troops[1]}</b> Wachen</div>`;
     if (c.raidIn !== null) out += `<div class="sm">Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}</div>`;
     if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
-    else out += '<div class="desc">Für Truppen brauchst du eine <b>Kaserne</b>. Tippe in der Stadt auf eine freie Plattform und baue sie.</div>';
+    else out += '<div class="desc">Für Truppen brauchst du eine <b>Kaserne</b>. Baue sie unter <b>🏗️ Gebäude → Neu bauen</b>.</div>';
     out += '<div class="btns"><button class="btn" data-a="map">🗺️ Seekarte öffnen</button></div>';
     return out;
   }
