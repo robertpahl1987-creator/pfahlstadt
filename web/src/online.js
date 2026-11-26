@@ -23,6 +23,10 @@ const ERR = {
   NICHT_MOEGLICH: 'Das geht gerade nicht.',
   TEXT_LAENGE: 'Nachricht: 1 bis 200 Zeichen.',
   ZU_SCHNELL: 'Bitte kurz warten.',
+  KEIN_ADMIN: 'Nur der Spielleiter darf Codes erstellen.',
+  CODE_FORMAT: 'Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.',
+  LEER: 'Bitte eine Belohnung eintragen.',
+  UNGUELTIG: 'Ungültige Eingabe.',
 };
 
 export class Online {
@@ -140,6 +144,20 @@ export class Online {
       if (msgs && msgs.length) { this.chat = this.chat.concat(msgs).slice(-80); this.chatAfter = msgs[msgs.length - 1].id; }
     } catch (e) { /* */ }
   }
+
+  // ---------- Codes ----------
+  async redeem(code) {
+    const r = await this.call('redeem_code', { p_token: this.token, p_code: code });
+    if (!r.ok) throw new Error(r.err || 'Code ungültig.');
+    await this.sync();
+    return r.text;
+  }
+  async loadCodes() { if (this.me && this.me.is_admin) try { this.codes = await this.call('admin_codes', { p_token: this.token }); } catch (e) { /* */ } }
+  async saveCode(code, res, u, days, max) {
+    await this.call('admin_code_save', { p_token: this.token, p_code: code, p_res: res, p_u: u, p_days: days, p_max: max });
+    await this.loadCodes();
+  }
+  async deleteCode(code) { await this.call('admin_code_delete', { p_token: this.token, p_code: code }); await this.loadCodes(); }
 
   async loadRanking() {
     if (!this.token) return;

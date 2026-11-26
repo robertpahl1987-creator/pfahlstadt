@@ -3494,6 +3494,53 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (this.menu) {
           this.menu = false;
         } else this.openMenu("settings");
+      } else if (a === "mtab") {
+        this.menuTab = ds.t;
+        this.codeMsg = null;
+        if (ds.t === "codes") this.o.loadCodes().then(() => this.panelKey = null);
+      } else if (a === "redeem") {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const code = val("codeIn");
+        if (!code) return;
+        this.run(async () => {
+          try {
+            const t = await o.redeem(code);
+            this.codeMsg = { ok: true, text: `\u{1F381} Eingel\xF6st! Du bekommst: <b>${t}</b>` };
+            const e = $("#codeIn");
+            if (e) e.value = "";
+          } catch (e) {
+            this.codeMsg = { ok: false, text: e.message };
+          }
+        });
+      } else if (a === "codeRandom") {
+        const e = $("#ncCode");
+        if (e) {
+          const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+          let k = "";
+          for (let i = 0; i < 8; i++) k += A[Math.floor(Math.random() * A.length)];
+          e.value = k;
+        }
+      } else if (a === "codeSave") {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const num = (id) => Math.max(0, Math.floor(+val(id) || 0));
+        const code = val("ncCode").toUpperCase(), res = [0, 1, 2, 3].map((i) => num("ncR" + i)), u = [0, 1, 2, 3, 4].map((i) => num("ncU" + i));
+        const days = val("ncDays") === "" ? 1 : num("ncDays"), max = num("ncMax");
+        this.run(async () => {
+          try {
+            await o.saveCode(code, res, u, days, max);
+            this.codeMsg = { ok: true, text: `Code <b>${code}</b> gespeichert \u2013 gib ihn an deine Spieler weiter.` };
+          } catch (e) {
+            this.codeMsg = { ok: false, text: e.message };
+          }
+        });
+      } else if (a === "codeDel") {
+        const k = ds.c;
+        if (this.confirm === "del" + k) {
+          this.confirm = null;
+          this.run(async () => {
+            await o.deleteCode(k);
+          });
+        } else this.confirm = "del" + k;
       } else if (a === "troops") {
         if (this.mode === "troops") this.mode = null;
         else {
@@ -4128,7 +4175,34 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
        <button class="btn ${this.confirm === "logout" ? "danger" : "ghost"}" data-a="logout">${this.confirm === "logout" ? "<b>Wirklich abmelden? Ohne Umzugscode ist das Konto weg</b>" : "Abmelden"}</button></div>`;
     }
     menuHtml() {
-      return this.head("Men\xFC") + this.settingsHtml();
+      const tab = this.menuTab === "codes" ? "codes" : "settings";
+      const bar = `<div class="tabs two">${[["settings", "\u2699\uFE0F", "Einstellungen"], ["codes", "\u{1F381}", "Codes"]].map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="mtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
+      return this.head("Men\xFC") + bar + `<div class="tabbody">${tab === "codes" ? this.codesHtml() : this.settingsHtml()}</div>`;
+    }
+    codesHtml() {
+      const o = this.o;
+      if (!o.active) return '<div class="desc">Geschenk-Codes gibt es nur mit Online-Konto.</div><div class="btns"><button class="btn" data-a="goOnline">Online gehen</button></div>';
+      let out = `<div class="sub2">Code einl\xF6sen</div>
+      <div class="desc">Codes gibt es vom Spielleiter, zum Beispiel in eurer Gruppe. Jeder Code geht einmal pro Spieler.</div>
+      <div class="form"><input id="codeIn" maxlength="16" placeholder="Code eingeben" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase"></div>
+      <div class="btns"><button class="btn" data-a="redeem" ${this.busy ? "disabled" : ""}><b>\u{1F381} Einl\xF6sen</b></button></div>`;
+      if (this.codeMsg) out += `<div class="${this.codeMsg.ok ? "inf" : "warn"}" style="margin-top:8px">${this.codeMsg.text}</div>`;
+      if (o.me && o.me.is_admin) {
+        const f = (id, ph, w) => `<input class="n" id="${id}" type="number" min="0" inputmode="numeric" placeholder="${ph}" style="flex:1 1 ${w || 31}%">`;
+        out += `<div class="sub2" style="margin-top:14px">\u{1F451} Spielleiter: Code erstellen</div>
+        <div class="form"><input id="ncCode" maxlength="16" placeholder="Code, z. B. FLUT26" autocomplete="off" style="text-transform:uppercase;width:62%"><button class="btn ghost" data-a="codeRandom" style="width:34%">Zufall</button></div>
+        <div class="sm">Rohstoffe</div>
+        <div class="form" style="flex-wrap:wrap;gap:4px">${f("ncR0", "\u{1FAB5} Holz", 23)}${f("ncR1", "\u{1F9AA} Muscheln", 23)}${f("ncR2", "\u{1F4A7} Wasser", 23)}${f("ncR3", "\u2699\uFE0F Metall", 23)}</div>
+        <div class="sm">Krieger</div>
+        <div class="form" style="flex-wrap:wrap;gap:4px">${UNITS.map((u, k) => f("ncU" + k, u.ic + " " + u.name.slice(0, 6), 18)).join("")}</div>
+        <div class="form" style="gap:4px">${f("ncDays", "g\xFCltig Tage (1)", 48)}${f("ncMax", "max. Spieler (\u221E)", 48)}</div>
+        <div class="btns"><button class="btn" data-a="codeSave" ${this.busy ? "disabled" : ""}><b>Code speichern</b></button></div>`;
+        const list = o.codes || [];
+        out += `<div class="sub2" style="margin-top:12px">Deine Codes</div>` + (list.length ? list.map((c) => `<div class="row"><div class="ri"><b style="letter-spacing:.05em">${c.code}</b> <span class="sh">${c.active ? '<span style="color:#8ef0a0">aktiv</span>' : "abgelaufen"} \xB7 ${c.uses}${c.max ? "/" + c.max : ""}\xD7 eingel\xF6st</span>
+        <div class="sm">${c.text || "\u2013"}${c.until ? " \xB7 bis " + new Date(c.until).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : " \xB7 unbegrenzt"}</div></div>
+        <button class="btn sm2 ${this.confirm === "del" + c.code ? "danger" : "ghost"}" data-a="codeDel" data-c="${c.code}">${this.confirm === "del" + c.code ? "L\xF6schen?" : "\u{1F5D1}"}</button></div>`).join("") : '<div class="sm">Noch keine Codes.</div>');
+      }
+      return out;
     }
     ttabLoad() {
       if (this.troopTab === "rank") this.o.loadRanking();
@@ -4260,7 +4334,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     NICHT_ANFUEHRER: "Nur der Anf\xFChrer darf das.",
     NICHT_MOEGLICH: "Das geht gerade nicht.",
     TEXT_LAENGE: "Nachricht: 1 bis 200 Zeichen.",
-    ZU_SCHNELL: "Bitte kurz warten."
+    ZU_SCHNELL: "Bitte kurz warten.",
+    KEIN_ADMIN: "Nur der Spielleiter darf Codes erstellen.",
+    CODE_FORMAT: "Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.",
+    LEER: "Bitte eine Belohnung eintragen.",
+    UNGUELTIG: "Ung\xFCltige Eingabe."
   };
   var Online = class {
     constructor(colony) {
@@ -4423,6 +4501,27 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
       } catch (e) {
       }
+    }
+    // ---------- Codes ----------
+    async redeem(code) {
+      const r = await this.call("redeem_code", { p_token: this.token, p_code: code });
+      if (!r.ok) throw new Error(r.err || "Code ung\xFCltig.");
+      await this.sync();
+      return r.text;
+    }
+    async loadCodes() {
+      if (this.me && this.me.is_admin) try {
+        this.codes = await this.call("admin_codes", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async saveCode(code, res, u, days, max) {
+      await this.call("admin_code_save", { p_token: this.token, p_code: code, p_res: res, p_u: u, p_days: days, p_max: max });
+      await this.loadCodes();
+    }
+    async deleteCode(code) {
+      await this.call("admin_code_delete", { p_token: this.token, p_code: code });
+      await this.loadCodes();
     }
     async loadRanking() {
       if (!this.token) return;
