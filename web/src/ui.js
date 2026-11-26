@@ -7,7 +7,7 @@ import { SeaMap } from './map.js';
 const $ = (sel) => document.querySelector(sel);
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const amount = (v) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : String(Math.floor(v)));
-const rate = (v) => { const a = Math.abs(v); const s = a >= 100 ? String(Math.round(a)) : a.toFixed(1).replace(/\.0$/, ''); return (v < 0 ? '−' : '+') + s; };
+const rate = (v) => { const a = Math.abs(v); const s = a >= 1000 ? (a / 1000).toFixed(1) + 'k' : String(Math.round(a)); return (v < 0 ? '−' : '+') + s; };
 const RES_IC = ['🪵', '🦪', '💧', '⚙️'];
 const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹'];
 const NODE_NAME = ['Treibholz', 'Muschelbank', 'Süßwassertümpel', 'Wrackteile'];
@@ -27,7 +27,7 @@ export class UI {
   build() {
     const top = $('#top');
     this.cards = RES.map((name, i) => {
-      const card = h('div', 'card', `<span class="ic" title="${name}">${RES_IC[i]}</span><b class="rv">0</b><span class="rr">+0</span>`);
+      const card = h('div', 'card', `<span class="ic" title="${name}">${RES_IC[i]}</span><div class="cv"><b class="rv">0</b><span class="rr">+0</span></div>`);
       top.querySelector('.res').appendChild(card);
       return { v: card.querySelector('.rv'), r: card.querySelector('.rr') };
     });
@@ -95,7 +95,7 @@ export class UI {
 
     const v = window.APP_VERSION || { name: 'dev', channel: 'test' };
     this.version = v;
-    if (v.channel !== 'public') { const b = $('#badge'); b.textContent = 'TEST ' + v.name; b.style.display = ''; }
+    if (v.channel !== 'public') { const b = $('#badge'); b.textContent = 'TEST ' + String(v.name).replace(/^Test\s*/i, ''); b.style.display = ''; }
   }
 
   select(i, keepMenu) {
@@ -220,7 +220,9 @@ export class UI {
     this.acc = 0;
     const c = this.c, s = c.s;
     this.cards.forEach((k, i) => {
-      setHTML(k.v, amount(s.res[i]) + (s.res[i] >= c.storage - 1 ? '<small style="font-size:9px;color:#ffc060"> voll</small>' : ''));
+      setHTML(k.v, amount(s.res[i]));
+      const full = s.res[i] >= c.storage - 1;
+      if (k.full !== full) { k.full = full; k.v.style.color = full ? '#ffc060' : ''; k.v.title = full ? 'Lager voll' : ''; }
       const r = c.rates[i];
       setHTML(k.r, rate(r));
       k.r.style.color = r >= 0 ? '#8ef0a0' : '#ff7a7a';
@@ -261,19 +263,31 @@ export class UI {
 
   cityLabels(cw, ch) {
     const c = this.c, s = c.s, deck = c.deck;
+    const items = [];
     for (let i = 0; i < PLOTS; i++) {
       const p = s.plots[i], el = this.labelEls[i];
       if (p.type < 0 || (this.w.dist > 120 && p.buildLeft <= 0 && i !== 0)) { el.style.display = 'none'; continue; }
       const pp = plotPos(i);
-      const tall = i === 0 ? 16 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
+      const tall = i === 0 ? 15 : p.type === T.WACHTURM ? 11.5 : p.type === T.ABWEHR ? 11 : i === WALL ? 10 : 6.5;
       const sp = this.w.screenPos([pp[0], deck + tall, pp[2]], cw, ch);
-      if (!sp) { el.style.display = 'none'; continue; }
-      el.style.display = '';
-      el.style.transform = `translate(${sp[0]}px, ${sp[1]}px) translate(-50%, -50%)`;
+      if (!sp || sp[0] < -40 || sp[0] > cw + 40 || sp[1] < 60 || sp[1] > ch - 60) { el.style.display = 'none'; continue; }
       const near = this.w.dist < 50 || i === this.selected;
       const txt = `<span class="li">${B_IC[p.type]}</span>${near ? ' ' + DEFS[p.type].name : ''}${p.level > 0 ? ` <i>${p.level}</i>` : ''}` +
         (p.buildLeft > 0 ? `<div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div><small>${fmtTime(p.buildLeft)}</small>` : '');
-      if (el._t !== txt) { el._t = txt; el.innerHTML = txt; }
+      if (el._t !== txt) { el._t = txt; el.innerHTML = txt; el.style.display = ''; el._w = el.offsetWidth; el._h = el.offsetHeight; }
+      // Priorität: ausgewählt > im Bau > nah an der Kamera
+      const prio = (i === this.selected ? 0 : p.buildLeft > 0 ? 1 : 2) * 1e6 + sp[2];
+      items.push({ el, x: sp[0], y: sp[1], w: el._w || 60, h: el._h || 22, prio });
+    }
+    items.sort((a, b) => a.prio - b.prio);
+    const placed = [];
+    for (const it of items) {
+      const r = { l: it.x - it.w / 2 - 2, r: it.x + it.w / 2 + 2, t: it.y - it.h / 2 - 2, b: it.y + it.h / 2 + 2 };
+      const hit = placed.some((q) => r.l < q.r && r.r > q.l && r.t < q.b && r.b > q.t);
+      if (hit) { it.el.style.display = 'none'; continue; }
+      placed.push(r);
+      it.el.style.display = '';
+      it.el.style.transform = `translate(${it.x}px, ${it.y}px) translate(-50%, -50%)`;
     }
   }
 

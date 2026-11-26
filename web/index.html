@@ -45,12 +45,14 @@
   #loginErr { color: #ff8a8a; min-height: 18px; font-size: 14px; }
 
   /* --- aufgeräumtes Layout --- */
+  .res { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .card { overflow: hidden; white-space: nowrap; min-width: 0; }
   #top { padding: calc(env(safe-area-inset-top) + 5px) 8px 6px; }
   .res { gap: 5px; }
   .card { display: flex; align-items: baseline; gap: 4px; padding: 6px 8px; border-radius: 12px; }
   .card .ic { font-size: 15px; }
-  .rv { font-size: 17px; font-weight: 800; }
-  .rr { font-size: 11px; margin-left: auto; }
+  .rv { font-size: 16px; font-weight: 800; }
+  .rr { font-size: 10px; margin-left: auto; overflow: hidden; text-overflow: clip; }
   .rn { display: none; }
   .status { display: flex; align-items: center; gap: 8px; max-width: 720px; margin: 6px auto 0; font-size: 12px; color: var(--dim); }
   .tide { flex: 1; display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -62,7 +64,6 @@
   .st b { color: var(--txt); }
   #toasts { top: calc(env(safe-area-inset-top) + 78px); gap: 4px; }
   .toast { font-size: 13px; padding: 6px 10px; }
-  #badge { top: calc(env(safe-area-inset-top) + 70px); font-size: 10px; padding: 2px 6px; opacity: .8; }
   .bb { min-height: 54px; gap: 1px; }
   .bb .ic { font-size: 20px; line-height: 1; }
   .bb b { font-size: 11px; font-weight: 700; }
@@ -108,6 +109,11 @@
   #badge { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 124px); background: #c2410c; color: #fff; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; pointer-events: none; letter-spacing: .04em; }
   .logo { font-size: 30px; font-weight: 900; letter-spacing: .02em; }
   .sub { color: var(--dim); }
+  #badge { top: auto !important; right: auto !important; left: 8px !important; bottom: calc(env(safe-area-inset-bottom) + 76px) !important; width: auto !important; height: auto !important; font-size: 10px !important; padding: 2px 6px !important; opacity: .75; }
+  .card { align-items: center !important; gap: 5px !important; padding: 4px 7px !important; }
+  .card .ic { font-size: 18px !important; }
+  .cv { display: flex; flex-direction: column; line-height: 1.05; min-width: 0; }
+  .cv .rr { margin-left: 0 !important; font-size: 10px !important; }
 </style>
 </head>
 <body>

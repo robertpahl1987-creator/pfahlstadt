@@ -19,6 +19,8 @@ android {
         versionCode vCode
         versionName vName
         resValue "string", "app_name", isPublic ? "Pfahlstadt" : "Pfahlstadt Test"
+        // Hier sucht die App beim Start nach neuen Spieldateien
+        resValue "string", "update_base", (isPublic ? "https://github.com/robertpahl1987-creator/pfahlstadt/releases/latest/download/" : "https://github.com/robertpahl1987-creator/pfahlstadt/releases/download/test/")
     }
 
     signingConfigs {

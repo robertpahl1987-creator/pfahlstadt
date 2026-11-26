@@ -45,6 +45,7 @@ jobs:
           npx --yes esbuild@0.24.0 web/src/main.js --bundle --format=iife --target=es2020 --minify --outfile=web/game.js
           mkdir -p android/app/src/main/assets
           cp web/index.html web/game.js android/app/src/main/assets/
+          echo '{"build": ${{ steps.v.outputs.code }}, "min_shell": 1}' > android/app/src/main/assets/web-version.json
           echo "window.APP_VERSION = { name: '${{ steps.v.outputs.name }}', channel: 'public' };" > android/app/src/main/assets/version.js
 
       - uses: gradle/actions/setup-gradle@v4
@@ -70,7 +71,12 @@ jobs:
           name: Pfahlstadt ${{ steps.v.outputs.name }}
           body: ${{ inputs.notes }}
           make_latest: true
-          files: Pfahlstadt-${{ steps.v.outputs.name }}.apk
+          files: |
+            Pfahlstadt-${{ steps.v.outputs.name }}.apk
+            android/app/src/main/assets/index.html
+            android/app/src/main/assets/game.js
+            android/app/src/main/assets/version.js
+            android/app/src/main/assets/web-version.json
 
       - name: Nächste Versionsnummer vormerken
         if: ${{ !inputs.dry_run }}

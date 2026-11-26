@@ -27,6 +27,7 @@ jobs:
           npx --yes esbuild@0.24.0 web/src/main.js --bundle --format=iife --target=es2020 --minify --outfile=web/game.js
           mkdir -p android/app/src/main/assets
           cp web/index.html web/game.js android/app/src/main/assets/
+          echo '{"build": ${{ github.run_number }}, "min_shell": 1}' > android/app/src/main/assets/web-version.json
           echo "window.APP_VERSION = { name: 'Test ${{ github.run_number }}', channel: 'test' };" > android/app/src/main/assets/version.js
 
       - uses: gradle/actions/setup-gradle@v4
@@ -54,4 +55,9 @@ jobs:
           body: |
             Neueste Testversion: Test ${{ github.run_number }} (${{ github.sha }})
             Installiert sich als eigene App "Pfahlstadt Test" neben der Freunde-Version.
-          files: Pfahlstadt-Test.apk
+          files: |
+            Pfahlstadt-Test.apk
+            android/app/src/main/assets/index.html
+            android/app/src/main/assets/game.js
+            android/app/src/main/assets/version.js
+            android/app/src/main/assets/web-version.json

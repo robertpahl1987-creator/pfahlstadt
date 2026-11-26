@@ -90,6 +90,9 @@ function start() {
   }
   requestAnimationFrame(frame);
   document.getElementById('loading').remove();
+  const updNote = new URLSearchParams(location.search).get('update');
+  if (updNote === 'updated') colony.msg(`Update installiert: ${(window.APP_VERSION || {}).name || 'neue Version'} ✓`);
+  if (updNote === 'shell') colony.msg('Es gibt ein größeres Update – bitte die neue APK einmal installieren.');
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

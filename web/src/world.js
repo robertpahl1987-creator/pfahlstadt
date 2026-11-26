@@ -432,7 +432,7 @@ export class World {
   screenPos(p, w, h) {
     const q = project(this.cam.vp, p);
     if (q[2] <= 0) return null;
-    return [(q[0] * 0.5 + 0.5) * w, (1 - (q[1] * 0.5 + 0.5)) * h];
+    return [(q[0] * 0.5 + 0.5) * w, (1 - (q[1] * 0.5 + 0.5)) * h, q[2]];
   }
 
   // ---------------- Szene für den Renderer ----------------
