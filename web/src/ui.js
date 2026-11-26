@@ -1,5 +1,5 @@
 // Oberfläche (HTML über der 3D-Ansicht) inkl. Seekarte, Kaserne und Berichten
-import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EBB, PLOTS, INNER, RING3, WALL, TOWERS, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
+import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime } from './game.js';
 import { plotPos } from './world.js';
 import { TIERS } from './gfx.js';
 import { SeaMap } from './map.js';
@@ -20,7 +20,7 @@ export class UI {
     this.selected = -1; this.menu = false; this.confirm = null; this.panelKey = null;
     this.view = 'city'; this.mapSel = null; this.form = [0, 0]; this.showReports = false;
     this.mode = null; // 'ally' | 'rank' | 'account'
-    this.busy = false;
+    this.busy = false; this.tasksOpen = true; this.troopTab = 'truppen';
     this.build();
   }
 
@@ -40,7 +40,7 @@ export class UI {
     this.mapEl = $('#map');
     this.sea = new SeaMap($('#mapc'), this.c, this.o);
 
-    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild');
+    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild'); this.bTroops = $('#bTroops'); this.bTroops.dataset.a = 'troops'; this.tasksEl = $('#tasks');
     this.bBuild.dataset.a = 'buildings';
     this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bMap.dataset.a = 'map'; this.bAlly.dataset.a = 'ally'; this.bMenu.dataset.a = 'menu';
     this.login = $('#login');
@@ -156,16 +156,20 @@ export class UI {
     else if (a === 'gfx') this.g.cycle();
     else if (a === 'map') this.setView(this.view === 'map' ? 'city' : 'map');
     else if (a === 'ally') this.openMode('ally');
-    else if (a === 'rank') this.openMenu('rank');
+    else if (a === 'rank') { this.troopTab = 'rank'; if (this.mode !== 'troops') this.openMode('troops'); this.o.loadRanking(); }
     else if (a === 'account') this.openMenu('settings');
-    else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu(this.menuTab && this.menuTab !== 'stadt' ? this.menuTab : 'truppen'); }
-    else if (a === 'tab') this.openMenu(ds.t);
+    else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu('settings'); }
+    else if (a === 'troops') { if (this.mode === 'troops') this.mode = null; else { this.openMode('troops'); this.troopTab = this.troopTab || 'truppen'; this.ttabLoad(); } }
+    else if (a === 'ttab') { this.troopTab = ds.t; this.ttabLoad(); }
+    else if (a === 'tasks') this.tasksOpen = !this.tasksOpen;
+    else if (a === 'gonode') { const n = c.nodeById(+ds.i); this.menu = false; this.mode = null; if (n) { this.w.target[0] = n.x; this.w.target[2] = n.z; this.w.dist = Math.min(this.w.dist, 55); this.select(-1000 - n.id); } }
+    else if (a === 'gomap') { if (this.view !== 'map') this.setView('map'); }
     else if (a === 'buildings') { if (this.mode === 'build') { this.mode = null; } else { this.openMode('build'); this.buildTab = this.buildTab || 'mine'; } }
     else if (a === 'btab') this.buildTab = ds.t;
     else if (a === 'quickbuild') {
       const t = +ds.v, i = this.freePlotFor(t);
       if (i < 0) c.msg('Kein passender freier Bauplatz – baue mehr, damit dein Gelände wächst.');
-      else if (c.startBuild(i, t)) { const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; }
+      else if (c.startBuild(i, t)) { const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.mode = null; }
     }
     else if (a === 'goto') { const i = +ds.i; this.menu = false; const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.w.dist = Math.min(this.w.dist, 45); this.select(i); }
     else if (a === 'upq') c.startUpgrade(+ds.i);
@@ -173,8 +177,8 @@ export class UI {
       if (this.view === 'map') { if (this.mapSel || this.showReports) { this.mapSel = null; this.showReports = false; } else this.setView('city'); }
       else { this.select(-1); this.menu = false; this.mode = null; this.o.wantChat = false; }
     }
-    else if (a === 'build') c.startBuild(this.selected, v);
-    else if (a === 'up') c.startUpgrade(this.selected);
+    else if (a === 'build') { if (c.startBuild(this.selected, v)) this.select(-1); }
+    else if (a === 'up') { if (c.startUpgrade(this.selected)) this.select(-1); }
     else if (a === 'demo') { if (this.confirm === 'demo') { c.demolish(this.selected); this.select(-1); } else this.confirm = 'demo'; }
     else if (a === 'save') { c.save(); c.msg('Spielstand gespeichert.'); }
     else if (a === 'new') { if (this.confirm === 'new') { c.newGame(); this.menu = false; this.confirm = null; } else this.confirm = 'new'; }
@@ -267,7 +271,8 @@ export class UI {
     }
 
     const btn = (el, ic, label, sub) => setHTML(el, `<span class="ic">${ic}</span><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}`);
-    btn(this.bBeacon, '🔥', 'Feuer', s.beaconOn ? '<i style="color:#ffd27a">an</i>' : '<i style="color:#9ab8c8">aus</i>');
+    btn(this.bBeacon, '🔥', 'Feuer', s.beaconOn ? 'an' : 'aus');
+    this.bBeacon.classList.toggle('on', !!s.beaconOn);
     const blk = c.expeditionBlocker();
     if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
     btn(this.bExp, '🧭', 'Watt', s.expLeft > 0 ? fmtTime(s.expLeft) : blk === 'Wartet auf Ebbe' ? 'bei Ebbe' : 'los');
@@ -277,6 +282,9 @@ export class UI {
     const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
     btn(this.bAlly, '🤝', 'Allianz', !this.o.active ? 'offline' : al ? '[' + al.tag + ']' : '');
     btn(this.bMenu, '☰', 'Menü', '');
+    const tq = c.queued ? c.queued() : 0;
+    btn(this.bTroops, '⚔️', 'Truppen', this.o.active && this.o.incoming ? '<i style="color:#ff6060">Angriff!</i>' : tq ? `🎓 ${tq}` : '');
+    this.renderTasks();
     btn(this.bBuild, '🏗️', 'Gebäude', c.activeBuilds ? `🔨 ${c.activeBuilds}/2` : '');
     this.renderPanel();
   }
@@ -319,6 +327,7 @@ export class UI {
     if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.terrHtml()) : this.mapHtml();
     else if (this.mode === 'ally') html = this.allyHtml();
     else if (this.mode === 'build') html = this.buildingsHtml();
+    else if (this.mode === 'troops') html = this.troopsHtml();
     else if (this.mode === 'rank') html = this.rankHtml();
     else if (this.mode === 'account') html = this.accountHtml();
     else if (this.menu) html = this.menuHtml();
@@ -328,8 +337,65 @@ export class UI {
     this.panelKey = html;
     this.panel.innerHTML = html;
     this.panel.style.display = html ? '' : 'none';
+    const mini = this.view !== 'map' && !this.mode && !this.menu && ((this.selected >= 0 && this.c.s.plots[this.selected].type >= 0) || this.selected <= -1000);
+    this.panel.classList.toggle('mini', mini);
+    const qk = document.getElementById('quick'); if (qk) qk.style.display = html ? 'none' : '';
     const cb = document.getElementById('chatBox');
     if (cb) cb.scrollTop = cb.scrollHeight;
+  }
+
+  // ---------- Auftragsliste (Bau, Ausbildung, Märsche, Sammeln, Watt) ----------
+  tasks() {
+    const c = this.c, s = c.s, o = this.o, out = [];
+    const pct = (left, total) => Math.max(0, Math.min(100, 100 * (1 - left / Math.max(0.01, total))));
+    s.plots.forEach((p, i) => {
+      if (p.type >= 0 && p.buildLeft > 0) out.push({ ic: '🔨', t: `${DEFS[p.type].name} ${p.level > 0 ? '→ ' + (p.level + 1) : ''}`, left: p.buildLeft, pct: pct(p.buildLeft, p.buildTotal), a: `data-a="goto" data-i="${i}"` });
+    });
+    if (s.train && s.train.length) {
+      const q = s.train[0];
+      const all = s.train.reduce((a, x, k) => a + (k === 0 ? x.left + (x.n - 1) * x.per : x.n * x.per), 0);
+      out.push({ ic: '🎓', t: `${c.queued()}× Ausbildung`, left: all, pct: pct(q.left, q.per), a: 'data-a="troops"' });
+    }
+    if (s.expLeft > 0) out.push({ ic: '🧭', t: 'Wattwanderung', left: s.expLeft, pct: pct(s.expLeft, EXP_TIME), a: '' });
+    if (o.active) {
+      const now = o.serverNow(), W = o.world || { players: [], territories: [] };
+      for (const m of o.marches || []) {
+        const back = m.status === 'back';
+        const left = Math.max(0, ((back ? Date.parse(m.back_at) : Date.parse(m.arrive)) - now) / 1000);
+        const nm = m.target_player ? ((W.players.find((p) => p.id === m.target_player) || {}).name || 'Stadt') : ((W.territories.find((t) => t.id === m.target_terr) || {}).name || 'Gebiet');
+        out.push({ ic: back ? '↩️' : m.kind === 'player' ? '⚔️' : '⛵', t: `${back ? 'Heimweg' : 'Angriff'} ${nm}`, left, pct: null, a: 'data-a="gomap"' });
+      }
+      if (o.incoming) out.push({ ic: '⚠️', t: 'Feind greift an!', left: null, red: true, a: 'data-a="gomap"' });
+    } else {
+      for (const m of s.marches || []) {
+        const back = m.phase === 'back', nm = (s.terr[m.target] || {}).name || 'Gebiet';
+        out.push({ ic: back ? '↩️' : m.kind === 'attack' ? '⚔️' : '🛡️', t: `${back ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärk.'} ${nm}`, left: m.left, pct: pct(m.left, m.total), a: 'data-a="gomap"' });
+      }
+    }
+    if (c.raidIn !== null && c.raidIn < 180) out.push({ ic: '🏴‍☠️', t: 'Piraten kommen', left: c.raidIn, pct: null, red: true, a: 'data-a="troops"' });
+    // Sammler je Sammelstelle
+    const by = {};
+    for (const g of s.gath || []) by[g.node] = (by[g.node] || 0) + 1;
+    for (const id in by) {
+      const n = c.nodeById(+id);
+      if (!n) { out.push({ ic: '👣', t: `${by[id]} kehren heim`, left: null, a: '' }); continue; }
+      const L = c.gatherPath(n).L, trip = 2 * L / 2.3 + 5;
+      const left = n.amount / Math.max(0.01, by[id] * c.carry / trip);
+      out.push({ ic: RES_IC[n.type], t: `${by[id]}× ${NODE_NAME[n.type]}`, left, pct: 100 * (1 - n.amount / Math.max(1, n.max)), a: `data-a="gonode" data-i="${n.id}"` });
+    }
+    return out;
+  }
+
+  renderTasks() {
+    const el = this.tasksEl; if (!el || this.holding) return;
+    const list = this.view === 'map' ? [] : this.tasks();
+    const bigPanel = this.panel.style.display !== 'none' && !this.panel.classList.contains('mini');
+    if (!list.length || bigPanel) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
+    if (el.style.display === 'none') el.style.display = '';
+    const open = this.tasksOpen !== false;
+    let html = `<div class="th" data-a="tasks"><span>⏳ AUFTRÄGE (${list.length})</span><span>${open ? '▾' : '▸'}</span></div>`;
+    if (open) html += list.slice(0, 7).map((t) => `<button class="tk ${t.red ? 'red' : ''}" ${t.a}><div class="tr"><span class="tn">${t.ic} ${t.t}</span>${t.left !== null ? `<b>${t.pre || ''}${fmtTime(t.left)}</b>` : ''}</div>${t.pct !== null && t.pct !== undefined ? `<div class="bar"><div style="width:${t.pct.toFixed(0)}%"></div></div>` : ''}</button>`).join('');
+    setHTML(el, html);
   }
 
   head(title) { return `<div class="ph"><div class="pt">${title}</div><button class="x" data-a="close">✕</button></div>`; }
@@ -356,21 +422,18 @@ export class UI {
       return this.head(title) + intro + `<div class="list">${rows}</div>`;
     }
     const d = DEFS[p.type], L = p.level;
-    let out = this.head(L > 0 ? `${d.name} · Stufe ${L}` : `${d.name} (im Bau)`) + `<div class="desc">${d.desc}</div>`;
-    if (L > 0) out += this.info(p.type, L).map((l) => `<div class="inf">${l}</div>`).join('');
-    if (L > 0 && p.type === T.KASERNE) out += this.barracksHtml();
+    let out = this.head(`${B_IC[p.type]} ${d.name} <span class="lv">${L > 0 ? 'Stufe ' + L : 'im Bau'}</span>`);
+    if (L > 0) { const inf = this.info(p.type, L); if (inf.length) out += `<div class="inf">${inf[0]}</div>`; }
     if (p.buildLeft > 0) {
-      out += `<div class="inf">Bauarbeiten: noch ${fmtTime(p.buildLeft)}</div><div class="bar big"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div>`;
-    }
-    let btns = '';
-    if (p.buildLeft <= 0 && L < MAX_LEVEL) {
+      out += `<div class="bline"><div class="ri" style="flex:1">🔨 ${L > 0 ? 'Ausbau auf ' + (L + 1) : 'Bau'} · noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>`;
+    } else if (L < MAX_LEVEL) {
       const blk = c.upgradeBlocker(i);
-      out += `<div class="sm">Ausbau auf Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} &nbsp;·&nbsp; ${fmtTime(buildTime(p.type, L + 1))}</div>`;
-      if (blk && blk !== 'Zu wenig Rohstoffe') out += `<div class="warn">${blk}</div>`;
-      btns += `<button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen → ${L + 1}</b></button>`;
-    } else if (L >= MAX_LEVEL) out += '<div class="sm">Maximale Stufe erreicht.</div>';
-    if (i !== 0) btns += `<button class="btn ${this.confirm === 'demo' ? 'danger' : 'ghost'}" data-a="demo">${this.confirm === 'demo' ? '<b>Wirklich abreißen?</b>' : 'Abreißen'}</button>`;
-    return out + `<div class="btns">${btns}</div>`;
+      out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div><button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button></div>`;
+    } else out += '<div class="sm">Maximale Stufe erreicht.</div>';
+    const extra = [];
+    if (L > 0 && p.type === T.KASERNE) extra.push('<button class="btn ghost" data-a="troops">⚔️ Truppen ausbilden</button>');
+    if (i !== 0) extra.push(`<button class="btn ${this.confirm === 'demo' ? 'danger' : 'ghost'}" data-a="demo" style="padding:7px 10px;font-size:12px">${this.confirm === 'demo' ? '<b>Wirklich abreißen?</b>' : 'Abreißen'}</button>`);
+    return out + (extra.length ? `<div class="btns" style="margin-top:8px">${extra.join('')}</div>` : '');
   }
 
   nodeHtml() {
@@ -581,15 +644,21 @@ export class UI {
   }
 
   menuHtml() {
-    const tab = this.menuTab && this.menuTab !== 'stadt' ? this.menuTab : 'truppen';
-    const tabs = [['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rang'], ['settings', '⚙️', 'Einstell.']];
-    const bar = `<div class="tabs four">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="tab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
-    let body = '';
-    if (tab === 'truppen') body = this.troopsTabHtml();
-    else if (tab === 'reports') body = this.reportsHtml().replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
-    else if (tab === 'rank') body = this.rankHtml().replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
-    else body = this.settingsHtml();
-    return `<div class="ph"><div class="pt">Menü</div><button class="x" data-a="close">✕</button></div>${bar}<div class="tabbody">${body}</div>`;
+    return this.head('Menü') + this.settingsHtml();
+  }
+
+  ttabLoad() {
+    if (this.troopTab === 'rank') this.o.loadRanking();
+    if (this.troopTab === 'reports' && this.o.active) this.o.sync();
+  }
+
+  troopsHtml() {
+    const tab = this.troopTab || 'truppen';
+    const tabs = [['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rangliste']];
+    const bar = `<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="ttab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
+    const strip = (x) => x.replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
+    const body = tab === 'reports' ? strip(this.reportsHtml()) : tab === 'rank' ? strip(this.rankHtml()) : this.troopsTabHtml();
+    return this.head('Truppen') + bar + `<div class="tabbody">${body}</div>`;
   }
 
   freePlotFor(t) {
