@@ -156,6 +156,7 @@ namespace Pfahlstadt
             bottom = sa.yMin / sc;
             GUI.matrix = Matrix4x4.Scale(new Vector3(sc, sc, 1f));
 
+            if (NeedLogin) { LoginOverlay(c); return; }
             WorldLabels(c);
             TopBar(c);
             Toasts(c);
@@ -258,21 +259,23 @@ namespace Pfahlstadt
         {
             float h = 120f, y = VH - bottom - h;
             Panel(new Rect(0, y, VW, h + bottom));
-            float x0 = VW / 2f - 352f, bw = 134f, step = 142.5f;
-            string[] names = { "Truppen", "Karte", "Belohnung", "Stadt", "Menü" };
-            string[] keys = { "troops", "map", "rewards", "city", "menu" };
-            for (int k = 0; k < 5; k++)
+            float x0 = VW / 2f - 352f, bw = 112f, step = 118.4f;
+            string[] names = { "Truppen", "Karte", "Allianz", "Belohnung", "Stadt", "Menü" };
+            string[] keys = { "troops", "map", "ally", "rewards", "city", "menu" };
+            var o = Online.I;
+            for (int k = 0; k < 6; k++)
             {
                 string sub = "";
                 if (k == 0) sub = $"{Units.Sum(c.S2.troops)} da";
-                if (k == 1) sub = c.S2.marches.Count + c.S2.botMarches.Count > 0 ? $"{c.S2.marches.Count + c.S2.botMarches.Count} unterwegs" : "";
-                if (k == 2) sub = RewardsReady(c) > 0 ? $"<color=#8EF0A0>{RewardsReady(c)} bereit</color>" : "";
-                if (k == 3) sub = c.TraderHere ? "<color=#FFD27A>Händler!</color>" : c.S2.researchIdx >= 0 ? "forscht" : "";
-                bool on = k == 4 ? menu : panel == keys[k];
-                string label = (on ? "<color=#FFE08A>" : "") + $"<b>{names[k]}</b>" + (on ? "</color>" : "") + (sub != "" ? $"\n<size=16>{sub}</size>" : "");
+                if (k == 1) { int n = o != null && o.Active ? o.Marches.Count : c.S2.marches.Count; n += c.S2.botMarches.Count; sub = o != null && o.Incoming > 0 ? "<color=#FF7A7A>Angriff!</color>" : n > 0 ? $"{n} unterwegs" : ""; }
+                if (k == 2) sub = o == null || !o.Active ? "offline" : o.HelpOpen > 0 ? $"<color=#8EF0A0>Hilfe {o.HelpOpen}</color>" : o.War != null ? "<color=#FF9A5A>Krieg</color>" : "";
+                if (k == 3) sub = RewardsReady(c) > 0 ? $"<color=#8EF0A0>{RewardsReady(c)} bereit</color>" : "";
+                if (k == 4) sub = c.TraderHere ? "<color=#FFD27A>Händler!</color>" : c.S2.researchIdx >= 0 ? "forscht" : "";
+                bool on = k == 5 ? menu : panel == keys[k];
+                string label = (on ? "<color=#FFE08A>" : "") + $"<size=19><b>{names[k]}</b></size>" + (on ? "</color>" : "") + (sub != "" ? $"\n<size=15>{sub}</size>" : "");
                 if (Btn(new Rect(x0 + step * k, y + 14, bw, 92), label))
                 {
-                    if (k == 4) { menu = !menu; confirmNew = false; panel = null; if (menu) Selected = -1; }
+                    if (k == 5) { menu = !menu; confirmNew = false; panel = null; if (menu) Selected = -1; }
                     else OpenPanel(on ? null : keys[k]);
                 }
             }
@@ -399,7 +402,7 @@ namespace Pfahlstadt
 
         void MenuPanel(Colony c)
         {
-            float w = 704f, h = 600f;
+            float w = 704f, h = 680f;
             var r = Panel(new Rect(VW / 2f - w / 2f, VH / 2f - h / 2f, w, h));
             if (Header(r, "Pfahlstadt – Menü")) { menu = false; return; }
             var g = GraphicsQuality.I;
@@ -417,6 +420,8 @@ namespace Pfahlstadt
             if (Btn(new Rect(r.x + 18, y, (w - 46) / 2, 70), $"Grafik: {(g.Auto ? "Auto · " : "")}{g.Tier}")) g.Cycle();
             if (Btn(new Rect(r.x + 28 + (w - 46) / 2, y, (w - 46) / 2, 70), "Spiel speichern")) { c.Save(); c.Msg("Spielstand gespeichert."); }
             y += 84f;
+            if (Btn(new Rect(r.x + 18, y, w - 36, 64), Online.I != null && Online.I.Active ? "Online & Konto" : "Online spielen")) OpenPanel("acc");
+            y += 76f;
             if (!confirmNew) { if (Btn(new Rect(r.x + 18, y, w - 36, 70), "Neues Spiel")) confirmNew = true; }
             else if (Btn(new Rect(r.x + 18, y, w - 36, 70), "<color=#FFB0A0><b>Wirklich neu anfangen? Alles geht verloren</b></color>"))
             {

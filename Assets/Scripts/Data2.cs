@@ -223,6 +223,9 @@ namespace Pfahlstadt
         public List<ResNode> nodes = new List<ResNode>(); public List<Gatherer> gath = new List<Gatherer>();
         public float nodeTimer = 2f; public int nodeSeq = 1;
         public string playerName = "";
+        // Allianz-Hilfe (online)
+        public List<string> helpKeys = new List<string>(), helpReq = new List<string>();
+        public List<int> helpN = new List<int>();
     }
 
     // Zähler für Aufgaben, Erfolge und Pass

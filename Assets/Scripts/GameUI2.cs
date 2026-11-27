@@ -48,7 +48,12 @@ namespace Pfahlstadt
             {
                 var t = Input.GetTouch(0);
                 var gp = new Vector2(t.position.x / sc, (Screen.height - t.position.y) / sc);
-                if (t.phase == TouchPhase.Began) { touchInContent = contentRect.Contains(gp); dragMoved = false; touchStart = gp; }
+                if (t.phase == TouchPhase.Began) { touchInContent = contentRect.Contains(gp); mapTouch = panel == "map" && mapRect.Contains(gp); dragMoved = false; touchStart = gp; }
+                else if (t.phase == TouchPhase.Moved && mapTouch)
+                {
+                    if ((gp - touchStart).magnitude > 14f) dragMoved = true;
+                    if (dragMoved) mapOff += new Vector2(t.deltaPosition.x, -t.deltaPosition.y) / sc;
+                }
                 else if (t.phase == TouchPhase.Moved && touchInContent)
                 {
                     if ((gp - touchStart).magnitude > 14f) dragMoved = true;
@@ -64,8 +69,9 @@ namespace Pfahlstadt
         void OpenPanel(string key)
         {
             panel = key; scrollY = 0; Selected = -1; menu = false; confirmKey = null;
-            tab = key == "troops" ? "train" : key == "rewards" ? "daily" : key == "city" ? "tech" : "";
-            if (key == "map") { mapTerr = -1; mapBot = -1; }
+            tab = key == "troops" ? "train" : key == "rewards" ? "daily" : key == "city" ? "tech" : key == "ally" ? "main" : key == "admin" ? "msg" : "";
+            if (key == "map") { mapTerr = -1; mapBot = -1; mapSel = null; }
+            OnTab();
             System.Array.Clear(form, 0, 5);
         }
 
@@ -75,28 +81,33 @@ namespace Pfahlstadt
             EnsureExtraStyles();
             float x = VW / 2f - 352f, w = 704f, y0 = top + 166f, y1 = VH - bottom - 128f;
             var r = Panel(new Rect(x, y0, w, y1 - y0));
-            string title = panel == "troops" ? "Truppen" : panel == "map" ? "Seekarte" : panel == "rewards" ? "Belohnungen" : "Stadt";
+            bool on = Online.I != null && Online.I.Active;
+            string title = panel == "troops" ? "Truppen" : panel == "map" ? "Seekarte" : panel == "rewards" ? "Belohnungen" : panel == "ally" ? "Allianz" : panel == "admin" ? "Spielleiter" : panel == "acc" ? "Online & Konto" : "Stadt";
             if (Header(r, title)) { panel = null; return; }
             float ty = r.y + 70f;
-            string[][] tabs = panel == "troops" ? new[] { new[] { "train", "Truppen" }, new[] { "form", "Aufstellung" }, new[] { "caps", "Kapitäne" }, new[] { "laz", "Lazarett" }, new[] { "rep", "Berichte" } }
+            string[][] tabs = panel == "troops" ? (on ? new[] { new[] { "train", "Truppen" }, new[] { "form", "Aufst." }, new[] { "caps", "Kapitäne" }, new[] { "laz", "Lazarett" }, new[] { "arena", "Arena" }, new[] { "rep", "Berichte" } }
+                    : new[] { new[] { "train", "Truppen" }, new[] { "form", "Aufstellung" }, new[] { "caps", "Kapitäne" }, new[] { "laz", "Lazarett" }, new[] { "rep", "Berichte" } })
+                : panel == "ally" ? (on && Online.I.InAlliance ? new[] { new[] { "main", "Allianz" }, new[] { "help", "Hilfe" }, new[] { "garr", "Burg" }, new[] { "res", "Forschung" }, new[] { "war", "Krieg" }, new[] { "rally", "Sammeln" } } : new string[0][])
+                : panel == "admin" ? new[] { new[] { "msg", "Nachricht" }, new[] { "codes", "Codes" }, new[] { "players", "Spieler" }, new[] { "av", "Bilder" } }
                 : panel == "rewards" ? new[] { new[] { "daily", "Täglich" }, new[] { "quest", "Aufgaben" }, new[] { "pass", "Pass" }, new[] { "vip", "VIP" }, new[] { "items", "Lager" }, new[] { "ach", "Erfolge" } }
-                : panel == "city" ? new[] { new[] { "tech", "Forschung" }, new[] { "yard", "Werft" }, new[] { "trade", "Händler" }, new[] { "queue", "Schlange" }, new[] { "season", "Saison" } }
+                : panel == "city" ? (on ? new[] { new[] { "tech", "Forschung" }, new[] { "yard", "Werft" }, new[] { "trade", "Händler" }, new[] { "queue", "Schlange" }, new[] { "rank", "Rang" }, new[] { "season", "Saison" } }
+                    : new[] { new[] { "tech", "Forschung" }, new[] { "yard", "Werft" }, new[] { "trade", "Händler" }, new[] { "queue", "Schlange" }, new[] { "season", "Saison" } })
                 : new string[0][];
             if (tabs.Length > 0)
             {
                 float tw = (w - 24) / tabs.Length;
                 for (int k = 0; k < tabs.Length; k++)
                 {
-                    bool on = tab == tabs[k][0];
-                    if (Btn(new Rect(x + 12 + k * tw, ty, tw - 6, 58), (on ? "<color=#FFE08A><b>" : "<size=19>") + tabs[k][1] + (on ? "</b></color>" : "</size>")))
-                    { tab = tabs[k][0]; scrollY = 0; confirmKey = null; }
+                    bool sel = tab == tabs[k][0];
+                    if (Btn(new Rect(x + 12 + k * tw, ty, tw - 6, 58), (sel ? "<color=#FFE08A><b>" : "<size=19>") + tabs[k][1] + (sel ? "</b></color>" : "</size>")))
+                    { tab = tabs[k][0]; scrollY = 0; confirmKey = null; OnTab(); }
                 }
                 ty += 66f;
             }
             if (panel == "map")
             {
                 var mr = new Rect(x + 12, ty, w - 24, Mathf.Min(560f, (y1 - ty) * 0.55f));
-                SeaMap(c, mr);
+                if (on) SeaMapOnline(c, mr); else SeaMap(c, mr);
                 ty = mr.yMax + 8f;
             }
             contentRect = new Rect(x + 12, ty, w - 24, y1 - ty - 10f);
@@ -107,7 +118,7 @@ namespace Pfahlstadt
             {
                 case "troops":
                     if (tab == "train") y = TroopsTab(c, y); else if (tab == "form") y = FormTab(c, y); else if (tab == "caps") y = CaptainsTab(c, y);
-                    else if (tab == "laz") y = LazTab(c, y); else y = ReportsTab(c, y);
+                    else if (tab == "laz") y = LazTab(c, y); else if (tab == "arena") y = ArenaTab(c, y); else y = on ? OnlineReportsTab(c, y) : ReportsTab(c, y);
                     break;
                 case "rewards":
                     if (tab == "daily") y = DailyTab(c, y); else if (tab == "quest") y = QuestTab(c, y); else if (tab == "pass") y = PassTab(c, y);
@@ -115,9 +126,12 @@ namespace Pfahlstadt
                     break;
                 case "city":
                     if (tab == "tech") y = TechTab(c, y); else if (tab == "yard") y = YardTab(c, y); else if (tab == "trade") y = TradeTab(c, y);
-                    else if (tab == "queue") y = QueueTab(c, y); else y = SeasonTab(c, y);
+                    else if (tab == "queue") y = QueueTab(c, y); else if (tab == "rank") y = RankTab(c, y); else y = SeasonTab(c, y);
                     break;
-                case "map": y = MapDetails(c, y); break;
+                case "map": y = on ? MapDetailsOnline(c, y) : MapDetails(c, y); break;
+                case "ally": y = AllyContent(c, y); break;
+                case "admin": y = AdminContent(c, y); break;
+                case "acc": y = AccountContent(c, y); break;
             }
             contentH = y + scrollY + 20f;
             GUI.EndGroup();

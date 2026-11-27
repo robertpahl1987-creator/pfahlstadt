@@ -126,7 +126,8 @@ namespace Pfahlstadt
 
         void UpdateWater()
         {
-            float phase = S.dayTime * 2f * Mathf.PI * 2f;   // zwei Tiden pro Tag
+            // online laufen die Gezeiten für alle gleich (Serverzeit)
+            float phase = OnlinePhase != null ? OnlinePhase() : S.dayTime * 2f * Mathf.PI * 2f;   // zwei Tiden pro Tag
             TideSin = Mathf.Sin(phase);
             TideRising = Mathf.Cos(phase) > 0f;
             float surge = 0f;
@@ -135,8 +136,12 @@ namespace Pfahlstadt
                 float ramp = Mathf.Clamp01(Mathf.Min((StormDuration - S.stormLeft) / 12f, S.stormLeft / 12f));
                 surge = ramp * (2.6f + 0.3f * Mathf.Sin(Time.time * 1.7f));
             }
+            float ev = OnlineStorm != null ? OnlineStorm() : 0f;
+            if (ev > 0f) surge = Mathf.Max(surge, Mathf.Min(1f, ev / 15f) * (3.2f + 0.4f * Mathf.Sin(Time.time * 1.3f)));
             WaterLevel = 1.4f + 1.6f * TideSin + surge;
         }
+        /// vom Online-Teil gesetzt: Gezeitenphase nach Serverzeit, Sekunden Rest eines Sturmflut-Ereignisses
+        public static Func<float> OnlinePhase, OnlineStorm;
 
         float[] ComputeRates(bool offline)
         {

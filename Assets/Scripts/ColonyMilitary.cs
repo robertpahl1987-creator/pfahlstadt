@@ -44,6 +44,9 @@ namespace Pfahlstadt
             if (s.gath == null) s.gath = new List<Gatherer>();
             if (s.botLevel < 1) s.botLevel = 1;
             if (s.playerName == null) s.playerName = "";
+            if (s.helpKeys == null) s.helpKeys = new List<string>();
+            if (s.helpReq == null) s.helpReq = new List<string>();
+            if (s.helpN == null || s.helpN.Count != s.helpKeys.Count) { s.helpKeys = new List<string>(); s.helpN = new List<int>(); }
             if (s.terr.Count != 18) s.terr = MakeTerritories();
             if (s.bots.Count != 3) MakeBots();
             if (s.nodes.Count == 0 && s.gath.Count == 0) for (int k = 0; k < 4; k++) SpawnNodeAt(k);

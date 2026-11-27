@@ -23,6 +23,7 @@ namespace Pfahlstadt
 
             // Reihenfolge ist wichtig: Logik → Kamera → Grafik → Welt → Oberfläche
             gameObject.AddComponent<Colony>();
+            gameObject.AddComponent<Online>();
             gameObject.AddComponent<CameraRig>();
             gameObject.AddComponent<GraphicsQuality>();
             gameObject.AddComponent<WorldView>();
