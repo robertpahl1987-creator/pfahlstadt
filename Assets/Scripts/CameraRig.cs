@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace Pfahlstadt
 {
-    /// Kamera: ein Finger verschiebt, zwei Finger zoomen, Tippen wählt einen Bauplatz.
+    /// Kamera: ein Finger verschiebt, zwei Finger zoomen (spreizen), drehen (Finger umeinander drehen)
+    /// und neigen (beide Finger hoch/runter). Tippen wählt einen Bauplatz.
     /// Am PC: linke Maustaste ziehen, Mausrad zoomen, Klick wählt.
     public class CameraRig : MonoBehaviour
     {
@@ -15,7 +16,8 @@ namespace Pfahlstadt
         float yaw;
         Vector2 start, lastMouse;
         bool dragging, startOverUI;
-        float lastPinch;
+        float lastPinch, lastAngle, tilt;
+        Vector2 lastMid;
 
         void Awake()
         {
@@ -45,7 +47,7 @@ namespace Pfahlstadt
 
         void Place()
         {
-            float pitch = Mathf.Lerp(38f, 60f, (Dist - MinDist) / (MaxDist - MinDist));
+            float pitch = Mathf.Clamp(Mathf.Lerp(38f, 60f, (Dist - MinDist) / (MaxDist - MinDist)) + tilt, 15f, 85f);
             var rot = Quaternion.Euler(pitch, yaw, 0f);
             Cam.transform.SetPositionAndRotation(Target - rot * Vector3.forward * Dist, rot);
         }
@@ -66,11 +68,23 @@ namespace Pfahlstadt
                 var a = Input.GetTouch(0);
                 var b = Input.GetTouch(1);
                 float d = Vector2.Distance(a.position, b.position);
-                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began || lastPinch <= 0f) lastPinch = d;
+                Vector2 dir = b.position - a.position;
+                float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                Vector2 mid = (a.position + b.position) * 0.5f;
+                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began || lastPinch <= 0f)
+                {
+                    lastPinch = d; lastAngle = ang; lastMid = mid;
+                }
                 else
                 {
+                    // Zoomen
                     Dist *= lastPinch / Mathf.Max(1f, d);
-                    lastPinch = d;
+                    // Drehen um die Hochachse
+                    yaw -= Mathf.DeltaAngle(lastAngle, ang);
+                    // Neigen: beide Finger gemeinsam hoch/runter
+                    float dy = mid.y - lastMid.y;
+                    tilt = Mathf.Clamp(tilt - dy / Mathf.Max(1, Screen.height) * 120f, -25f, 30f);
+                    lastPinch = d; lastAngle = ang; lastMid = mid;
                 }
                 dragging = true;
                 return;
@@ -115,6 +129,14 @@ namespace Pfahlstadt
                 lastMouse = mp;
             }
             if (Input.GetMouseButtonUp(0) && !dragging && !startOverUI) Tap(mp);
+
+            if (Input.GetMouseButton(1))
+            {
+                Vector2 dm = (Vector2)Input.mousePosition - lastMouse;
+                yaw += dm.x * 0.3f;
+                tilt = Mathf.Clamp(tilt - dm.y * 0.2f, -25f, 30f);
+            }
+            if (!Input.GetMouseButton(0)) lastMouse = mp;
 
             float wheel = Input.mouseScrollDelta.y;
             if (Mathf.Abs(wheel) > 0.01f && !GameUI.IsOverUI(mp)) Dist *= 1f - wheel * 0.1f;
