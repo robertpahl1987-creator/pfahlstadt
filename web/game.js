@@ -2716,6 +2716,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var RING = 20;
   var RING2 = 34;
   var RING3R = 47;
+  var UNIFORMS = [[0.16, 0.24, 0.45], [0.55, 0.57, 0.6], [0.62, 0.14, 0.12], [0.45, 0.33, 0.2], [0.25, 0.45, 0.28]];
   var STRIDE = 1.25;
   var randomLook = () => ({ coat: Math.floor(Math.random() * COATS.length), hat: Math.floor(Math.random() * 5), skin: Math.random() < 0.6 ? 0 : Math.random() < 0.6 ? 1 : 2, tr: Math.floor(Math.random() * 3) });
   var COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
@@ -2830,7 +2831,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         return r.upload(B2);
       };
       const TROUSERS = [[0.2, 0.22, 0.28], [0.32, 0.27, 0.2], [0.24, 0.24, 0.24]];
-      const coatsP = COATS.concat([[0.45, 0.58, 0.42]]);
+      const coatsP = COATS.concat([[0.45, 0.58, 0.42]], UNIFORMS);
       this.P = {
         torso: coatsP.map((c, ci) => [0, 1, 2, 3, 4].map((h2) => [0, 1, 2].map((sk) => TROUSERS.map((tr) => null)))),
         thigh: TROUSERS.map((tr) => up((B2) => personThigh(B2, tr))),
@@ -2874,6 +2875,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       B = new Builder();
       traderShip(B);
       this.shipMesh = r.upload(B);
+      B = new Builder();
+      B.add("cylinder", [0, 0, 0], [0.06, 0.4, 0.06], [0.3, 0.2, 0.12]);
+      B.add("sphere", [0, 0.48, 0], [0.22, 0.32, 0.22], [1, 0.6, 0.2], { e: 3 });
+      this.torchMesh = r.upload(B);
+      this.columns = [];
+      this.seenMarch = /* @__PURE__ */ new Set();
       B = new Builder();
       B.add("cylinder", [0, 0, 0], [1, 0.03, 1], [0.3, 0.85, 1], { e: 2 });
       this.ringMesh = r.upload(B);
@@ -3088,6 +3095,72 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         v.yaw += diff * Math.min(1, dt * 8);
         v.bob = 0;
       });
+    }
+    /// Wachen mit Fackeln (nachts), exerzierende Krieger vor der Kaserne, ausrückende Trupps
+    life(draws, deck, day) {
+      const c = this.c, t = this.time, NC = COATS.length + 1;
+      const uniform = (k, i) => ({ coat: NC + k, hat: i % 2, skin: i % 3 === 2 ? 1 : 0, tr: 2 });
+      if (day < 0.35) {
+        const R = wallRadius() - 2.2;
+        for (let g = 0; g < 2; g++) {
+          const a = t * 0.05 + g * Math.PI, x = Math.sin(a) * R, z = Math.cos(a) * R, y = this.groundAt(x, z);
+          const yaw = (a + Math.PI / 2) / D2R;
+          this.person(draws, uniform(1, g), [x, y, z], yaw, t * 0.05 * R * 2 * Math.PI / STRIDE, 0.8, "walk", false, false, g * 3);
+          draws.push({ mesh: this.torchMesh, model: trs([x + Math.cos(a) * 0.35, y + 1.25 + Math.sin(t * 9 + g) * 0.02, z - Math.sin(a) * 0.35]), emis: 0.9 + 0.3 * noise1(t * 6 + g), noShadow: true });
+        }
+      }
+      const ki = c.s.plots.findIndex((p) => p.type === T.KASERNE && p.level > 0);
+      const home = c.s.troops, n = Math.min(12, uSum(home));
+      if (ki > 0 && n > 0 && day >= 0.25) {
+        const pp = plotPos(ki), q = [pp[0] * 0.55, pp[2] * 0.55], yaw = Math.atan2(pp[0] - q[0], pp[2] - q[1]) / D2R;
+        const fx = Math.cos(yaw * D2R), fz = -Math.sin(yaw * D2R), tot = uSum(home);
+        let k = 0, unit = 0, acc = 0;
+        for (let i = 0; i < n; i++) {
+          while (unit < 4 && (i + 0.5) / n > (acc + home[unit]) / tot) {
+            acc += home[unit];
+            unit++;
+          }
+          const col = i % 4, row = Math.floor(i / 4), ox = (col - 1.5) * 1.15, oz = -row * 1.25;
+          const fw = [Math.sin(yaw * D2R), Math.cos(yaw * D2R)];
+          const x = q[0] + fx * ox + fw[0] * oz, z = q[1] + fz * ox + fw[1] * oz;
+          const drill = Math.floor(t / 6) % 3;
+          this.person(draws, uniform(unit, i), [x, deck, z], yaw, t * 5.2, drill === 0 ? 0.55 : 0, drill === 2 ? "work" : "walk", false, false, i);
+          k++;
+        }
+      }
+      const o = c.online, list = o && o.active ? (o.marches || []).filter((m) => m.status === "out" && m.kind !== "scout") : c.s.marches.filter((m) => m.phase === "out" && m.kind !== "scout");
+      for (const m of list) {
+        const key = m.id !== void 0 ? "o" + m.id : m;
+        if (this.seenMarch.has(key)) continue;
+        this.seenMarch.add(key);
+        if (!this.marchInit) continue;
+        const u = m.u || [0, 0, 0, 0, 0], cnt = Math.min(10, uSum(u));
+        let unit = 0;
+        for (let i = 0; i < cnt; i++) {
+          while (unit < 4 && u[unit] <= Math.floor(i * uSum(u) / cnt) - u.slice(0, unit).reduce((a, b) => a + b, 0)) unit++;
+          this.columns.push({ d: -i * 1.4, look: uniform(unit, i), ph: Math.random() * 6 });
+        }
+      }
+      this.marchInit = true;
+      if (this.columns.length) {
+        const kp = ki > 0 ? plotPos(ki) : [0, 0, -8], R = wallRadius();
+        const path = [[kp[0] * 0.8, kp[2] * 0.8], [0, -R + 1], [0, -R - 16]];
+        const L1 = Math.hypot(path[1][0] - path[0][0], path[1][1] - path[0][1]), L2 = 17;
+        const dt = this.dtNow;
+        for (let i = this.columns.length - 1; i >= 0; i--) {
+          const s2 = this.columns[i];
+          s2.d += dt * 2.3;
+          s2.ph += dt * 2.3 * Math.PI * 2 / STRIDE;
+          if (s2.d > L1 + L2) {
+            this.columns.splice(i, 1);
+            continue;
+          }
+          if (s2.d < 0) continue;
+          const seg = s2.d < L1 ? 0 : 1, f = seg === 0 ? s2.d / L1 : (s2.d - L1) / L2, A = path[seg], Bp = path[seg + 1];
+          const x = A[0] + (Bp[0] - A[0]) * f, z = A[1] + (Bp[1] - A[1]) * f, yaw = Math.atan2(Bp[0] - A[0], Bp[1] - A[1]) / D2R;
+          this.person(draws, s2.look, [x, this.groundAt(x, z), z], yaw, s2.ph, 1, "walk", false, false, i);
+        }
+      }
     }
     /// Mensch mit natürlichem Gang: Hüfte, Knie, Schultern, Ellbogen; Becken hebt/senkt sich, Arme gegengleich
     person(draws, look, pos, yaw, ph, amp, mode, sick, basket2, seed) {
@@ -3305,7 +3378,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       draws.push({ mesh: this.infraMesh });
       if (this.wallMesh) draws.push({ mesh: this.wallMesh });
       if (this.damMesh) draws.push({ mesh: this.damMesh });
-      for (const m of this.plotMesh) if (m) draws.push({ mesh: m });
+      const glow = 0.35 + 1.5 * (1 - day);
+      for (const m of this.plotMesh) if (m) draws.push({ mesh: m, emis: glow });
       if (this.lanternMesh) draws.push({ mesh: this.lanternMesh, emis: burn ? 0.8 + flick * 0.6 : 0.02, noShadow: true });
       const deck = c.deck;
       c.s.plots.forEach((p, i) => {
@@ -3348,7 +3422,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const off = (1 - Math.min(arrive, leave)) * 40;
         draws.push({ mesh: this.shipMesh, model: trs([12 + off, wyNow(c2) + Math.sin(this.time * 1.3) * 0.12, zr], [Math.sin(this.time * 0.9) * 2, 0, Math.sin(this.time * 1.1) * 2.5], [1, 1, 1]) });
       }
-      for (const v of this.villagers) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, "walk", v.sick, false, v.phase);
+      const awake = day < 0.25 ? Math.ceil(this.villagers.length * 0.3) : this.villagers.length;
+      this.villagers.forEach((v, k) => {
+        if (k < awake) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, "walk", v.sick, false, v.phase);
+      });
+      this.life(draws, deck, day);
       for (const g of this.gulls) {
         const p = [Math.cos(g.angle) * g.radius, deck + g.height + Math.sin(g.angle * 3) * 1.5, Math.sin(g.angle) * g.radius];
         const yaw = Math.atan2(-Math.sin(g.angle) * Math.sign(g.speed), Math.cos(g.angle) * Math.sign(g.speed)) / D2R;
@@ -4255,6 +4333,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         });
       } else if (a === "newsOk") {
         o.newsPending = null;
+      } else if (a === "sound") {
+        const sn = window.__game.sound;
+        if (sn) {
+          sn.init();
+          sn.toggle();
+        }
+      } else if (a === "notify") {
+        localStorage.setItem("pf_notify", localStorage.getItem("pf_notify") === "0" ? "1" : "0");
       } else if (a === "admBroadcast") {
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const t = val("admText");
@@ -5099,7 +5185,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
          ${this.confirm === "code" ? `<div class="code">${o.token}</div><div class="sm">Gib den Code niemandem \u2013 damit holst du dein Konto auf ein neues Handy.</div>` : ""}
          <div class="btns"><button class="btn ghost" data-a="showCode">${this.confirm === "code" ? "Code verbergen" : "Umzugscode"}</button>
          <button class="btn ${this.confirm === "logout" ? "danger" : "ghost"}" data-a="logout">${this.confirm === "logout" ? "<b>Wirklich abmelden?</b>" : "Abmelden"}</button></div>`;
-      return `<div class="sub2">Grafik</div>
+      const snd = window.__game && window.__game.sound, nat = !!window.PfNative, nOn = localStorage.getItem("pf_notify") !== "0";
+      const extra = `<div class="sub2">Ton & Meldungen</div>
+      <div class="btns"><button class="btn ghost" data-a="sound">${snd && snd.on ? "\u{1F50A} Ton an" : "\u{1F507} Ton aus"}</button>
+      <button class="btn ghost" data-a="notify" ${nat ? "" : "disabled"}>${nOn ? "\u{1F514} Benachrichtigungen an" : "\u{1F515} Benachrichtigungen aus"}</button></div>
+      ${nat ? '<div class="sm">Meldet sich, wenn Bauten fertig sind, Truppen zur\xFCckkommen oder der H\xE4ndler da ist \u2013 auch wenn das Spiel geschlossen ist.</div>' : '<div class="sm">Benachrichtigungen gibt es mit der neuen App-Version (einmal neu installieren).</div>'}`;
+      return extra + `<div class="sub2">Grafik</div>
        <div class="inf">${g.auto ? "Automatisch \u2192 " : ""}<b>${TIERS[g.tier]}</b> \xB7 ${g.res[0]} \xD7 ${g.res[1]} \xB7 ${Math.round(g.fpsShown)} FPS</div>
        <div class="btns"><button class="btn" data-a="gfx">Grafik umschalten</button></div>
        <div class="sub2">Konto</div>${acc}
@@ -5486,6 +5577,162 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
   };
 
+  // src/sound.js
+  var Sound = class {
+    constructor(colony, online) {
+      this.c = colony;
+      this.o = online;
+      this.on = localStorage.getItem("pf_sound") !== "0";
+      this.ctx = null;
+      this.gullT = 4;
+      this.hammerT = 1;
+      this.lastIncoming = 0;
+      this.raidRang = false;
+      const start2 = () => {
+        this.init();
+      };
+      document.addEventListener("pointerdown", start2, { once: false, passive: true });
+    }
+    toggle() {
+      this.on = !this.on;
+      localStorage.setItem("pf_sound", this.on ? "1" : "0");
+      if (this.master) this.master.gain.value = this.on ? 0.9 : 0;
+    }
+    init() {
+      if (this.ctx) {
+        if (this.ctx.state === "suspended") this.ctx.resume();
+        return;
+      }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = this.ctx = new AC();
+      this.master = ctx.createGain();
+      this.master.gain.value = this.on ? 0.9 : 0;
+      this.master.connect(ctx.destination);
+      const len2 = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len2, ctx.sampleRate), d = buf.getChannelData(0);
+      let b = 0;
+      for (let i = 0; i < len2; i++) {
+        const w = Math.random() * 2 - 1;
+        b = 0.985 * b + 0.015 * w;
+        d[i] = b * 6 + w * 0.15;
+      }
+      this.noise = buf;
+      const surf = ctx.createBufferSource();
+      surf.buffer = buf;
+      surf.loop = true;
+      this.surfF = ctx.createBiquadFilter();
+      this.surfF.type = "lowpass";
+      this.surfF.frequency.value = 500;
+      this.surfG = ctx.createGain();
+      this.surfG.gain.value = 0;
+      surf.connect(this.surfF).connect(this.surfG).connect(this.master);
+      surf.start();
+      const wind = ctx.createBufferSource();
+      wind.buffer = buf;
+      wind.loop = true;
+      wind.playbackRate.value = 1.7;
+      this.windF = ctx.createBiquadFilter();
+      this.windF.type = "bandpass";
+      this.windF.frequency.value = 900;
+      this.windF.Q.value = 0.7;
+      this.windG = ctx.createGain();
+      this.windG.gain.value = 0;
+      wind.connect(this.windF).connect(this.windG).connect(this.master);
+      wind.start();
+    }
+    update(dt, time) {
+      if (!this.ctx || !this.on || this.ctx.state !== "running") return;
+      const c = this.c, now = this.ctx.currentTime;
+      const storm = c.storm ? 1 : 0;
+      const swell = 0.5 + 0.5 * Math.sin(time * 0.9) * Math.sin(time * 0.37 + 1);
+      this.surfG.gain.setTargetAtTime(0.035 + 0.05 * swell + 0.02 * (c.tideSin || 0) + 0.08 * storm, now, 0.3);
+      this.surfF.frequency.setTargetAtTime(380 + 300 * swell + 500 * storm, now, 0.3);
+      this.windG.gain.setTargetAtTime(storm ? 0.06 + 0.04 * Math.sin(time * 1.7) : 6e-3, now, 0.5);
+      const day = c.s.dayTime > 0.22 && c.s.dayTime < 0.78;
+      this.gullT -= dt;
+      if (this.gullT <= 0) {
+        this.gullT = 5 + Math.random() * 10;
+        if (day && !storm) this.gull();
+      }
+      this.hammerT -= dt;
+      if (this.hammerT <= 0) {
+        this.hammerT = 0.45 + Math.random() * 0.5;
+        if (c.activeBuilds > 0) this.hammer();
+      }
+      const raidSoon = c.raidIn !== null && c.raidIn < 30;
+      if (raidSoon && !this.raidRang) this.bell();
+      this.raidRang = raidSoon;
+      const inc = this.o && this.o.active ? this.o.incoming || 0 : 0;
+      if (inc > this.lastIncoming) this.bell();
+      this.lastIncoming = inc;
+    }
+    gull() {
+      const ctx = this.ctx, t0 = ctx.currentTime, n = 2 + Math.floor(Math.random() * 3), base = 1100 + Math.random() * 500;
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) {
+        pan.pan.value = Math.random() * 1.6 - 0.8;
+        pan.connect(this.master);
+      }
+      for (let k = 0; k < n; k++) {
+        const t = t0 + k * (0.22 + Math.random() * 0.08);
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(base * 1.25, t);
+        o.frequency.exponentialRampToValueAtTime(base * 0.7, t + 0.16);
+        const f = ctx.createBiquadFilter();
+        f.type = "bandpass";
+        f.frequency.value = base;
+        f.Q.value = 3;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.025, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(8e-4, t + 0.18);
+        o.connect(f).connect(g).connect(pan || this.master);
+        o.start(t);
+        o.stop(t + 0.2);
+      }
+    }
+    hammer() {
+      const ctx = this.ctx, t = ctx.currentTime;
+      const s = ctx.createBufferSource();
+      s.buffer = this.noise;
+      s.playbackRate.value = 3;
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass";
+      f.frequency.value = 1400 + Math.random() * 800;
+      f.Q.value = 4;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.06, t);
+      g.gain.exponentialRampToValueAtTime(5e-4, t + 0.07);
+      s.connect(f).connect(g).connect(this.master);
+      s.start(t, Math.random());
+      s.stop(t + 0.08);
+      const o = ctx.createOscillator(), og = ctx.createGain();
+      o.frequency.value = 180;
+      o.type = "triangle";
+      og.gain.setValueAtTime(0.03, t);
+      og.gain.exponentialRampToValueAtTime(5e-4, t + 0.06);
+      o.connect(og).connect(this.master);
+      o.start(t);
+      o.stop(t + 0.07);
+    }
+    bell() {
+      const ctx = this.ctx;
+      if (!ctx || !this.on) return;
+      for (let k = 0; k < 3; k++) {
+        const t = ctx.currentTime + k * 0.55;
+        for (const [fr, v] of [[620, 0.08], [1240, 0.035], [1860, 0.02], [2480, 0.012]]) {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.frequency.value = fr;
+          g.gain.setValueAtTime(v, t);
+          g.gain.exponentialRampToValueAtTime(5e-4, t + 1.4);
+          o.connect(g).connect(this.master);
+          o.start(t);
+          o.stop(t + 1.5);
+        }
+      }
+    }
+  };
+
   // src/main.js
   function fail(msg) {
     const e = document.getElementById("err");
@@ -5509,6 +5756,35 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const ui = new UI(colony, world, gfx, online);
     window.__game = { colony, world, gfx, ui, online };
     window.__save = () => colony.save();
+    const sound = new Sound(colony, online);
+    window.__game.sound = sound;
+    window.__notify = () => {
+      const N = window.PfNative;
+      if (!N || localStorage.getItem("pf_notify") === "0") return;
+      try {
+        N.cancelAll();
+        const s = colony.s, list = [];
+        s.plots.forEach((p) => {
+          if (p.type >= 0 && p.buildLeft > 5) list.push([p.buildLeft, "\u{1F3D7}\uFE0F Bau fertig", `${DEFS[p.type].name} ${p.level > 0 ? "ist jetzt Stufe " + (p.level + 1) : "ist fertig gebaut"}.`]);
+        });
+        if (s.train.length) {
+          const all = s.train.reduce((a, x, k) => a + (k === 0 ? x.left + (x.n - 1) * x.per : x.n * x.per), 0);
+          list.push([all, "\u2694\uFE0F Ausbildung fertig", "Deine Krieger sind fertig ausgebildet."]);
+        }
+        if (s.expLeft > 5) list.push([s.expLeft, "\u{1F9ED} Wattwanderung zur\xFCck", "Deine Bewohner sind mit Beute zur\xFCck."]);
+        if (online.active) {
+          const now = online.serverNow();
+          for (const m of online.marches || []) {
+            const t = (Date.parse(m.status === "back" ? m.back_at : m.arrive) - now) / 1e3;
+            if (t > 5) list.push([t, m.status === "back" ? "\u26F5 Truppen zur\xFCck" : m.kind === "scout" ? "\u{1F52D} Sp\xE4herbericht" : "\u2694\uFE0F Angriff erreicht das Ziel", m.status === "back" ? "Deine Krieger sind heimgekehrt." : "Schau in die Kampfberichte!"]);
+          }
+        } else for (const m of s.marches) if (m.left > 5) list.push([m.left, m.phase === "back" ? "\u26F5 Truppen zur\xFCck" : "\u2694\uFE0F Trupp am Ziel", "Schau in die Kampfberichte!"]);
+        if (s.trader && s.trader.left <= 0 && s.trader.next > 5) list.push([s.trader.next, "\u26F5 H\xE4ndlerschiff", "Ein H\xE4ndler hat am Steg angelegt \u2013 nur kurz!"]);
+        list.push([20 * 3600, "\u{1F3DD}\uFE0F Deine Pfahlstadt wartet", "Deine Tagesbelohnung liegt bereit!"]);
+        list.sort((a, b) => a[0] - b[0]).slice(0, 30).forEach((n, i) => N.schedule(i + 1, n[0], n[1], n[2]));
+      } catch (e) {
+      }
+    };
     const ptrs = /* @__PURE__ */ new Map();
     let moved = 0, pinch = 0;
     canvas.addEventListener("pointerdown", (e) => {
@@ -5558,10 +5834,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (document.hidden) {
         colony.save();
         online.sync();
+        window.__notify();
       } else {
         colony.catchUp();
         last = performance.now();
         online.sync();
+        if (window.PfNative) try {
+          window.PfNative.cancelAll();
+        } catch (e) {
+        }
       }
     });
     window.addEventListener("pagehide", () => colony.save());
@@ -5574,6 +5855,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       world.update(dt);
       gfx.update(dt, colony);
       online.update(dt);
+      sound.update(dt, world.time);
       const cw = canvas.clientWidth, ch = canvas.clientHeight;
       const [w, h2] = gfx.size(cw, ch);
       if (canvas.width !== w || canvas.height !== h2) {

@@ -254,6 +254,8 @@ export class UI {
       this.run(async () => { await o.sendHelp(to.id, res); this.helpTo = null; c.msg(`🤝 Hilfe an ${to.name} geschickt.`); });
     }
     else if (a === 'newsOk') { o.newsPending = null; }
+    else if (a === 'sound') { const sn = window.__game.sound; if (sn) { sn.init(); sn.toggle(); } }
+    else if (a === 'notify') { localStorage.setItem('pf_notify', localStorage.getItem('pf_notify') === '0' ? '1' : '0'); }
     else if (a === 'admBroadcast') {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       const t = val('admText'); if (!t) return;
@@ -1009,7 +1011,12 @@ export class UI {
          ${this.confirm === 'code' ? `<div class="code">${o.token}</div><div class="sm">Gib den Code niemandem – damit holst du dein Konto auf ein neues Handy.</div>` : ''}
          <div class="btns"><button class="btn ghost" data-a="showCode">${this.confirm === 'code' ? 'Code verbergen' : 'Umzugscode'}</button>
          <button class="btn ${this.confirm === 'logout' ? 'danger' : 'ghost'}" data-a="logout">${this.confirm === 'logout' ? '<b>Wirklich abmelden?</b>' : 'Abmelden'}</button></div>`;
-    return `<div class="sub2">Grafik</div>
+    const snd = window.__game && window.__game.sound, nat = !!window.PfNative, nOn = localStorage.getItem('pf_notify') !== '0';
+    const extra = `<div class="sub2">Ton & Meldungen</div>
+      <div class="btns"><button class="btn ghost" data-a="sound">${snd && snd.on ? '🔊 Ton an' : '🔇 Ton aus'}</button>
+      <button class="btn ghost" data-a="notify" ${nat ? '' : 'disabled'}>${nOn ? '🔔 Benachrichtigungen an' : '🔕 Benachrichtigungen aus'}</button></div>
+      ${nat ? '<div class="sm">Meldet sich, wenn Bauten fertig sind, Truppen zurückkommen oder der Händler da ist – auch wenn das Spiel geschlossen ist.</div>' : '<div class="sm">Benachrichtigungen gibt es mit der neuen App-Version (einmal neu installieren).</div>'}`;
+    return extra + `<div class="sub2">Grafik</div>
        <div class="inf">${g.auto ? 'Automatisch → ' : ''}<b>${TIERS[g.tier]}</b> · ${g.res[0]} × ${g.res[1]} · ${Math.round(g.fpsShown)} FPS</div>
        <div class="btns"><button class="btn" data-a="gfx">Grafik umschalten</button></div>
        <div class="sub2">Konto</div>${acc}

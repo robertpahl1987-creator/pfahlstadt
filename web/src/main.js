@@ -5,6 +5,8 @@ import { World } from './world.js';
 import { UI } from './ui.js';
 import { Graphics } from './gfx.js';
 import { Online } from './online.js';
+import { Sound } from './sound.js';
+import { DEFS, UNITS, fmtTime } from './game.js';
 
 function fail(msg) {
   const e = document.getElementById('err');
@@ -24,6 +26,29 @@ function start() {
   const ui = new UI(colony, world, gfx, online);
   window.__game = { colony, world, gfx, ui, online };
   window.__save = () => colony.save();
+  const sound = new Sound(colony, online);
+  window.__game.sound = sound;
+  // Benachrichtigungen planen, wenn die App in den Hintergrund geht (nur in der App mit neuer APK)
+  window.__notify = () => {
+    const N = window.PfNative; if (!N || localStorage.getItem('pf_notify') === '0') return;
+    try {
+      N.cancelAll();
+      const s = colony.s, list = [];
+      s.plots.forEach((p) => { if (p.type >= 0 && p.buildLeft > 5) list.push([p.buildLeft, '🏗️ Bau fertig', `${DEFS[p.type].name} ${p.level > 0 ? 'ist jetzt Stufe ' + (p.level + 1) : 'ist fertig gebaut'}.`]); });
+      if (s.train.length) { const all = s.train.reduce((a, x, k) => a + (k === 0 ? x.left + (x.n - 1) * x.per : x.n * x.per), 0); list.push([all, '⚔️ Ausbildung fertig', 'Deine Krieger sind fertig ausgebildet.']); }
+      if (s.expLeft > 5) list.push([s.expLeft, '🧭 Wattwanderung zurück', 'Deine Bewohner sind mit Beute zurück.']);
+      if (online.active) {
+        const now = online.serverNow();
+        for (const m of online.marches || []) {
+          const t = (Date.parse(m.status === 'back' ? m.back_at : m.arrive) - now) / 1000;
+          if (t > 5) list.push([t, m.status === 'back' ? '⛵ Truppen zurück' : m.kind === 'scout' ? '🔭 Späherbericht' : '⚔️ Angriff erreicht das Ziel', m.status === 'back' ? 'Deine Krieger sind heimgekehrt.' : 'Schau in die Kampfberichte!']);
+        }
+      } else for (const m of s.marches) if (m.left > 5) list.push([m.left, m.phase === 'back' ? '⛵ Truppen zurück' : '⚔️ Trupp am Ziel', 'Schau in die Kampfberichte!']);
+      if (s.trader && s.trader.left <= 0 && s.trader.next > 5) list.push([s.trader.next, '⛵ Händlerschiff', 'Ein Händler hat am Steg angelegt – nur kurz!']);
+      list.push([20 * 3600, '🏝️ Deine Pfahlstadt wartet', 'Deine Tagesbelohnung liegt bereit!']);
+      list.sort((a, b) => a[0] - b[0]).slice(0, 30).forEach((n, i) => N.schedule(i + 1, n[0], n[1], n[2]));
+    } catch (e) { /* */ }
+  };
 
   // ---- Steuerung: 1 Finger verschieben, 2 Finger zoomen, Tippen wählen ----
   const ptrs = new Map();
@@ -66,8 +91,8 @@ function start() {
 
   // ---- Speichern & Offline-Fortschritt ----
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { colony.save(); online.sync(); }
-    else { colony.catchUp(); last = performance.now(); online.sync(); }
+    if (document.hidden) { colony.save(); online.sync(); window.__notify(); }
+    else { colony.catchUp(); last = performance.now(); online.sync(); if (window.PfNative) try { window.PfNative.cancelAll(); } catch (e) { /* */ } }
   });
   window.addEventListener('pagehide', () => colony.save());
   setInterval(() => colony.save(), 30000);
@@ -81,6 +106,7 @@ function start() {
     world.update(dt);
     gfx.update(dt, colony);
     online.update(dt);
+    sound.update(dt, world.time);
     const cw = canvas.clientWidth, ch = canvas.clientHeight;
     const [w, h] = gfx.size(cw, ch);
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }

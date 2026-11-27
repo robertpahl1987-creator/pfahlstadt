@@ -2,10 +2,11 @@
 import { Builder, frustum } from './geo.js';
 import * as M from './models.js';
 import { C } from './models.js';
-import { PLOTS, INNER, RING3, WALL, TOWERS, DAMM, T, deckFor, damTopFor } from './game.js';
+import { PLOTS, INNER, RING3, WALL, TOWERS, DAMM, T, deckFor, damTopFor, uSum } from './game.js';
 import { trs, mul, perspective, lookAt, invert, normalMat, clamp, clamp01, lerp, lerpC, mulC, moveTowards, rng, noise1, D2R, project } from './math.js';
 
 export const RING = 20, RING2 = 34, RING3R = 47;
+const UNIFORMS = [[0.16, 0.24, 0.45], [0.55, 0.57, 0.6], [0.62, 0.14, 0.12], [0.45, 0.33, 0.2], [0.25, 0.45, 0.28]];
 const STRIDE = 1.25; // Meter pro Doppelschritt
 const randomLook = () => ({ coat: Math.floor(Math.random() * COATS.length), hat: Math.floor(Math.random() * 5), skin: Math.random() < 0.6 ? 0 : Math.random() < 0.6 ? 1 : 2, tr: Math.floor(Math.random() * 3) });
 const COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
@@ -123,7 +124,8 @@ export class World {
     // Menschen mit Gelenken
     const up = (f) => { const B = new Builder(); f(B); return r.upload(B); };
     const TROUSERS = [[0.2, 0.22, 0.28], [0.32, 0.27, 0.2], [0.24, 0.24, 0.24]];
-    const coatsP = COATS.concat([[0.45, 0.58, 0.42]]); // letzter = krank (blass-grün)
+    // nach COATS: krank (blass-grün), dann 5 Uniformen (Harpunier, Schildwache, Enterer, Schleuderer, Wattläufer)
+    const coatsP = COATS.concat([[0.45, 0.58, 0.42]], UNIFORMS);
     this.P = {
       torso: coatsP.map((c, ci) => [0, 1, 2, 3, 4].map((h) => [0, 1, 2].map((sk) => TROUSERS.map((tr) => null)))),
       thigh: TROUSERS.map((tr) => up((B) => M.personThigh(B, tr))),
@@ -145,6 +147,8 @@ export class World {
     this.nodeMeshes = [0, 1, 2, 3].map((t) => { const b = new Builder(); M.resourceNode(b, t); return r.upload(b); });
     B = new Builder(); M.basket(B); this.basketMesh = r.upload(B);
     B = new Builder(); M.traderShip(B); this.shipMesh = r.upload(B);
+    B = new Builder(); B.add('cylinder', [0, 0, 0], [0.06, 0.4, 0.06], [0.3, 0.2, 0.12]); B.add('sphere', [0, 0.48, 0], [0.22, 0.32, 0.22], [1, 0.6, 0.2], { e: 3 }); this.torchMesh = r.upload(B);
+    this.columns = []; this.seenMarch = new Set();
     B = new Builder(); B.add('cylinder', [0, 0, 0], [1, 0.03, 1], [0.3, 0.85, 1], { e: 2 }); this.ringMesh = r.upload(B);
     this.gPaths = new WeakMap();
     // Lichtkegel: Spitze im Ursprung, öffnet sich entlang +z (60 m)
@@ -341,6 +345,65 @@ export class World {
     });
   }
 
+  /// Wachen mit Fackeln (nachts), exerzierende Krieger vor der Kaserne, ausrückende Trupps
+  life(draws, deck, day) {
+    const c = this.c, t = this.time, NC = COATS.length + 1;
+    const uniform = (k, i) => ({ coat: NC + k, hat: i % 2, skin: i % 3 === 2 ? 1 : 0, tr: 2 });
+    // Nachtwachen auf dem Wehrgang
+    if (day < 0.35) {
+      const R = wallRadius() - 2.2;
+      for (let g = 0; g < 2; g++) {
+        const a = t * 0.05 + g * Math.PI, x = Math.sin(a) * R, z = Math.cos(a) * R, y = this.groundAt(x, z);
+        const yaw = (a + Math.PI / 2) / D2R;
+        this.person(draws, uniform(1, g), [x, y, z], yaw, t * 0.05 * R * 2 * Math.PI / STRIDE, 0.8, 'walk', false, false, g * 3);
+        draws.push({ mesh: this.torchMesh, model: trs([x + Math.cos(a) * 0.35, y + 1.25 + Math.sin(t * 9 + g) * 0.02, z - Math.sin(a) * 0.35]), emis: 0.9 + 0.3 * noise1(t * 6 + g), noShadow: true });
+      }
+    }
+    // Exerzierplatz vor der Kaserne
+    const ki = c.s.plots.findIndex((p) => p.type === T.KASERNE && p.level > 0);
+    const home = c.s.troops, n = Math.min(12, uSum(home));
+    if (ki > 0 && n > 0 && day >= 0.25) {
+      const pp = plotPos(ki), q = [pp[0] * 0.55, pp[2] * 0.55], yaw = Math.atan2(pp[0] - q[0], pp[2] - q[1]) / D2R;
+      const fx = Math.cos(yaw * D2R), fz = -Math.sin(yaw * D2R), tot = uSum(home);
+      let k = 0, unit = 0, acc = 0;
+      for (let i = 0; i < n; i++) {
+        while (unit < 4 && (i + 0.5) / n > (acc + home[unit]) / tot) { acc += home[unit]; unit++; }
+        const col = i % 4, row = Math.floor(i / 4), ox = (col - 1.5) * 1.15, oz = -row * 1.25;
+        const fw = [Math.sin(yaw * D2R), Math.cos(yaw * D2R)];
+        const x = q[0] + fx * ox + fw[0] * oz, z = q[1] + fz * ox + fw[1] * oz;
+        const drill = Math.floor(t / 6) % 3; // marschieren auf der Stelle, stehen, üben
+        this.person(draws, uniform(unit, i), [x, deck, z], yaw, t * 5.2, drill === 0 ? 0.55 : 0, drill === 2 ? 'work' : 'walk', false, false, i);
+        k++;
+      }
+    }
+    // Ausrückende Trupps: neue Märsche erkennen
+    const o = c.online, list = o && o.active ? (o.marches || []).filter((m) => m.status === 'out' && m.kind !== 'scout') : c.s.marches.filter((m) => m.phase === 'out' && m.kind !== 'scout');
+    for (const m of list) {
+      const key = m.id !== undefined ? 'o' + m.id : m;
+      if (this.seenMarch.has(key)) continue;
+      this.seenMarch.add(key);
+      if (!this.marchInit) continue;
+      const u = m.u || [0, 0, 0, 0, 0], cnt = Math.min(10, uSum(u));
+      let unit = 0;
+      for (let i = 0; i < cnt; i++) { while (unit < 4 && u[unit] <= Math.floor(i * uSum(u) / cnt) - u.slice(0, unit).reduce((a, b) => a + b, 0)) unit++; this.columns.push({ d: -i * 1.4, look: uniform(unit, i), ph: Math.random() * 6 }); }
+    }
+    this.marchInit = true;
+    if (this.columns.length) {
+      const kp = ki > 0 ? plotPos(ki) : [0, 0, -8], R = wallRadius();
+      const path = [[kp[0] * 0.8, kp[2] * 0.8], [0, -R + 1], [0, -R - 16]];
+      const L1 = Math.hypot(path[1][0] - path[0][0], path[1][1] - path[0][1]), L2 = 17;
+      const dt = this.dtNow;
+      for (let i = this.columns.length - 1; i >= 0; i--) {
+        const s2 = this.columns[i]; s2.d += dt * 2.3; s2.ph += dt * 2.3 * Math.PI * 2 / STRIDE;
+        if (s2.d > L1 + L2) { this.columns.splice(i, 1); continue; }
+        if (s2.d < 0) continue;
+        const seg = s2.d < L1 ? 0 : 1, f = seg === 0 ? s2.d / L1 : (s2.d - L1) / L2, A = path[seg], Bp = path[seg + 1];
+        const x = A[0] + (Bp[0] - A[0]) * f, z = A[1] + (Bp[1] - A[1]) * f, yaw = Math.atan2(Bp[0] - A[0], Bp[1] - A[1]) / D2R;
+        this.person(draws, s2.look, [x, this.groundAt(x, z), z], yaw, s2.ph, 1, 'walk', false, false, i);
+      }
+    }
+  }
+
   /// Mensch mit natürlichem Gang: Hüfte, Knie, Schultern, Ellbogen; Becken hebt/senkt sich, Arme gegengleich
   person(draws, look, pos, yaw, ph, amp, mode, sick, basket, seed) {
     const S = 0.86, t = this.time + seed;
@@ -533,7 +596,8 @@ export class World {
     draws.push({ mesh: this.infraMesh });
     if (this.wallMesh) draws.push({ mesh: this.wallMesh });
     if (this.damMesh) draws.push({ mesh: this.damMesh });
-    for (const m of this.plotMesh) if (m) draws.push({ mesh: m });
+    const glow = 0.35 + 1.5 * (1 - day);
+    for (const m of this.plotMesh) if (m) draws.push({ mesh: m, emis: glow });
     if (this.lanternMesh) draws.push({ mesh: this.lanternMesh, emis: burn ? 0.8 + flick * 0.6 : 0.02, noShadow: true });
 
     const deck = c.deck;
@@ -574,7 +638,9 @@ export class World {
       const off = (1 - Math.min(arrive, leave)) * 40;
       draws.push({ mesh: this.shipMesh, model: trs([12 + off, wyNow(c2) + Math.sin(this.time * 1.3) * 0.12, zr], [Math.sin(this.time * 0.9) * 2, 0, Math.sin(this.time * 1.1) * 2.5], [1, 1, 1]) });
     }
-    for (const v of this.villagers) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, 'walk', v.sick, false, v.phase);
+    const awake = day < 0.25 ? Math.ceil(this.villagers.length * 0.3) : this.villagers.length; // nachts schlafen die meisten
+    this.villagers.forEach((v, k) => { if (k < awake) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, 'walk', v.sick, false, v.phase); });
+    this.life(draws, deck, day);
     for (const g of this.gulls) {
       const p = [Math.cos(g.angle) * g.radius, deck + g.height + Math.sin(g.angle * 3) * 1.5, Math.sin(g.angle) * g.radius];
       const yaw = Math.atan2(-Math.sin(g.angle) * Math.sign(g.speed), Math.cos(g.angle) * Math.sign(g.speed)) / D2R;

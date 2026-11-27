@@ -1,6 +1,12 @@
 package de.robertbaasner.pfahlstadt;
 
 import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.webkit.JavascriptInterface;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -33,7 +39,7 @@ import java.net.URL;
  */
 public class MainActivity extends Activity {
     /** Version der App-Hülle. Spieldateien, die eine neuere Hülle brauchen, werden nicht geladen. */
-    private static final int SHELL = 1;
+    private static final int SHELL = 2;
     private static final String[] FILES = {"index.html", "game.js", "version.js", "web-version.json"};
 
     private WebView web;
@@ -156,6 +162,12 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setSupportZoom(false);
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        web.addJavascriptInterface(new Bridge(), "PfNative");
+        NotifyReceiver.ensureChannel(this);
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 7);
+        }
+        cancelAllNotifications();
 
         File dir = webDir();
         dir.mkdirs();
@@ -196,7 +208,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         if (web != null) {
-            web.evaluateJavascript("window.__save && window.__save()", null);
+            web.evaluateJavascript("window.__save && window.__save(); window.__notify && window.__notify()", null);
             web.onPause();
         }
         super.onPause();
@@ -206,6 +218,38 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (web != null) web.onResume();
+        cancelAllNotifications();
+    }
+
+    // ---------- Benachrichtigungen (vom Spiel geplant, wenn die App in den Hintergrund geht) ----------
+    private PendingIntent notifyIntent(int id, String title, String text) {
+        Intent i = new Intent(this, NotifyReceiver.class);
+        i.putExtra("id", id); i.putExtra("title", title); i.putExtra("text", text);
+        return PendingIntent.getBroadcast(this, id, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private void cancelAllNotifications() {
+        SharedPreferences sp = getSharedPreferences("notify", MODE_PRIVATE);
+        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        for (int id = 1; id <= sp.getInt("max", 0); id++) am.cancel(notifyIntent(id, "", ""));
+        sp.edit().putInt("max", 0).apply();
+    }
+
+    private class Bridge {
+        @JavascriptInterface
+        public void schedule(int id, double seconds, String title, String text) {
+            if (id < 1 || id > 40 || seconds < 5) return;
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + (long) (seconds * 1000), notifyIntent(id, title, text));
+            SharedPreferences sp = getSharedPreferences("notify", MODE_PRIVATE);
+            if (id > sp.getInt("max", 0)) sp.edit().putInt("max", id).apply();
+        }
+
+        @JavascriptInterface
+        public void cancelAll() { cancelAllNotifications(); }
+
+        @JavascriptInterface
+        public int shell() { return SHELL; }
     }
 
     @Override
