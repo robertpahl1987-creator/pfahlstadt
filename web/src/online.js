@@ -28,6 +28,7 @@ const ERR = {
   CODE_FORMAT: 'Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.',
   LEER: 'Bitte eine Belohnung eintragen.',
   UNGUELTIG: 'Ungültige Eingabe.',
+  NUR_WOCHENENDE: 'Um den Großen Leuchtturm wird nur am Wochenende gekämpft (Samstag 0 Uhr bis Sonntag 20 Uhr).',
 };
 
 export class Online {
@@ -100,7 +101,7 @@ export class Online {
 
   snapshot() {
     const c = this.c, s = c.s;
-    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
   }
 
   async sync(strict) {
@@ -114,6 +115,14 @@ export class Online {
       const s = this.c.s, du = d.u || zeroU();
       d.res.forEach((v, i) => { if (v) this.c.addRes(i, v); });
       s.troops = s.troops.map((v, i) => Math.max(0, v + (du[i] || 0)));
+      if (d.wounded && d.wounded.some((v) => v > 0)) {
+        const cap = 25 * this.c.levels(20), room = Math.max(0, cap - s.wounded.reduce((a, b) => a + b, 0));
+        let w = d.wounded.slice(0, 5), tot = w.reduce((a, b) => a + b, 0);
+        if (tot > room) w = w.map((v) => Math.floor(v * room / tot));
+        s.wounded = s.wounded.map((v, i) => v + (w[i] || 0));
+        if (w.some((v) => v > 0)) this.c.msg(`🩹 ${w.reduce((a, b) => a + b, 0)} Verwundete sind im Lazarett angekommen.`);
+      }
+      this.lh = r.lh || null; this.openRallies = r.rallies || 0;
       const back = du.reduce((a, v) => a + Math.max(0, v), 0);
       if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
       this.reports = r.reports || [];
@@ -145,6 +154,25 @@ export class Online {
       if (msgs && msgs.length) { this.chat = this.chat.concat(msgs).slice(-80); this.chatAfter = msgs[msgs.length - 1].id; }
     } catch (e) { /* */ }
   }
+
+  // ---------- Späher & Sammelangriffe ----------
+  async scout(kind, target) {
+    await this.call('scout', { p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null });
+    await this.sync();
+  }
+  async rallyCreate(kind, target, u, wait) {
+    const s = this.c.s;
+    await this.call('rally_create', { p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u, p_wait: wait });
+    s.troops = s.troops.map((v, i) => v - (u[i] || 0));
+    await this.sync(); await this.loadRallies();
+  }
+  async rallyJoin(id, u) {
+    const s = this.c.s;
+    await this.call('rally_join', { p_token: this.token, p_rally: id, p_u: u });
+    s.troops = s.troops.map((v, i) => v - (u[i] || 0));
+    await this.sync(); await this.loadRallies();
+  }
+  async loadRallies() { try { this.rallies = await this.call('rally_list', { p_token: this.token }); } catch (e) { /* */ } }
 
   // ---------- Codes ----------
   async redeem(code) {

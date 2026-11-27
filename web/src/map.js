@@ -161,10 +161,11 @@ export class SeaMap {
     for (const t of wld.territories) {
       const [x, y] = this.pos(t.x, t.y);
       if (x < -80 || y < -80 || x > this.w + 80 || y > this.h + 80) continue;
-      const r = u * (t.pct >= 30 ? 0.32 : t.pct >= 18 ? 0.27 : 0.23);
+      const lhT = t.kind === 'Leuchtturm';
+      const r = u * (lhT ? 0.45 : t.pct >= 30 ? 0.32 : t.pct >= 18 ? 0.27 : 0.23);
       const mine = t.owner === me.id, ally = !mine && t.owner && myAlly && t.owner_alliance === myAlly, enemy = t.owner && !mine && !ally;
       const col = mine ? '#56e39a' : ally ? '#6fb6ff' : enemy ? '#ff9a5a' : null;
-      this.island(t, x, y, r, sel && sel.type === 'terr' && sel.id === t.id, col, t.owner ? '🚩' : '☠');
+      this.island(t, x, y, r, sel && sel.type === 'terr' && sel.id === t.id, col || (lhT ? '#ffd27a' : null), lhT ? '🗼' : t.owner ? '🚩' : '☠');
       const sub = mine ? `+${t.pct}% ${RES[t.res]}` : t.owner ? `${t.owner_name}` : `☠ ${t.strength}`;
       this.label(x, y + r * 0.85, t.name, mine ? '#8ef0b0' : ally ? '#a8d4ff' : enemy ? '#ffc29a' : '#fff', sub);
     }

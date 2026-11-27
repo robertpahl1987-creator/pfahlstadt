@@ -1033,7 +1033,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var MUSCHELN = 1;
   var WASSER = 2;
   var METALL = 3;
-  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19 };
+  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19, LAZARETT: 20 };
   var DEFS = [
     { name: "Gezeitenturm", short: "Herz der Stadt", desc: "Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt h\xF6her \xFCber das Wasser.", cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
     { name: "Treibholzsammler", short: "+Holz", desc: "Fischt angeschwemmtes Holz aus dem Wasser.", cost: [40, 0, 0, 0], prod: HOLZ, rate: 0.9, workers: 2, build: 6 },
@@ -1054,10 +1054,16 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { name: "Wachstube", short: "bildet Schildwachen aus", desc: "Steinhaus mit Schilden und \xDCbungsplatz. Schaltet Schildwachen frei; jede Stufe bildet sie 10 % schneller aus.", cost: [100, 20, 0, 25], prod: -1, rate: 0, workers: 1, build: 7 },
     { name: "Enterhalle", short: "bildet Enterer aus", desc: "Lange Halle mit Kletternetzen und Enterhaken. Schaltet Enterer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [160, 60, 0, 30], prod: -1, rate: 0, workers: 1, build: 9 },
     { name: "Schleuderplatz", short: "bildet Schleuderer aus", desc: "Offener Platz mit Wurfschleuder. Schaltet Schleuderer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [180, 40, 0, 50], prod: -1, rate: 0, workers: 1, build: 9 },
-    { name: "Wattl\xE4uferh\xFCtte", short: "bildet Wattl\xE4ufer aus", desc: "H\xFCtte mit Wattstiefeln und Laufstegen. Schaltet Wattl\xE4ufer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [120, 50, 20, 0], prod: -1, rate: 0, workers: 1, build: 8 }
+    { name: "Wattl\xE4uferh\xFCtte", short: "bildet Wattl\xE4ufer aus", desc: "H\xFCtte mit Wattstiefeln und Laufstegen. Schaltet Wattl\xE4ufer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [120, 50, 20, 0], prod: -1, rate: 0, workers: 1, build: 8 },
+    { name: "Lazarett", short: "rettet verwundete Krieger", desc: "Ein Teil der gefallenen Krieger kommt verwundet zur\xFCck statt zu sterben und wird hier wieder gesund (kostet etwas Muscheln und Wasser). Jede Stufe: mehr Betten, mehr Gerettete, schnellere Heilung.", cost: [140, 60, 80, 10], prod: -1, rate: 0, workers: 2, build: 8 }
   ];
+  var lazSave = (L) => L > 0 ? Math.min(0.6, 0.25 + 0.02 * L) : 0;
+  var lazBeds = (L) => 25 * L;
+  var TIDE_MUL = { "-1": [1, 1, 0.85, 1, 1.35], "0": [1, 1, 1, 1, 1], "1": [1.1, 1, 1.3, 1, 0.75] };
+  var TIDE_NAME = { "-1": "Ebbe", "0": "Wechsel", "1": "Flut" };
+  var tideStateOf = (v) => v > 0.35 ? 1 : v < -0.35 ? -1 : 0;
   var damTopFor = (lvl) => lvl > 0 ? 3 + 0.25 * lvl : -99;
-  var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19];
+  var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20];
   var UNITS = [
     { name: "Harpunier", ic: "\u{1F531}", att: 10, def: 5, carry: 30, cost: [25, 15, 0, 4], time: 6, b: 15, info: "Fernkampf. Stark gegen Enterer, schwach gegen Schildwachen." },
     { name: "Schildwache", ic: "\u{1F6E1}\uFE0F", att: 3, def: 12, carry: 15, cost: [20, 10, 0, 6], time: 5, b: 16, info: "Verteidiger. Stark gegen Harpuniere, schwach gegen Schleuderer." },
@@ -1073,13 +1079,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var uScale = (u, f) => u.map((v) => Math.round(v * f));
   var uSub = (a, b) => a.map((v, i) => v - (b && b[i] || 0));
   var uAdd = (a, b) => a.map((v, i) => v + (b && b[i] || 0));
-  function armyStr(u, other, att) {
+  function armyStr(u, other, att, tide) {
+    const tm = TIDE_MUL[String(tide || 0)];
     const tot = Math.max(1, uSum(other));
     let s = 0;
     for (let i = 0; i < NU; i++) {
       const strong = other ? STRONG[i].reduce((a, j) => a + (other[j] || 0), 0) / tot : 0;
       const weak = other ? WEAK[i].reduce((a, j) => a + (other[j] || 0), 0) / tot : 0;
-      s += (u[i] || 0) * (att ? UNITS[i].att : UNITS[i].def) * (1 + 0.5 * strong - 0.4 * weak);
+      s += (u[i] || 0) * (att ? UNITS[i].att : UNITS[i].def) * tm[i] * (1 + 0.5 * strong - 0.4 * weak);
     }
     return s;
   }
@@ -1174,7 +1181,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     _T.SL,
     _T.TA,
     _T.L,
-    _T.H,
+    20,
     _T.HE,
     // Ring 3 (Warft, wächst mit)
     _T.TH,
@@ -1354,6 +1361,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.military(dt, false);
       this.gathering(dt, false);
       traderTick(this, dt);
+      this.healTick(dt);
       queueTick(this);
       this.achT = (this.achT || 0) - dt;
       if (this.achT <= 0) {
@@ -1363,7 +1371,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     updateWater() {
       const s = this.s;
-      const phase = s.dayTime * 2 * Math.PI * 2;
+      const phase = this.tidePhase(0);
       this.tideSin = Math.sin(phase);
       this.rising = Math.cos(phase) > 0;
       let surge = 0;
@@ -1372,6 +1380,21 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         surge = ramp * (2.6 + 0.3 * Math.sin(this.time * 1.7));
       }
       this.water = 1.4 + 1.6 * this.tideSin + surge;
+    }
+    /// Gezeitenphase jetzt + sec Sekunden. Online für alle Spieler gleich (Serverzeit), offline aus dem eigenen Tag
+    tidePhase(sec) {
+      const o = this.online;
+      if (o && o.active && o.offset !== void 0 && o.status === "online") return 2 * Math.PI * ((Date.now() - o.offset) / 1e3 + sec) / 120;
+      return this.s.dayTime * 2 * Math.PI * 2 + 2 * Math.PI * sec / 120;
+    }
+    tideState(sec) {
+      return tideStateOf(Math.sin(this.tidePhase(sec || 0)));
+    }
+    /// Sekunden bis zum nächsten Wechsel des Gezeiten-Zustands
+    tideChangeIn() {
+      const now = this.tideState(0);
+      for (let k = 1; k < 130; k++) if (this.tideState(k) !== now) return k;
+      return 60;
     }
     computeRates(offline) {
       const s = this.s;
@@ -1403,7 +1426,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const terrBonus = [1, 1, 1, 1];
       const owned = this.online && this.online.active ? this.online.owned : s.terr.filter((t) => t.owner === 1);
       for (const t of owned) terrBonus[t.res] += t.pct / 100;
-      for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i];
+      const lh = this.online && this.online.active && this.online.lh && this.online.lh.bonus ? 1.2 : 1;
+      for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh;
       r[MUSCHELN] -= this.troopTotal * UPKEEP;
       r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
       r[WASSER] -= s.survivors * 0.03;
@@ -1604,12 +1628,60 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.msg(`${n}\xD7 ${UNITS[u].name} in Ausbildung.`);
       return true;
     }
+    scoutBlocker() {
+      if (this.levels(T.WACHTURM) <= 0) return "Sp\xE4her brauchen einen Wachturm";
+      if (this.s.res[MUSCHELN] < 40 || this.s.res[METALL] < 20) return "Sp\xE4her kosten 40 Muscheln und 20 Altmetall";
+      return null;
+    }
+    payScout() {
+      this.s.res[MUSCHELN] -= 40;
+      this.s.res[METALL] -= 20;
+    }
+    sendScout(id) {
+      if (this.scoutBlocker()) return false;
+      const t = this.s.terr[id], tt = travelTime(t) * 0.5;
+      this.payScout();
+      this.s.marches.push({ target: id, u: zeroU(), left: tt, total: tt, phase: "out", kind: "scout" });
+      this.msg(`\u{1F52D} Sp\xE4her nach ${t.name} unterwegs.`);
+      return true;
+    }
+    // ---------- Lazarett ----------
+    addWounded(u) {
+      const L = this.levels(T.LAZARETT);
+      if (L <= 0 || !u) return;
+      const s = this.s, f = lazSave(L), cap = lazBeds(L);
+      let w = uScale(u, f), room = cap - uSum(s.wounded);
+      if (room <= 0) return;
+      if (uSum(w) > room) w = uScale(w, room / uSum(w));
+      s.wounded = uAdd(s.wounded, w);
+      if (uSum(w) > 0) this.msg(`\u{1FA79} ${uSum(w)} Verwundete im Lazarett.`);
+    }
+    healTick(dt) {
+      const s = this.s, L = this.levels(T.LAZARETT);
+      if (L <= 0 || !uSum(s.wounded)) return;
+      s.healT = (s.healT || 0) + dt * L;
+      while (s.healT >= 8) {
+        const k = s.wounded.findIndex((v) => v > 0);
+        if (k < 0) break;
+        const cost = [0, Math.ceil(UNITS[k].cost[1] * 0.3), Math.ceil(UNITS[k].cost[0] * 0.2), 0];
+        if (s.res[MUSCHELN] < cost[1] || s.res[WASSER] < cost[2]) {
+          s.healT = 8;
+          break;
+        }
+        s.res[MUSCHELN] -= cost[1];
+        s.res[WASSER] -= cost[2];
+        s.wounded[k]--;
+        s.troops[k]++;
+        s.healT -= 8;
+        questEvent(this, "heal", 1);
+      }
+    }
     attackBlocker(id, u) {
       const t = this.s.terr[id];
       if (!t) return "Unbekanntes Ziel";
       if (uSum(u) <= 0) return "Keine Truppen ausgew\xE4hlt";
       if (u.some((v, i) => v > this.s.troops[i])) return "So viele Truppen hast du nicht zu Hause";
-      if (this.s.marches.some((m) => m.target === id && m.phase === "out")) return "Dorthin ist schon ein Trupp unterwegs";
+      if (this.s.marches.some((m) => m.target === id && m.phase === "out" && m.kind !== "scout")) return "Dorthin ist schon ein Trupp unterwegs";
       return null;
     }
     sendTroops(id, u) {
@@ -1630,17 +1702,20 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return true;
     }
     battle(m, t) {
-      const att = armyStr(m.u, null, true) * (0.85 + Math.random() * 0.3);
+      const tide = this.tideState(0);
+      const att = armyStr(m.u, null, true, tide) * (0.85 + Math.random() * 0.3);
       if (att > t.pirates) {
         const loss = Math.min(0.9, Math.pow(t.pirates / att, 1.3) * 0.6);
         const lost = uScale(m.u, loss);
         t.owner = 1;
         t.pirates = 0;
         t.gu = uAdd(t.gu, uSub(m.u, lost));
+        this.addWounded(lost);
         questEvent(this, "win", 1);
-        this.report(`Sieg! ${t.name} erobert. Verluste: ${troopStr(lost)}. Bonus: +${t.pct} % ${RES[t.res]}.`, true);
+        this.report(`Sieg! ${t.name} erobert. Verluste: ${troopStr(lost)}. Bonus: +${t.pct} % ${RES[t.res]}.${tide ? " (" + TIDE_NAME[tide] + ")" : ""}`, true);
       } else {
         const lost = uScale(m.u, 0.8), rest = uSub(m.u, lost);
+        this.addWounded(lost);
         t.pirates = Math.max(Math.round(t.base * 0.3), Math.round(t.pirates - att * 0.5));
         if (uSum(rest) > 0) {
           const tt = travelTime(t) * speedFactor(rest);
@@ -1671,6 +1746,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (m.left > 0) continue;
         s.marches.splice(i, 1);
         const t = s.terr[m.target];
+        if (m.kind === "scout") {
+          this.report(`\u{1F52D} Sp\xE4herbericht ${t.name}: ${t.owner === 1 ? "deine Besatzung " + troopStr(t.gu) : "Piraten mit St\xE4rke " + Math.round(t.pirates)}. Gezeiten jetzt: ${TIDE_NAME[this.tideState(0)]}.`, true);
+          continue;
+        }
         if (m.phase === "back") {
           s.troops = uAdd(s.troops, m.u);
           this.msg(`${uSum(m.u)} Krieger sind heimgekehrt.`);
@@ -1692,6 +1771,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           if (def > str) {
             const lost = uScale(t.gu, Math.min(0.9, Math.pow(str / def, 1.3) * 0.5));
             t.gu = uSub(t.gu, lost);
+            this.addWounded(lost);
             this.report(`Piraten griffen ${t.name} an und wurden zur\xFCckgeschlagen! Verluste: ${troopStr(lost)}.`, true);
           } else {
             t.owner = 0;
@@ -1713,10 +1793,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
             const loss = Math.min(0.8, Math.pow(str / def, 1.3) * 0.5);
             const lost = uScale(s.troops, loss);
             s.troops = uSub(s.troops, lost);
+            this.addWounded(lost);
             this.report(`Piraten\xFCberfall abgewehrt! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${troopStr(lost)}.`, true);
           } else {
             const lost = s.res.map((v) => Math.round(v * 0.2));
             lost.forEach((v, i) => s.res[i] -= v);
+            this.addWounded(uSub(s.troops, uScale(s.troops, 0.4)));
             s.troops = uScale(s.troops, 0.4);
             this.report(`Piraten haben die Stadt gepl\xFCndert! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + " " + RES[i]).join(", ")}.`, false);
           }
@@ -1760,6 +1842,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.nodeSeq === void 0) s.nodeSeq = 1;
       if (!s.troops) s.troops = zeroU();
       while (s.troops.length < NU) s.troops.push(0);
+      if (!s.wounded) s.wounded = zeroU();
       for (const m of s.marches || []) if (!m.u) {
         m.u = [m.h || 0, m.w || 0, 0, 0, 0];
         delete m.h;
@@ -1777,9 +1860,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.raidTimer === void 0) s.raidTimer = 480;
       if (s.counterTimer === void 0) s.counterTimer = 420;
       while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
-      if ((s.layoutV || 0) < 2) {
+      if ((s.layoutV || 0) < 3) {
         this.relayout();
-        s.layoutV = 2;
+        s.layoutV = 3;
       }
       if (!s.nodes.length && !s.gath.length) {
         for (let k = 0; k < 4; k++) {
@@ -1978,7 +2061,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         sick: 0,
         beaconOn: true,
         plots,
-        layoutV: 2,
+        layoutV: 3,
         lastSave: Date.now(),
         dayTime: 0.3,
         days: 1,
@@ -2219,6 +2302,21 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         B.add("cube", [0, 0.15, 2.3], [5, 0.12, 0.8], C.plank);
         B.add("cylinder", [2.5, 2, 1.9], [0.07, 2, 0.07], C.tar);
         B.add("cube", [2.95, 3.5, 1.9], [0.9, 0.5, 0.03], [0.95, 0.75, 0.2]);
+        break;
+      }
+      case T.LAZARETT: {
+        hut(B, [0, 0, -0.6], 5.2, 2.4, 3.2, [0.92, 0.92, 0.88], [0.55, 0.2, 0.18], 3);
+        B.add("cube", [0, 2, 1.02], [0.9, 0.25, 0.03], [0.85, 0.12, 0.12]);
+        B.add("cube", [0, 2, 1.02], [0.25, 0.9, 0.03], [0.85, 0.12, 0.12]);
+        for (let k = 0; k < 2; k++) {
+          B.add("cube", [-1.6 + k * 3.2, 0.35, 2], [0.9, 0.3, 1.8], [0.5, 0.38, 0.25]);
+          B.add("cube", [-1.6 + k * 3.2, 0.55, 2], [0.85, 0.12, 1.7], [0.95, 0.95, 0.95]);
+          B.add("cube", [-1.6 + k * 3.2, 0.66, 1.3], [0.6, 0.12, 0.3], [0.9, 0.9, 0.85]);
+        }
+        B.add("cylinder", [2.7, 1.6, 0.9], [0.07, 1.6, 0.07], C.tar);
+        B.add("cube", [3.1, 2.9, 0.9], [0.8, 0.55, 0.03], [0.95, 0.95, 0.95]);
+        B.add("cube", [3.1, 2.9, 0.92], [0.4, 0.12, 0.02], [0.85, 0.12, 0.12]);
+        B.add("cube", [3.1, 2.9, 0.92], [0.12, 0.4, 0.02], [0.85, 0.12, 0.12]);
         break;
       }
       case T.WACHTURM: {
@@ -3623,10 +3721,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       for (const t of wld.territories) {
         const [x, y] = this.pos(t.x, t.y);
         if (x < -80 || y < -80 || x > this.w + 80 || y > this.h + 80) continue;
-        const r = u * (t.pct >= 30 ? 0.32 : t.pct >= 18 ? 0.27 : 0.23);
+        const lhT = t.kind === "Leuchtturm";
+        const r = u * (lhT ? 0.45 : t.pct >= 30 ? 0.32 : t.pct >= 18 ? 0.27 : 0.23);
         const mine = t.owner === me.id, ally = !mine && t.owner && myAlly && t.owner_alliance === myAlly, enemy = t.owner && !mine && !ally;
         const col = mine ? "#56e39a" : ally ? "#6fb6ff" : enemy ? "#ff9a5a" : null;
-        this.island(t, x, y, r, sel && sel.type === "terr" && sel.id === t.id, col, t.owner ? "\u{1F6A9}" : "\u2620");
+        this.island(t, x, y, r, sel && sel.type === "terr" && sel.id === t.id, col || (lhT ? "#ffd27a" : null), lhT ? "\u{1F5FC}" : t.owner ? "\u{1F6A9}" : "\u2620");
         const sub2 = mine ? `+${t.pct}% ${RES[t.res]}` : t.owner ? `${t.owner_name}` : `\u2620 ${t.strength}`;
         this.label(x, y + r * 0.85, t.name, mine ? "#8ef0b0" : ally ? "#a8d4ff" : enemy ? "#ffc29a" : "#fff", sub2);
       }
@@ -3657,7 +3756,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     return (v < 0 ? "\u2212" : "+") + s;
   };
   var RES_IC = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
-  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}", "\u{1F531}", "\u{1F6E1}\uFE0F", "\u{1F5E1}\uFE0F", "\u{1FAA8}", "\u{1F3C3}"];
+  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}", "\u{1F531}", "\u{1F6E1}\uFE0F", "\u{1F5E1}\uFE0F", "\u{1FAA8}", "\u{1F3C3}", "\u{1FA79}"];
   var NODE_NAME = ["Treibholz", "Muschelbank", "S\xFC\xDFwassert\xFCmpel", "Wrackteile"];
   var setHTML = (el, html) => {
     if (el._h !== html) {
@@ -3843,6 +3942,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.mode === "ally") {
         this.o.loadAlliances();
         this.o.loadChat();
+        this.o.loadRallies();
       }
       if (this.mode === "rank") this.o.loadRanking();
     }
@@ -4085,6 +4185,44 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           this.form = zeroU();
           this.mapSel = null;
         }
+      } else if (a === "scout") {
+        const sel = this.mapSel;
+        if (!sel) return;
+        const blk = c.scoutBlocker();
+        if (blk) {
+          c.msg(blk);
+          return;
+        }
+        if (this.sea.isOnline) this.run(async () => {
+          await o.scout(sel.type, sel.id);
+          c.payScout();
+          c.msg("\u{1F52D} Sp\xE4her unterwegs \u2013 der Bericht kommt unter Berichte.");
+          await o.loadWorld();
+        });
+        else c.sendScout(sel.id);
+      } else if (a === "rally") {
+        const sel = this.mapSel, f = this.form.slice(), w = +ds.w;
+        if (!sel) return;
+        this.run(async () => {
+          await o.rallyCreate(sel.type, sel.id, f, w);
+          this.form = zeroU();
+          this.mapSel = null;
+          c.msg(`\u2694\uFE0F Sammelangriff startet in ${w} Minuten \u2013 deine Allianz wurde benachrichtigt.`);
+        });
+      } else if (a === "rallyPick") {
+        this.rallySel = +ds.id;
+        this.form = zeroU();
+      } else if (a === "rallyJoin") {
+        const id = this.rallySel, f = this.form.slice();
+        if (!id) return;
+        this.run(async () => {
+          await o.rallyJoin(id, f);
+          this.rallySel = null;
+          this.form = zeroU();
+          c.msg("\u2694\uFE0F Du bist beim Sammelangriff dabei!");
+        });
+      } else if (a === "rallyBack") {
+        this.rallySel = null;
       } else if (a === "withdraw") {
         const sel = this.mapSel;
         if (!sel) return;
@@ -4341,13 +4479,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           const back = m.status === "back";
           const left = Math.max(0, ((back ? Date.parse(m.back_at) : Date.parse(m.arrive)) - now) / 1e3);
           const nm = m.target_player ? (W.players.find((p) => p.id === m.target_player) || {}).name || "Stadt" : (W.territories.find((t) => t.id === m.target_terr) || {}).name || "Gebiet";
-          out.push({ ic: back ? "\u21A9\uFE0F" : m.kind === "player" ? "\u2694\uFE0F" : "\u26F5", t: `${back ? "Heimweg" : "Angriff"} ${nm}`, left, pct: null, a: 'data-a="gomap"' });
+          out.push({ ic: m.kind === "scout" ? "\u{1F52D}" : back ? "\u21A9\uFE0F" : m.kind === "player" ? "\u2694\uFE0F" : "\u26F5", t: `${m.kind === "scout" ? "Sp\xE4her" : back ? "Heimweg" : m.rally_id ? "Sammelangr." : "Angriff"} ${nm}`, left, pct: null, a: 'data-a="gomap"' });
         }
         if (o.incoming) out.push({ ic: "\u26A0\uFE0F", t: "Feind greift an!", left: null, red: true, a: 'data-a="gomap"' });
       } else {
         for (const m of s.marches || []) {
           const back = m.phase === "back", nm = (s.terr[m.target] || {}).name || "Gebiet";
-          out.push({ ic: back ? "\u21A9\uFE0F" : m.kind === "attack" ? "\u2694\uFE0F" : "\u{1F6E1}\uFE0F", t: `${back ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rk."} ${nm}`, left: m.left, pct: pct(m.left, m.total), a: 'data-a="gomap"' });
+          out.push({ ic: m.kind === "scout" ? "\u{1F52D}" : back ? "\u21A9\uFE0F" : m.kind === "attack" ? "\u2694\uFE0F" : "\u{1F6E1}\uFE0F", t: `${m.kind === "scout" ? "Sp\xE4her" : back ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rk."} ${nm}`, left: m.left, pct: pct(m.left, m.total), a: 'data-a="gomap"' });
         }
       }
       if (c.raidIn !== null && c.raidIn < 180) out.push({ ic: "\u{1F3F4}\u200D\u2620\uFE0F", t: "Piraten kommen", left: c.raidIn, pct: null, red: true, a: 'data-a="troops"' });
@@ -4469,6 +4607,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return [`Alle Produktion <b>+${Math.min(60, 6 * L)} %</b>`, `Arbeiter: ${d.workers * L}`];
         case T.KASERNE:
           return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller \xB7 Schlange bis ${10 * L}`];
+        case T.LAZARETT:
+          return [`Rettet <b>${Math.round(lazSave(L) * 100)} %</b> der Gefallenen \xB7 ${lazBeds(L)} Betten`, `Verwundet: ${troopStr(c.s.wounded)} \xB7 Heilung ${L} alle 8 s`];
         case T.HARPHOF:
         case T.WACHSTUBE:
         case T.ENTERHALLE:
@@ -4495,7 +4635,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
     }
     // ---------- Seekarte ----------
-    troopForm(sendLabel, danger, blk, extra) {
+    troopForm(sendLabel, danger, blk, extra, act) {
       const s = this.c.s, f = this.form;
       let out = "";
       UNITS.forEach((u, k) => {
@@ -4509,8 +4649,17 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (extra) out += extra;
       if (blk && blk !== "Keine Truppen ausgew\xE4hlt") out += `<div class="warn">${blk}</div>`;
       out += `<div class="btns"><button class="btn ghost" data-a="fall">Alle</button><button class="btn ghost" data-a="f0">Keine</button>
-      <button class="btn ${danger ? "danger" : ""}" data-a="send" ${blk || this.busy ? "disabled" : ""}><b>${sendLabel}</b></button></div>`;
+      <button class="btn ${danger ? "danger" : ""}" data-a="${act || "send"}" ${blk || this.busy ? "disabled" : ""}><b>${sendLabel}</b></button></div>`;
       return out;
+    }
+    tideLine(sec) {
+      const c = this.c, st = c.tideState(sec), m = TIDE_MUL[String(st)];
+      const eff = UNITS.map((u, i) => m[i] !== 1 ? `${u.ic}${m[i] > 1 ? "+" : "\u2212"}${Math.round(Math.abs(m[i] - 1) * 100)} %` : "").filter(Boolean).join(" ");
+      return `\u{1F30A} ${sec ? "Ankunft bei" : "Jetzt"} <b>${TIDE_NAME[st]}</b>${eff ? ": " + eff : ""}`;
+    }
+    tideBox() {
+      const c = this.c;
+      return `<div class="sm tide">${this.tideLine(0)} \xB7 wechselt in ${fmtTime(c.tideChangeIn())}</div>`;
     }
     attackInfo(att, def) {
       if (def == null) return `<div class="sm">Angriffskraft: <b>${att}</b> \xB7 Verteidigung des Gegners unbekannt</div>`;
@@ -4528,16 +4677,16 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const tname = (m) => m.target_player ? (o.world.players.find((p) => p.id === m.target_player) || {}).name || "Stadt" : (o.world.territories.find((t) => t.id === m.target_terr) || {}).name || "Gebiet";
         const marches2 = o.marches.map((m) => {
           const left = m.status === "out" ? Date.parse(m.arrive) - now : Date.parse(m.back_at) - now;
-          return `<div class="sm">\u26F5 ${uSum(m.u || zeroU())} Krieger \u2192 ${tname(m)} (${m.status === "back" ? "Heimweg" : m.kind === "player" ? "Angriff auf Stadt" : "Gebiet"}) \xB7 ${fmtTime(Math.max(0, left / 1e3))}</div>`;
+          return `<div class="sm">${m.kind === "scout" ? "\u{1F52D} Sp\xE4her" : `\u26F5 ${uSum(m.u || zeroU())} Krieger${m.rally_id ? " (Sammelangriff)" : ""}`} \u2192 ${tname(m)} (${m.status === "back" ? "Heimweg" : m.kind === "player" ? "Angriff auf Stadt" : m.kind === "scout" ? "Erkundung" : "Gebiet"}) \xB7 ${fmtTime(Math.max(0, left / 1e3))}</div>`;
         }).join("");
-        return this.head("Seekarte (online)") + this.homeTroops(c, s, away) + `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches2}
+        return this.head("Seekarte (online)") + this.tideBox() + this.homeTroops(c, s, away) + `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches2}
          <div class="sm">Ziehen zum Verschieben. Tippe auf Inseln oder fremde St\xE4dte (\u{1F3F0}). Gr\xFCn = deins, blau = Verb\xFCndete, orange = Gegner.</div>
          <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${o.reports.length})</button></div>`;
       }
       if (o.active) return this.head("Seekarte") + '<div class="inf">Lade Weltkarte \u2026</div>' + (o.error ? `<div class="warn">${o.error}</div>` : "");
       const owned = s.terr.filter((t) => t.owner === 1).length;
-      const marches = s.marches.map((m) => `<div class="sm">\u26F5 ${uSum(m.u || zeroU())} Krieger \u2192 ${s.terr[m.target].name} (${m.phase === "back" ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rkung"}) \xB7 ${fmtTime(m.left)}</div>`).join("");
-      return this.head("Seekarte (offline)") + this.homeTroops(c, s, away) + `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
+      const marches = s.marches.map((m) => `<div class="sm">${m.kind === "scout" ? "\u{1F52D} Sp\xE4her" : `\u26F5 ${uSum(m.u || zeroU())} Krieger`} \u2192 ${s.terr[m.target].name} (${m.kind === "scout" ? "Erkundung" : m.phase === "back" ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rkung"}) \xB7 ${fmtTime(m.left)}</div>`).join("");
+      return this.head("Seekarte (offline)") + this.tideBox() + this.homeTroops(c, s, away) + `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
        <div class="sm">Offline k\xE4mpfst du gegen Piraten. F\xFCr Mitspieler und Allianzen: Men\xFC \u2192 Online-Konto.</div>
        <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${s.reports.length})</button></div>`;
     }
@@ -4556,18 +4705,40 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return out2;
         }
         if (ally) return out2 + `<div class="inf">\u{1F6A9} Geh\xF6rt deinem Verb\xFCndeten <b>${t2.owner_name}</b>.</div>`;
+        if (t2.kind === "Leuchtturm") out2 += this.lhInfo();
         out2 += t2.owner ? `<div class="inf">\u{1F6A9} Geh\xF6rt <b>${t2.owner_name}</b> \u2013 Besatzung unbekannt</div>` : `<div class="inf">\u2620 Piraten, St\xE4rke etwa <b>${t2.strength}</b></div>`;
-        out2 += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Angreifen!", true, null, this.attackInfo(att, t2.owner ? null : t2.strength));
+        const lhClosed = t2.kind === "Leuchtturm" && o.lh && !o.lh.open;
+        out2 += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Angreifen!", true, lhClosed ? "Nur am Wochenende angreifbar" : null, this.attackInfo(Math.round(armyStr(f, null, true, c.tideState(tt2))), t2.owner ? null : t2.strength) + `<div class="sm">${this.tideLine(tt2)}</div>`);
+        out2 += this.extraActions(lhClosed);
         return out2;
       }
-      const t = s.terr[this.mapSel.id], tt = travelTime(t) * speedFactor(f);
+      const t = s.terr[this.mapSel.id];
+      if (!t) return this.head("Gebiet") + '<div class="sm">Lade \u2026</div>';
+      const tt = travelTime(t) * speedFactor(f);
       let out = this.head(t.name) + `<div class="desc">${t.kind} \xB7 Ring ${t.ring} \xB7 Bonus <b>+${t.pct} % ${RES[t.res]}</b> \xB7 Fahrt ${fmtTime(tt)}</div>`;
       out += t.owner === 1 ? `<div class="inf">\u{1F6A9} Dein Gebiet. Besatzung: ${troopStr(t.gu)}</div>
         <div class="sm">Piraten versuchen ab und zu, Gebiete zur\xFCckzuerobern. Schildwachen verteidigen besonders gut.</div>` : `<div class="inf">\u2620 Piraten, St\xE4rke etwa <b>${Math.round(t.pirates)}</b></div>`;
       out += `<div class="sub2">${t.owner === 1 ? "Verst\xE4rkung schicken" : "Angriffstrupp"}</div>`;
-      out += this.troopForm(t.owner === 1 ? "Verst\xE4rken" : "Angreifen!", t.owner !== 1, c.attackBlocker(t.id, f), t.owner === 1 ? "" : this.attackInfo(att, t.pirates));
+      out += this.troopForm(t.owner === 1 ? "Verst\xE4rken" : "Angreifen!", t.owner !== 1, c.attackBlocker(t.id, f), t.owner === 1 ? "" : this.attackInfo(Math.round(armyStr(f, null, true, c.tideState(tt))), t.pirates) + `<div class="sm">${this.tideLine(tt)}</div>`);
+      if (t.owner !== 1) out += this.extraActions(true);
       if (t.owner === 1 && uSum(t.gu) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
       return out;
+    }
+    /// Späher und Sammelangriff (Sammelangriff nur online in einer Allianz)
+    extraActions(noRally) {
+      const c = this.c, o = this.o, blk = c.scoutBlocker();
+      let out = `<div class="btns"><button class="btn ghost" data-a="scout" ${blk || this.busy ? "disabled" : ""}>\u{1F52D} Sp\xE4her (40 \u{1F9AA} 20 \u2699\uFE0F)</button></div>`;
+      if (blk) out += `<div class="sm">${blk}</div>`;
+      if (!noRally && this.sea.isOnline && o.me && o.me.alliance_id) {
+        out += `<div class="sub2">\u2694\uFE0F Allianz-Sammelangriff</div><div class="sm">Starte mit dem oben gew\xE4hlten Trupp \u2013 deine Verb\xFCndeten k\xF6nnen bis zum Start Krieger dazugeben. Alle ziehen gemeinsam los.</div>
+        <div class="btns">${[2, 5, 10].map((w) => `<button class="btn ghost" data-a="rally" data-w="${w}" ${uSum(this.form) && !this.busy ? "" : "disabled"}>in ${w} Min.</button>`).join("")}</div>`;
+      }
+      return out;
+    }
+    lhInfo() {
+      const lh = this.o.lh || {}, nx = lh.next ? new Date(lh.next) : null;
+      return `<div class="inf">\u{1F5FC} <b>Leuchtturm-Krieg</b>: Angriffe nur Samstag bis Sonntag 20 Uhr. Wer ihn dann h\xE4lt, bekommt f\xFCr sich und seine Allianz <b>eine Woche +20 % Produktion</b>.</div>
+      <div class="sm">${lh.open ? '<b style="color:#ff9a5a">Jetzt ist Kampfzeit!</b>' : "Gerade Ruhezeit."}${nx ? " \xB7 Wertung " + nx.toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}${lh.holder ? ` \xB7 Bonus aktuell: <b>${lh.holder}</b>` : ""}</div>`;
     }
     playerHtml() {
       const o = this.o, f = this.form, att = Math.round(armyStr(f, null, true));
@@ -4579,7 +4750,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (ally) return out + '<div class="inf">Verb\xFCndeter \u2013 gemeinsam seid ihr st\xE4rker!</div>';
       if (p.shield) return out + '<div class="inf">\u{1F6E1} Diese Stadt steht unter Schutz (neue Spieler 12 Std., nach einer Pl\xFCnderung 30 Min.).</div>';
       out += '<div class="sm">Siegst du, pl\xFCndern deine Truppen bis zu 20 % der Vorr\xE4te (Wattl\xE4ufer tragen am meisten, Schleuderer halbieren Mauern und T\xFCrme). Wer angreift, verliert seinen eigenen Schutz.</div>';
-      out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Stadt angreifen!", true, null, this.attackInfo(att, null));
+      out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Stadt angreifen!", true, null, this.attackInfo(Math.round(armyStr(f, null, true, this.c.tideState(tt))), null) + `<div class="sm">${this.tideLine(tt)}</div>`);
+      out += this.extraActions(false);
       return out;
     }
     reportsHtml() {
@@ -4615,7 +4787,19 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const members = (A.members || []).map((m) => `<div class="row"><div class="ri">${m.id === mine.leader ? "\u{1F451} " : ""}<b>${esc(m.name)}</b> <span class="sh">\u2694 ${m.power}${m.online ? " \xB7 online" : ""}</span></div>
       ${leader && m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="kick" data-id="${m.id}">Entfernen</button>` : ""}</div>`).join("");
       const chat = o.chat.slice(-30).map((m) => `<div class="msg ${m.me ? "me" : ""} ${m.name === "System" ? "sys" : ""}"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join("") || '<div class="sm">Noch keine Nachrichten.</div>';
-      return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) + `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
+      if (this.rallySel) {
+        const r = (o.rallies || []).find((x) => x.id === this.rallySel);
+        if (!r || r.status !== "open") this.rallySel = null;
+        else return this.head(`\u2694\uFE0F Sammelangriff auf ${esc(r.target)}`) + `<div class="desc">Start in ${fmtTime(Math.max(0, (Date.parse(r.launch_at) - o.serverNow()) / 1e3))} \xB7 Anf\xFChrer ${esc(r.leader)}</div>` + this.troopForm("Mitmachen", true, null, "", "rallyJoin") + '<div class="btns"><button class="btn ghost" data-a="rallyBack">Zur\xFCck</button></div>';
+      }
+      const rl = (o.rallies || []).map((r) => {
+        const tot = (r.parts || []).reduce((acc, p) => acc.map((v, i) => v + (p.u[i] || 0)), zeroU());
+        const left = r.status === "open" ? (Date.parse(r.launch_at) - o.serverNow()) / 1e3 : r.arrive ? (Date.parse(r.arrive) - o.serverNow()) / 1e3 : 0;
+        return `<div class="row"><div class="ri"><b>\u2694\uFE0F ${esc(r.target)}</b> <span class="sh">von ${esc(r.leader)} \xB7 ${(r.parts || []).length} dabei</span>
+        <div class="sm">${troopStr(tot)} \xB7 ${r.status === "open" ? "Start in " : "Ankunft in "}${fmtTime(Math.max(0, left))}</div></div>
+        ${r.status === "open" ? `<button class="btn sm2" data-a="rallyPick" data-id="${r.id}">Mitmachen</button>` : ""}</div>`;
+      }).join("");
+      return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) + (rl ? `<div class="sub2">\u2694\uFE0F Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der \u{1F5FA}\uFE0F Karte antippen, Trupp w\xE4hlen, \u201EAllianz-Sammelangriff\u201C.</div>') + `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
        <div class="form"><input id="chatIn" maxlength="200" placeholder="Nachricht an die Allianz \u2026"><button class="btn sm2" data-a="chat">Senden</button></div>
        <div class="sub2">Mitglieder (${(A.members || []).length}/20)</div>${members}
        <div class="btns"><button class="btn ${this.confirm === "leave" ? "danger" : "ghost"}" data-a="allyLeave">${this.confirm === "leave" ? "<b>Wirklich verlassen?</b>" : "Allianz verlassen"}</button></div>`;
@@ -4744,7 +4928,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (tab === "mine") body = this.cityOverviewHtml();
       else {
         const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
-        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE]], ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]]];
+        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]], ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]]];
         body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt. Der Platz wird automatisch gew\xE4hlt.</div>`;
         for (const [title, list] of groups) {
           body += `<div class="sub2">${title}</div>`;
@@ -4776,7 +4960,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         ["Herz der Stadt", [T.TURM]],
         ["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]],
         ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
-        ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE]],
+        ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]],
         ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]],
         ["Schutz vor der Flut", [T.DAMM]]
       ];
@@ -4804,9 +4988,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       let out = `<div class="inf">Verteidigung der Stadt: <b>${c.defense}</b> \xB7 Macht \u2694 <b>${c.power}</b></div>
       <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
       if (c.raidIn !== null) out += `<div class="sm">N\xE4chster Piraten\xFCberfall in etwa ${fmtTime(c.raidIn)}</div>`;
+      out += this.tideBox();
+      if (uSum(s.wounded || zeroU())) out += `<div class="inf">\u{1FA79} Im Lazarett: ${troopStr(s.wounded)} \u2013 werden nach und nach gesund.</div>`;
+      else if (c.levels(T.LAZARETT) <= 0) out += '<div class="sm">Tipp: Ein \u{1FA79} Lazarett rettet einen Teil der gefallenen Krieger.</div>';
       if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
       else out += `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div><div class="desc">F\xFCr Truppen brauchst du die <b>Kaserne</b> und f\xFCr jeden Krieger seine <b>Ausbildungsst\xE4tte</b>. Baue sie unter <b>\u{1F3D7}\uFE0F Geb\xE4ude \u2192 Neu bauen</b>.</div>`;
-      out += `<div class="sm" style="margin-top:8px">St\xE4rken: \u{1F531} schl\xE4gt \u{1F5E1}\uFE0F \xB7 \u{1F6E1}\uFE0F schl\xE4gt \u{1F531} \xB7 \u{1F5E1}\uFE0F schl\xE4gt \u{1FAA8} und \u{1F3C3} \xB7 \u{1FAA8} schl\xE4gt \u{1F6E1}\uFE0F und Mauern. Mische deine Truppen passend zum Gegner!</div>`;
+      out += `<div class="sm" style="margin-top:8px">St\xE4rken: \u{1F531} schl\xE4gt \u{1F5E1}\uFE0F \xB7 \u{1F6E1}\uFE0F schl\xE4gt \u{1F531} \xB7 \u{1F5E1}\uFE0F schl\xE4gt \u{1FAA8} und \u{1F3C3} \xB7 \u{1FAA8} schl\xE4gt \u{1F6E1}\uFE0F und Mauern. Mische deine Truppen passend zum Gegner!<br>\u{1F30A} Bei Ebbe sind Wattl\xE4ufer stark und Enterer schw\xE4cher, bei Flut gl\xE4nzen Enterer und Harpuniere. Plane deine Ankunftszeit!</div>`;
       out += '<div class="btns"><button class="btn" data-a="map">\u{1F5FA}\uFE0F Seekarte \xF6ffnen</button></div>';
       return out;
     }
@@ -4852,7 +5039,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     KEIN_ADMIN: "Nur der Spielleiter darf Codes erstellen.",
     CODE_FORMAT: "Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.",
     LEER: "Bitte eine Belohnung eintragen.",
-    UNGUELTIG: "Ung\xFCltige Eingabe."
+    UNGUELTIG: "Ung\xFCltige Eingabe.",
+    NUR_WOCHENENDE: "Um den Gro\xDFen Leuchtturm wird nur am Wochenende gek\xE4mpft (Samstag 0 Uhr bis Sonntag 20 Uhr)."
   };
   var Online = class {
     constructor(colony) {
@@ -4952,7 +5140,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     snapshot() {
       const c = this.c, s = c.s;
-      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
     }
     async sync(strict) {
       if (!this.token) return;
@@ -4970,6 +5158,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           if (v) this.c.addRes(i, v);
         });
         s.troops = s.troops.map((v, i) => Math.max(0, v + (du[i] || 0)));
+        if (d.wounded && d.wounded.some((v) => v > 0)) {
+          const cap = 25 * this.c.levels(20), room = Math.max(0, cap - s.wounded.reduce((a, b) => a + b, 0));
+          let w = d.wounded.slice(0, 5), tot = w.reduce((a, b) => a + b, 0);
+          if (tot > room) w = w.map((v) => Math.floor(v * room / tot));
+          s.wounded = s.wounded.map((v, i) => v + (w[i] || 0));
+          if (w.some((v) => v > 0)) this.c.msg(`\u{1FA79} ${w.reduce((a, b) => a + b, 0)} Verwundete sind im Lazarett angekommen.`);
+        }
+        this.lh = r.lh || null;
+        this.openRallies = r.rallies || 0;
         const back = du.reduce((a, v) => a + Math.max(0, v), 0);
         if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? " \u2013 mit Beute!" : "."}`);
         this.reports = r.reports || [];
@@ -5014,6 +5211,31 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           this.chat = this.chat.concat(msgs).slice(-80);
           this.chatAfter = msgs[msgs.length - 1].id;
         }
+      } catch (e) {
+      }
+    }
+    // ---------- Späher & Sammelangriffe ----------
+    async scout(kind, target) {
+      await this.call("scout", { p_token: this.token, p_kind: kind, p_target: kind === "terr" ? target : null, p_target_player: kind === "player" ? target : null });
+      await this.sync();
+    }
+    async rallyCreate(kind, target, u, wait) {
+      const s = this.c.s;
+      await this.call("rally_create", { p_token: this.token, p_kind: kind, p_target: kind === "terr" ? target : null, p_target_player: kind === "player" ? target : null, p_u: u, p_wait: wait });
+      s.troops = s.troops.map((v, i) => v - (u[i] || 0));
+      await this.sync();
+      await this.loadRallies();
+    }
+    async rallyJoin(id, u) {
+      const s = this.c.s;
+      await this.call("rally_join", { p_token: this.token, p_rally: id, p_u: u });
+      s.troops = s.troops.map((v, i) => v - (u[i] || 0));
+      await this.sync();
+      await this.loadRallies();
+    }
+    async loadRallies() {
+      try {
+        this.rallies = await this.call("rally_list", { p_token: this.token });
       } catch (e) {
       }
     }
