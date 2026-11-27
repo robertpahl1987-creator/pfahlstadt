@@ -17,7 +17,7 @@ concurrency:
 env:
   # Aus der Adresse von cloud.unity.com (organizations/<ORG>/projects/<PROJEKT>)
   UNITY_ORG: '9072494446539'
-  UNITY_PROJECT: '__PROJECT__'
+  UNITY_PROJECT: 'e5ced9f3-f832-4e54-b13b-3e0adad4e7d8'
   APP_NAME: 'Pfahlstadt'
   API: https://build-automation.services.api.unity.com/v2
 
