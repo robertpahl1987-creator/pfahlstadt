@@ -3999,7 +3999,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       else if (this.selected <= -1e3) html = this.nodeHtml();
       if (html === this.panelKey || this.holding) return;
       this.panelKey = html;
+      const keep = {};
+      this.panel.querySelectorAll("input[id], textarea[id]").forEach((e) => {
+        if (e.value) keep[e.id] = e.value;
+      });
       this.panel.innerHTML = html;
+      for (const id in keep) {
+        const e = this.panel.querySelector("#" + id);
+        if (e && !e.value) e.value = keep[id];
+      }
       this.panel.style.display = html ? "" : "none";
       const mini = this.view !== "map" && !this.mode && !this.menu && (this.selected >= 0 && this.c.s.plots[this.selected].type >= 0 || this.selected <= -1e3);
       this.panel.classList.toggle("mini", mini);

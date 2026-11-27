@@ -358,7 +358,11 @@ export class UI {
     else if (this.selected <= -1000) html = this.nodeHtml();
     if (html === this.panelKey || this.holding) return;
     this.panelKey = html;
+    // Eingaben (Codes, Allianz, Chat …) beim Neuzeichnen behalten
+    const keep = {};
+    this.panel.querySelectorAll('input[id], textarea[id]').forEach((e) => { if (e.value) keep[e.id] = e.value; });
     this.panel.innerHTML = html;
+    for (const id in keep) { const e = this.panel.querySelector('#' + id); if (e && !e.value) e.value = keep[id]; }
     this.panel.style.display = html ? '' : 'none';
     const mini = this.view !== 'map' && !this.mode && !this.menu && ((this.selected >= 0 && this.c.s.plots[this.selected].type >= 0) || this.selected <= -1000);
     this.panel.classList.toggle('mini', mini);
