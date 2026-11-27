@@ -151,6 +151,20 @@
   .bline .ri { font-size: 12px; color: var(--dim); }
   .bline .btn { min-width: 0; padding: 9px 12px; font-size: 14px; }
   .mini .inf { font-size: 13px; margin: 2px 0; }
+  .qb i.dot { position: absolute; top: 4px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 6px #ff5a4a; }
+  .qb { position: relative; }
+  #tut { position: fixed; left: 8px; right: 72px; bottom: calc(env(safe-area-inset-bottom) + 84px); z-index: 4; background: rgba(20, 70, 60, .92); border: 1px solid #8ef0a0; border-radius: 12px; padding: 8px 34px 8px 10px; font-size: 13px; line-height: 1.35; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  #tut .tn { display: inline-block; background: #8ef0a0; color: #0b2a22; font-weight: 800; border-radius: 6px; padding: 0 6px; margin-right: 4px; font-size: 11px; }
+  #tut .tx { position: absolute; right: 4px; top: 4px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,.25); padding: 0; }
+  .daily { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+  .dd { background: rgba(255,255,255,.06); border-radius: 10px; padding: 6px; text-align: center; font-size: 12px; min-height: 64px; }
+  .dd.big { grid-column: span 2; background: rgba(255, 210, 122, .12); }
+  .dd.now { box-shadow: 0 0 0 2px #ffd27a; background: rgba(255, 210, 122, .18); }
+  .dd.got { opacity: .55; }
+  .achs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .ach { background: rgba(255,255,255,.05); border-radius: 10px; padding: 6px 8px; opacity: .45; filter: grayscale(1); }
+  .ach.on { opacity: 1; filter: none; background: rgba(255, 210, 122, .12); }
+  .ach span { font-size: 20px; margin-right: 4px; }
 </style>
 </head>
 <body>
@@ -164,7 +178,8 @@
 <div id="badge" style="display:none"></div>
 <div id="panel" style="display:none"></div>
 <div id="tasks" style="display:none"></div>
-<div id="quick"><button class="qb" id="bBeacon"></button><button class="qb" id="bExp"></button></div>
+<div id="tut" style="display:none"></div>
+<div id="quick"><button class="qb" id="bGift"></button><button class="qb" id="bBeacon"></button><button class="qb" id="bExp"></button></div>
 <div id="bottom"><div class="row4">
   <button class="bb" id="bBuild"></button>
   <button class="bb" id="bTroops"></button>

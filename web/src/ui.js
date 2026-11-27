@@ -2,6 +2,8 @@
 import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, LAYOUT, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime, zeroU, uSum, armyStr, troopStr, speedFactor, carryOf } from './game.js';
 import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
+import { dailyState, dailyReward, claimDaily, DAILY, questsToday, claimQuest, ACH, achCount, TUT, tutStep, queueAdd, MAX_QUEUE, trade } from './features.js';
+const QOK = ['Alle Bautrupps beschäftigt', 'Zu wenig Rohstoffe'];
 import { TIERS } from './gfx.js';
 import { SeaMap } from './map.js';
 
@@ -41,7 +43,7 @@ export class UI {
     this.mapEl = $('#map');
     this.sea = new SeaMap($('#mapc'), this.c, this.o);
 
-    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild'); this.bTroops = $('#bTroops'); this.bTroops.dataset.a = 'troops'; this.tasksEl = $('#tasks');
+    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild'); this.bTroops = $('#bTroops'); this.bTroops.dataset.a = 'troops'; this.tasksEl = $('#tasks'); this.bGift = $('#bGift'); this.bGift.dataset.a = 'gift'; this.tutEl = $('#tut');
     this.bBuild.dataset.a = 'buildings';
     this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bMap.dataset.a = 'map'; this.bAlly.dataset.a = 'ally'; this.bMenu.dataset.a = 'menu';
     this.login = $('#login');
@@ -193,6 +195,17 @@ export class UI {
       if (i < 0) c.msg('Kein passender freier Bauplatz – baue mehr, damit dein Gelände wächst.');
       else if (c.startBuild(i, t)) { const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.mode = null; }
     }
+    else if (a === 'qbuild') { const t = +ds.v, i = this.freePlotQueue(t); if (i >= 0) { const e = queueAdd(c, i, t); if (e) c.msg(e); } }
+    else if (a === 'qplot') { const e = queueAdd(c, this.selected, +ds.v); if (e) c.msg(e); else this.select(-1); }
+    else if (a === 'qup') { const i = ds.i !== undefined ? +ds.i : this.selected; const e = queueAdd(c, i, null); if (e) c.msg(e); else if (ds.i === undefined || this.selected === i) this.select(-1); }
+    else if (a === 'qdel') { (c.s.bq || []).splice(+ds.k, 1); }
+    else if (a === 'gift') { if (this.mode === 'gift') this.mode = null; else { this.openMode('gift'); this.giftTab = this.giftTab || 'daily'; } }
+    else if (a === 'gtab') this.giftTab = ds.t;
+    else if (a === 'claimDaily') { const r = claimDaily(c); if (r) c.msg(`🎁 Tagesbelohnung: ${this.rewardStr(r.res, r.u)}`); }
+    else if (a === 'claimQuest') { if (claimQuest(c, +ds.k)) c.msg('✅ Belohnung erhalten!'); }
+    else if (a === 'trader') { this.openMode('trader'); }
+    else if (a === 'trade') { const e = trade(c, +ds.k); c.msg(e || '⛵ Handel abgeschlossen.'); }
+    else if (a === 'tutSkip') { c.s.tut = TUT.length; }
     else if (a === 'goto') { const i = +ds.i; this.menu = false; const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.w.dist = Math.min(this.w.dist, 45); this.select(i); }
     else if (a === 'upq') c.startUpgrade(+ds.i);
     else if (a === 'close') {
@@ -307,6 +320,12 @@ export class UI {
     const tq = c.queued ? c.queued() : 0;
     btn(this.bTroops, '⚔️', 'Truppen', this.o.active && this.o.incoming ? '<i style="color:#ff6060">Angriff!</i>' : tq ? `🎓 ${tq}` : '');
     this.renderTasks();
+    const ds = dailyState(c), qs = questsToday(c), qready = qs.some((q) => !q.done && q.have >= q.n);
+    btn(this.bGift, '🎁', 'Belohn.', ds.can || qready ? '<i class="dot"></i>' : '');
+    this.bGift.classList.toggle('on', ds.can || qready);
+    const ts = tutStep(c);
+    if (ts < TUT.length && this.view === 'city' && this.panel.style.display === 'none') { setHTML(this.tutEl, `<span class="tn">Tipp ${ts + 1}/${TUT.length}</span> ${TUT[ts].text}<button class="tx" data-a="tutSkip">✕</button>`); this.tutEl.style.display = ''; }
+    else this.tutEl.style.display = 'none';
     btn(this.bBuild, '🏗️', 'Gebäude', c.activeBuilds ? `🔨 ${c.activeBuilds}/2` : '');
     this.renderPanel();
   }
@@ -351,6 +370,8 @@ export class UI {
     else if (this.mode === 'ally') html = this.allyHtml();
     else if (this.mode === 'build') html = this.buildingsHtml();
     else if (this.mode === 'troops') html = this.troopsHtml();
+    else if (this.mode === 'gift') html = this.giftHtml();
+    else if (this.mode === 'trader') html = this.traderHtml();
     else if (this.mode === 'rank') html = this.rankHtml();
     else if (this.mode === 'account') html = this.accountHtml();
     else if (this.menu) html = this.menuHtml();
@@ -383,6 +404,8 @@ export class UI {
       const all = s.train.reduce((a, x, k) => a + (k === 0 ? x.left + (x.n - 1) * x.per : x.n * x.per), 0);
       out.push({ ic: '🎓', t: `${c.queued()}× Ausbildung`, left: all, pct: pct(q.left, q.per), a: 'data-a="troops"' });
     }
+    (s.bq || []).forEach((q, k) => { const t = q.type !== null && q.type !== undefined ? q.type : s.plots[q.plot].type; out.push({ ic: '🕒', t: `Wartet: ${DEFS[t].name}`, left: null, pct: null, a: `data-a="goto" data-i="${q.plot}"` }); });
+    if (s.trader && s.trader.left > 0) out.push({ ic: '⛵', t: 'Händler am Steg', left: s.trader.left, pct: null, a: 'data-a="trader"' });
     if (s.expLeft > 0) out.push({ ic: '🧭', t: 'Wattwanderung', left: s.expLeft, pct: pct(s.expLeft, EXP_TIME), a: '' });
     if (o.active) {
       const now = o.serverNow(), W = o.world || { players: [], territories: [] };
@@ -443,7 +466,7 @@ export class UI {
         rows += `<div class="row"><div class="ri"><div><b>${d.name}</b> <span class="sh">${d.short}</span></div>
           <div class="sm">${this.costStr(costFor(t, 1))} &nbsp;·&nbsp; ${fmtTime(buildTime(t, 1))}</div>
           ${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>
-          <button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button></div>`;
+          ${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qplot" data-v="${t}">🕒 Später</button>` : `<button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button>`}</div>`;
       }
       const zone = i === DAMM ? 'ganz außen' : i === WALL ? 'Festung' : i >= TOWERS ? 'auf der Mauer' : i >= RING3 ? 'Warft' : i >= INNER ? 'Ring 2' : 'Stadtkern';
       const title = `${B_IC[LAYOUT[i]]} Bauplatz · ${zone}`;
@@ -457,7 +480,7 @@ export class UI {
       out += `<div class="bline"><div class="ri" style="flex:1">🔨 ${L > 0 ? 'Ausbau auf ' + (L + 1) : 'Bau'} · noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>`;
     } else if (L < MAX_LEVEL) {
       const blk = c.upgradeBlocker(i);
-      out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div><button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button></div>`;
+      out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>🕒 Später</b></button>` : `<button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button>`}</div>`;
     } else out += '<div class="sm">Maximale Stufe erreicht.</div>';
     const extra = [];
     if (L > 0 && (p.type === T.KASERNE || p.type >= T.HARPHOF)) extra.push('<button class="btn ghost" data-a="troops">⚔️ Truppen ausbilden</button>');
@@ -719,6 +742,52 @@ export class UI {
     if (this.troopTab === 'reports' && this.o.active) this.o.sync();
   }
 
+  rewardStr(res, u) {
+    const parts = [];
+    (res || []).forEach((v, i) => v && parts.push(`${RES_IC[i]} ${v}`));
+    (u || []).forEach((v, i) => v && parts.push(`${UNITS[i].ic} ${v}`));
+    return parts.join(' · ');
+  }
+
+  giftHtml() {
+    const c = this.c, tab = this.giftTab || 'daily';
+    const ds = dailyState(c), qs = questsToday(c);
+    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['ach', '🏅', `Erfolge ${achCount(c)}/${ACH.length}`]];
+    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
+    if (tab === 'daily') {
+      out += '<div class="desc">Schau jeden Tag vorbei! Wer einen Tag auslässt, fängt wieder bei Tag 1 an. Tag 7 ist der große Schatz.</div><div class="daily">';
+      for (let d = 0; d < 7; d++) {
+        const r = dailyReward(c, d), st = d < ds.day || (!ds.can && d === ds.day) ? 'got' : d === ds.day && ds.can ? 'now' : '';
+        out += `<div class="dd ${st} ${r.big ? 'big' : ''}"><b>Tag ${d + 1}</b><div class="sm">${this.rewardStr(r.res, r.u)}</div>${st === 'got' ? '<div>✔</div>' : ''}</div>`;
+      }
+      out += `</div><div class="btns"><button class="btn" data-a="claimDaily" ${ds.can ? '' : 'disabled'}><b>${ds.can ? `🎁 Tag ${ds.day + 1} abholen` : 'Morgen wieder!'}</b></button></div>`;
+    } else if (tab === 'quests') {
+      out += '<div class="desc">Jeden Tag 3 neue Aufgaben.</div>';
+      qs.forEach((q, k) => {
+        out += `<div class="row"><div class="ri"><div><b>${q.done ? '✔ ' : ''}${q.text}</b></div><div class="sm">${Math.min(q.have, q.n)}/${q.n} · Belohnung ${this.rewardStr(q.rw)}</div>
+          <div class="bar"><div style="width:${Math.round(100 * Math.min(1, q.have / q.n))}%"></div></div></div>
+          <button class="btn sm2" data-a="claimQuest" data-k="${k}" ${q.done || q.have < q.n ? 'disabled' : ''}>${q.done ? 'Erledigt' : 'Abholen'}</button></div>`;
+      });
+    } else {
+      const got = c.s.ach || {};
+      out += '<div class="achs">' + ACH.map((a) => `<div class="ach ${got[a.id] ? 'on' : ''}"><span>${a.ic}</span><b>${a.name}</b><div class="sm">${a.text}</div></div>`).join('') + '</div>';
+      if (this.o.active) out += '<div class="sm">Deine Erfolge sehen auch andere Spieler in der Rangliste.</div>';
+    }
+    return out + '</div>';
+  }
+
+  traderHtml() {
+    const c = this.c, tr = c.s.trader;
+    if (!tr || tr.left <= 0) return this.head('⛵ Händlerschiff') + `<div class="desc">Gerade liegt kein Schiff am Steg. Nächstes in etwa ${fmtTime(tr ? tr.next : 60)}.</div>`;
+    let out = this.head('⛵ Händlerschiff') + `<div class="desc">Der Händler legt in <b>${fmtTime(tr.left)}</b> wieder ab. Jedes Angebot gilt einmal.</div>`;
+    tr.offers.forEach((o, k) => {
+      const get = o.unit !== undefined ? `${UNITS[o.unit].ic} ${o.rn} ${UNITS[o.unit].name}` : `${RES_IC[o.get]} ${o.rn} ${RES[o.get]}`;
+      out += `<div class="row"><div class="ri"><b>${RES_IC[o.give]} ${o.gn} ${RES[o.give]}</b> → <b>${get}</b></div>
+        <button class="btn sm2" data-a="trade" data-k="${k}" ${o.used || c.s.res[o.give] < o.gn ? 'disabled' : ''}>${o.used ? '✔' : 'Tauschen'}</button></div>`;
+    });
+    return out;
+  }
+
   troopsHtml() {
     const tab = this.troopTab || 'truppen';
     const tabs = [['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rangliste']];
@@ -726,6 +795,12 @@ export class UI {
     const strip = (x) => x.replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
     const body = tab === 'reports' ? strip(this.reportsHtml()) : tab === 'rank' ? strip(this.rankHtml()) : this.troopsTabHtml();
     return this.head('Truppen') + bar + `<div class="tabbody">${body}</div>`;
+  }
+
+  freePlotQueue(t) {
+    const c = this.c, s = c.s, q = s.bq || [];
+    for (let i = 1; i < s.plots.length; i++) if (s.plots[i].type < 0 && !q.some((x) => x.plot === i)) { const b = c.buildBlocker(i, t); if (!b || QOK.includes(b)) return i; }
+    return -1;
   }
 
   freePlotFor(t) {
@@ -763,7 +838,7 @@ export class UI {
           }
           body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${have}/${slots} · ${d.short}</span></div>
             <div class="sm">${this.costStr(costFor(t, 1))} · ${fmtTime(buildTime(t, 1))}</div>${why ? `<div class="warn">${why}</div>` : ''}</div>
-            <button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? 'disabled' : ''}>Bauen</button></div>`;
+            ${free < 0 && this.freePlotQueue(t) >= 0 && (c.s.bq || []).length < MAX_QUEUE ? `<button class="btn sm2 ghost" data-a="qbuild" data-v="${t}">🕒 Später</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? 'disabled' : ''}>Bauen</button>`}</div>`;
         }
       }
     }
@@ -790,7 +865,7 @@ export class UI {
         rows.push(`<div class="row"><div class="ri"><b>${B_IC[p.type]} ${DEFS[p.type].name}</b> <i class="lv">${p.level || '–'}</i> ${state}
           ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? `<div class="sm">→ ${p.level + 1}: ${this.costStr(costFor(p.type, p.level + 1))}</div>` : ''}</div>
           <button class="btn sm2 ghost" data-a="goto" data-i="${i}">Zeigen</button>
-          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? 'disabled' : ''}>⬆</button>` : ''}</div>`);
+          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? (QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn sm2 ghost" data-a="qup" data-i="${i}">🕒</button>` : `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? 'disabled' : ''}>⬆</button>`) : ''}</div>`);
       });
       if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join('');
     }

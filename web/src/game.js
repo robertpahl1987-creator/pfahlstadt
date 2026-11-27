@@ -1,3 +1,4 @@
+import { questEvent, traderTick, queueTick, checkAch } from './features.js';
 // Spiellogik: Gezeiten, Rohstoffe, Bauen, Bevölkerung, Speichern, Offline-Fortschritt.
 export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
 export const RES_COL = ['#E2B477', '#F2A08C', '#7FD3F0', '#C7CCD6'];
@@ -187,6 +188,10 @@ export class Colony {
     this.expedition(dt);
     this.military(dt, false);
     this.gathering(dt, false);
+    traderTick(this, dt);
+    queueTick(this);
+    this.achT = (this.achT || 0) - dt;
+    if (this.achT <= 0) { this.achT = 2; checkAch(this); }
   }
 
   updateWater() {
@@ -321,6 +326,7 @@ export class Colony {
     this.pay(costFor(t, 1));
     this.s.plots[plot] = { type: t, level: 0, buildLeft: buildTime(t, 1), buildTotal: buildTime(t, 1) };
     this.msg(`Bau von ${DEFS[t].name} begonnen.`);
+    questEvent(this, 'build', 1);
     return true;
   }
 
@@ -341,6 +347,7 @@ export class Colony {
     this.pay(costFor(p.type, p.level + 1));
     p.buildTotal = p.buildLeft = buildTime(p.type, p.level + 1);
     this.msg(`Ausbau: ${DEFS[p.type].name} → Stufe ${p.level + 1}`);
+    questEvent(this, 'build', 1);
     return true;
   }
 
@@ -381,6 +388,7 @@ export class Colony {
     const r = (a, b) => Math.round((a + Math.random() * (b - a)) * m);
     const holz = r(40, 90), mu = r(30, 70), me = r(6, 22);
     this.addRes(HOLZ, holz); this.addRes(MUSCHELN, mu); this.addRes(METALL, me);
+    questEvent(this, 'exp', 1);
     this.msg(`Wattwanderung zurück: +${holz} Holz, +${mu} Muscheln, +${me} Altmetall`);
     if (!s.expSurprised && Math.random() < 0.3 && s.survivors < this.capacity) {
       s.survivors++;
@@ -448,6 +456,7 @@ export class Colony {
       const lost = uScale(m.u, loss);
       t.owner = 1; t.pirates = 0;
       t.gu = uAdd(t.gu, uSub(m.u, lost));
+      questEvent(this, 'win', 1);
       this.report(`Sieg! ${t.name} erobert. Verluste: ${troopStr(lost)}. Bonus: +${t.pct} % ${RES[t.res]}.`, true);
     } else {
       const lost = uScale(m.u, 0.8), rest = uSub(m.u, lost);
@@ -464,7 +473,7 @@ export class Colony {
       const q = s.train[0];
       q.left -= dt;
       while (q.left <= 0 && q.n > 0) {
-        q.n--; s.troops[q.u]++;
+        q.n--; s.troops[q.u]++; questEvent(this, 'train', 1);
         q.left += q.per;
       }
       if (q.n <= 0) { s.train.shift(); this.msg(`Ausbildung fertig: ${UNITS[q.u].name}.`); }
@@ -659,7 +668,7 @@ export class Colony {
       } else {
         g.d -= speed * dt;
         if (g.d <= 0) {
-          if (g.load > 0) { this.addRes(g.res !== undefined ? g.res : (n ? n.type : 0), g.load); }
+          if (g.load > 0) { this.addRes(g.res !== undefined ? g.res : (n ? n.type : 0), g.load); questEvent(this, 'gather', Math.round(g.load)); }
           g.load = 0; g.d = 0;
           if (g.stop || !this.nodeById(g.node)) { s.gath.splice(i, 1); continue; }
           g.phase = 'out';

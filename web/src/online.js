@@ -1,5 +1,6 @@
 // Verbindung zum Mehrspieler-Server (Supabase). Alle Spielregeln laufen auf dem Server.
 import { RES, uAdd, zeroU, uSum } from './game.js';
+import { questEvent } from './features.js';
 
 export const SERVER = 'https://qoatkmjobrlnqadsfmhs.supabase.co';
 const KEY = 'sb_publishable_J84AUIbZnb_CZuak5SiKRg_f5nLkn1w';
@@ -116,7 +117,7 @@ export class Online {
       const back = du.reduce((a, v) => a + Math.max(0, v), 0);
       if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
       this.reports = r.reports || [];
-      for (const rep of this.reports.slice().reverse()) if (rep.id > this.lastReport) { this.c.msg(rep.text); this.lastReport = rep.id; }
+      for (const rep of this.reports.slice().reverse()) if (rep.id > this.lastReport) { this.c.msg(rep.text); if (this.lastReport > 0 && rep.win === true && /^Sieg/.test(rep.text)) questEvent(this.c, 'win', 1); this.lastReport = rep.id; }
       localStorage.setItem('pf_lastrep', String(this.lastReport));
       this.status = 'online'; this.error = '';
     } catch (e) {

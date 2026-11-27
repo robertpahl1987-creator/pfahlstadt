@@ -144,6 +144,7 @@ export class World {
     B = new Builder(); B.add('cube', [0, 0, 0], [1, 1, 1], [0.3, 0.85, 1], { e: 2.5 }); this.selMesh = r.upload(B);
     this.nodeMeshes = [0, 1, 2, 3].map((t) => { const b = new Builder(); M.resourceNode(b, t); return r.upload(b); });
     B = new Builder(); M.basket(B); this.basketMesh = r.upload(B);
+    B = new Builder(); M.traderShip(B); this.shipMesh = r.upload(B);
     B = new Builder(); B.add('cylinder', [0, 0, 0], [1, 0.03, 1], [0.3, 0.85, 1], { e: 2 }); this.ringMesh = r.upload(B);
     this.gPaths = new WeakMap();
     // Lichtkegel: Spitze im Ursprung, öffnet sich entlang +z (60 m)
@@ -567,6 +568,11 @@ export class World {
       const walking = g.phase !== 'work' && moved > 0.0005;
       st.amp = walking ? Math.min(1, st.amp + this.dtNow * 4) : Math.max(0, st.amp - this.dtNow * 4);
       this.person(draws, st.look, [x, y, z], yaw, st.ph, st.amp, g.phase === 'work' ? 'work' : 'walk', false, g.load > 0 || g.phase === 'work', g.d * 7.3);
+    }
+    if (c2.s.trader && c2.s.trader.left > 0) {
+      const zr = -(damRadius() + 12), arrive = Math.min(1, (150 - c2.s.trader.left) / 8), leave = Math.min(1, c2.s.trader.left / 8);
+      const off = (1 - Math.min(arrive, leave)) * 40;
+      draws.push({ mesh: this.shipMesh, model: trs([12 + off, wyNow(c2) + Math.sin(this.time * 1.3) * 0.12, zr], [Math.sin(this.time * 0.9) * 2, 0, Math.sin(this.time * 1.1) * 2.5], [1, 1, 1]) });
     }
     for (const v of this.villagers) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, 'walk', v.sick, false, v.phase);
     for (const g of this.gulls) {
