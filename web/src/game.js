@@ -1,4 +1,5 @@
 import { questEvent, traderTick, queueTick, checkAch } from './features.js';
+import { botTick, ensureBots } from './bots.js';
 // Spiellogik: Gezeiten, Rohstoffe, Bauen, Bevölkerung, Speichern, Offline-Fortschritt.
 export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
 export const RES_COL = ['#E2B477', '#F2A08C', '#7FD3F0', '#C7CCD6'];
@@ -145,8 +146,9 @@ export class Colony {
   ring3Needed(i) { return 8 + (i - RING3); }
   get storage() { return 1500 + 2500 * this.levels(T.LAGER); }
   get troopsAway() {
-    if (this.online && this.online.active) return this.online.troopsAway();
-    let a = zeroU(); for (const m of this.s.marches) a = uAdd(a, m.u); for (const t of this.s.terr) a = uAdd(a, t.gu); return a;
+    let a = zeroU(); for (const m of this.s.botMarches || []) a = uAdd(a, m.u);
+    if (this.online && this.online.active) return uAdd(a, this.online.troopsAway());
+    for (const m of this.s.marches) a = uAdd(a, m.u); for (const t of this.s.terr) a = uAdd(a, t.gu); return a;
   }
   get troopTotal() { return uSum(this.s.troops) + uSum(this.troopsAway); }
   get defense() {
@@ -197,6 +199,7 @@ export class Colony {
     this.military(dt, false);
     this.gathering(dt, false);
     traderTick(this, dt);
+    botTick(this, dt);
     this.healTick(dt);
     if (this.eventStorm && this.freeboard < 0) { for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60; this.floodWarnT = (this.floodWarnT || 0) - dt; if (this.floodWarnT <= 0) { this.floodWarnT = 30; this.msg('🌊 Die Sturmflut spült Vorräte weg! Damm oder Gezeitenturm ausbauen!'); } }
     queueTick(this);
@@ -631,6 +634,7 @@ export class Colony {
     if (!s.troops) s.troops = zeroU();
     while (s.troops.length < NU) s.troops.push(0);
     if (!s.wounded) s.wounded = zeroU();
+    ensureBots(this);
     for (const m of s.marches || []) if (!m.u) { m.u = [m.h || 0, m.w || 0, 0, 0, 0]; delete m.h; delete m.w; }
     for (const t of s.terr || []) if (!t.gu) { t.gu = [t.gh || 0, t.gw || 0, 0, 0, 0]; delete t.gh; delete t.gw; }
     if (!s.train) s.train = [];
@@ -798,6 +802,7 @@ export class Colony {
       if (s.expLeft > 0) { s.expLeft -= dt; if (s.expLeft <= 0) { s.expLeft = 0; this.finishExpedition(); } }
       this.military(dt, true);
       this.gathering(dt, true);
+      botTick(this, dt);
     }
     const gains = s.res.map((v, i) => v - before[i]).map((g, i) => (Math.abs(g) >= 1 ? `${g > 0 ? '+' : ''}${Math.round(g)} ${RES[i]}` : '')).filter(Boolean).join('  ');
     this.msg(`Während du weg warst (${fmtTime(sec)}): ${gains}`);

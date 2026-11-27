@@ -49,6 +49,10 @@ export class SeaMap {
 
   /// Alles Anklickbare: { type: 'terr'|'player', id, x, y }
   items() {
+    const bots = (this.c.s.bots || []).map((b) => ({ type: 'bot', id: b.id, x: this.home[0] + b.dx, y: this.home[1] + b.dy }));
+    return this.items0().concat(bots);
+  }
+  items0() {
     if (this.isOnline) {
       const w = this.o.world;
       return [...w.territories.map((t) => ({ ...t, type: 'terr' })), ...w.players.filter((p) => p.id !== this.o.me.id).map((p) => ({ ...p, type: 'player' }))];
@@ -83,6 +87,27 @@ export class SeaMap {
       ctx.stroke();
     }
     if (this.isOnline) this.drawOnline(sel); else this.drawOffline(sel);
+    this.drawBots(sel);
+  }
+
+  /// Piratenschiffe (Bots) und Trupps dorthin
+  drawBots(sel) {
+    const ctx = this.ctx, u = this.u, s = this.c.s, [cx, cy] = this.pos(this.home[0], this.home[1]);
+    for (const m of s.botMarches || []) {
+      const [tx, ty] = this.pos(this.home[0] + m.bot.dx, this.home[1] + m.bot.dy), p = 1 - m.left / m.total;
+      this.march(cx, cy, tx, ty, m.phase === 'out' ? p : 1 - p, m.phase === 'out' ? 'rgba(255,200,90,0.85)' : 'rgba(200,220,255,0.7)');
+    }
+    for (const b of s.bots || []) {
+      const [x, y] = this.pos(this.home[0] + b.dx, this.home[1] + b.dy), bob = Math.sin(this.t * 1.6 + b.id) * 2;
+      if (sel && sel.type === 'bot' && sel.id === b.id) { ctx.fillStyle = 'rgba(255,200,90,0.25)'; ctx.beginPath(); ctx.arc(x, y, u * 0.38, 0, Math.PI * 2); ctx.fill(); }
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(x, y + u * 0.1, u * 0.2, u * 0.05, 0, 0, Math.PI * 2); ctx.stroke();
+      const k = u * 0.006, yy = y + bob;
+      ctx.fillStyle = '#5a3a22'; ctx.beginPath(); ctx.moveTo(x - 30 * k, yy); ctx.lineTo(x + 30 * k, yy); ctx.lineTo(x + 20 * k, yy + 13 * k); ctx.lineTo(x - 22 * k, yy + 13 * k); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#3a2414'; ctx.fillRect(x - 1.5 * k, yy - 40 * k, 3 * k, 40 * k);
+      ctx.fillStyle = '#1b1b1f'; ctx.beginPath(); ctx.moveTo(x - 20 * k, yy - 36 * k); ctx.lineTo(x + 20 * k, yy - 34 * k); ctx.lineTo(x + 17 * k, yy - 8 * k); ctx.lineTo(x - 18 * k, yy - 6 * k); ctx.closePath(); ctx.fill();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(16 * k)}px system-ui`; ctx.fillStyle = '#fff'; ctx.fillText('☠', x, yy - 21 * k);
+      this.label(x, y + u * 0.1, `🏴‍☠️ Stufe ${b.level}`, b.level === s.botLevel ? '#ffd27a' : '#ffb0a0', b.name);
+    }
   }
 
   label(x, y, text, color, sub) {

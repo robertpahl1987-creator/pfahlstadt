@@ -39,6 +39,7 @@ const QUESTS = [
   { id: 'exp', text: (n) => `Mach ${n} Wattwanderung${n > 1 ? 'en' : ''}`, n: [1, 2, 3], rw: [150, 150, 150, 0] },
   { id: 'trade', text: () => 'Handle mit dem Händlerschiff', n: [1], rw: [0, 0, 200, 50] },
   { id: 'heal', text: (n) => `Heile ${n} verwundete Krieger`, n: [3, 6], rw: [0, 200, 200, 0] },
+  { id: 'bot', text: (n) => `Versenke ${n} Piratenschiff${n > 1 ? 'e' : ''}`, n: [1, 2, 3], rw: [250, 150, 0, 60] },
 ];
 export function questsToday(c) {
   const s = c.s;
@@ -87,6 +88,9 @@ export const ACH = [
   { id: 'tr5', ic: '⛵', name: 'Kaufmann', text: '5 Mal gehandelt', ok: (c) => (c.s.stats && c.s.stats.trade >= 5) },
   { id: 'dl7', ic: '📅', name: 'Treue Seele', text: '7 Tage am Stück dabei', ok: (c) => c.s.daily && c.s.daily.streak >= 7 },
   { id: 'p100', ic: '👥', name: 'Großstadt', text: '100 Bewohner', ok: (c) => c.s.survivors >= 100 },
+  { id: 'bot5', ic: '🏴‍☠️', name: 'Piratenjäger', text: 'Piratenschiff Stufe 5 versenkt', ok: (c) => c.s.botLevel > 5 },
+  { id: 'bot15', ic: '☠️', name: 'Schrecken der Meere', text: 'Piratenschiff Stufe 15 versenkt', ok: (c) => c.s.botLevel > 15 },
+  { id: 'bot30', ic: '🦈', name: 'Admiral', text: 'Piratenschiff Stufe 30 versenkt', ok: (c) => c.s.botLevel > 30 },
   { id: 'all5', ic: '🎓', name: 'Alle Waffengattungen', text: 'Alle 5 Kriegerarten ausgebildet', ok: (c) => c.s.troops.slice(0, 5).every((v) => v > 0) },
 ];
 export function checkAch(c) {

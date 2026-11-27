@@ -2,6 +2,7 @@
 import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, LAYOUT, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime, zeroU, uSum, armyStr, troopStr, speedFactor, carryOf, TIDE_MUL, TIDE_NAME, lazSave, lazBeds } from './game.js';
 import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
+import { ITEMS, SPEED_KEYS, botReward, botBlocker, sendToBot, botTravel, useSpeed, itemStr, speedCount } from './bots.js';
 import { dailyState, dailyReward, claimDaily, DAILY, questsToday, claimQuest, ACH, achCount, TUT, tutStep, queueAdd, MAX_QUEUE, trade } from './features.js';
 const QOK = ['Alle Bautrupps beschäftigt', 'Zu wenig Rohstoffe'];
 import { TIERS } from './gfx.js';
@@ -228,6 +229,8 @@ export class UI {
       if (this.sea.isOnline) this.run(async () => { await o.sendMarch(sel.type, sel.id, f); this.form = zeroU(); this.mapSel = null; c.msg(sel.type === 'player' ? 'Angriff gestartet!' : 'Trupp ist unterwegs.'); await o.loadWorld(); });
       else if (c.sendTroops(sel.id, f)) { this.form = zeroU(); this.mapSel = null; }
     }
+    else if (a === 'sendBot') { const sel = this.mapSel, f = this.form.slice(); if (sel && sendToBot(c, sel.id, f)) { this.form = zeroU(); this.mapSel = null; } }
+    else if (a === 'speed') { const e = useSpeed(c, ds.k, ds.kind, +ds.t); if (e) c.msg(e); }
     else if (a === 'scout') {
       const sel = this.mapSel; if (!sel) return;
       const blk = c.scoutBlocker(); if (blk) { c.msg(blk); return; }
@@ -346,7 +349,7 @@ export class UI {
     const blk = c.expeditionBlocker();
     if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
     btn(this.bExp, '🧭', 'Watt', s.expLeft > 0 ? fmtTime(s.expLeft) : blk === 'Wartet auf Ebbe' ? 'bei Ebbe' : 'los');
-    const nm = this.o.active ? this.o.marches.length : s.marches.length;
+    const nm = (this.o.active ? this.o.marches.length : s.marches.length) + (s.botMarches || []).length;
     if (this.view === 'map') btn(this.bMap, '🏘️', 'Stadt', '');
     else btn(this.bMap, '🗺️', 'Karte', nm ? nm + ' unterw.' : '');
     const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
@@ -404,7 +407,7 @@ export class UI {
     const ae = document.activeElement;
     if (ae && ae.tagName === 'INPUT' && this.panel.contains(ae)) return;
     let html = '';
-    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.terrHtml()) : this.mapHtml();
+    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.mapSel.type === 'bot' ? this.botHtml() : this.terrHtml()) : this.mapHtml();
     else if (this.mode === 'ally') html = this.allyHtml();
     else if (this.mode === 'build') html = this.buildingsHtml();
     else if (this.mode === 'troops') html = this.troopsHtml();
@@ -443,6 +446,7 @@ export class UI {
       out.push({ ic: '🎓', t: `${c.queued()}× Ausbildung`, left: all, pct: pct(q.left, q.per), a: 'data-a="troops"' });
     }
     (s.bq || []).forEach((q, k) => { const t = q.type !== null && q.type !== undefined ? q.type : s.plots[q.plot].type; out.push({ ic: '🕒', t: `Wartet: ${DEFS[t].name}`, left: null, pct: null, a: `data-a="goto" data-i="${q.plot}"` }); });
+    for (const m of s.botMarches || []) out.push({ ic: m.phase === 'back' ? '↩️' : '🏴‍☠️', t: `${m.phase === 'back' ? 'Heimweg' : 'Entern'} ${m.bot.name}`, left: m.left, pct: 100 * (1 - m.left / m.total), a: 'data-a="gomap"' });
     if (s.trader && s.trader.left > 0) out.push({ ic: '⛵', t: 'Händler am Steg', left: s.trader.left, pct: null, a: 'data-a="trader"' });
     if (s.expLeft > 0) out.push({ ic: '🧭', t: 'Wattwanderung', left: s.expLeft, pct: pct(s.expLeft, EXP_TIME), a: '' });
     if (o.active) {
@@ -515,7 +519,7 @@ export class UI {
     let out = this.head(`${B_IC[p.type]} ${d.name} <span class="lv">${L > 0 ? 'Stufe ' + L : 'im Bau'}</span>`);
     if (L > 0) { const inf = this.info(p.type, L); if (inf.length) out += `<div class="inf">${inf[0]}</div>`; }
     if (p.buildLeft > 0) {
-      out += `<div class="bline"><div class="ri" style="flex:1">🔨 ${L > 0 ? 'Ausbau auf ' + (L + 1) : 'Bau'} · noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>`;
+      out += `<div class="bline"><div class="ri" style="flex:1">🔨 ${L > 0 ? 'Ausbau auf ' + (L + 1) : 'Bau'} · noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>` + this.speedBtns('plot', i);
     } else if (L < MAX_LEVEL) {
       const blk = c.upgradeBlocker(i);
       out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>🕒 Später</b></button>` : `<button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button>`}</div>`;
@@ -547,6 +551,7 @@ export class UI {
     if (s.train.length) {
       const q = s.train[0];
       out += `<div class="sm">In Ausbildung: ${s.train.map((t) => `${t.n}× ${UNITS[t.u].name}`).join(', ')} · nächster in ${fmtTime(q.left)} (${c.queued()}/${c.trainSlots()})</div>`;
+      out += this.speedBtns('train', 0);
     } else out += `<div class="sm">Ausbildungsschlange leer (max. ${c.trainSlots()})</div>`;
     UNITS.forEach((u, k) => {
       const lv = c.levels(u.b), b1 = c.trainBlocker(k, 1), b5 = c.trainBlocker(k, 5), b10 = c.trainBlocker(k, 10);
@@ -680,6 +685,36 @@ export class UI {
     out += this.troopForm(t.owner === 1 ? 'Verstärken' : 'Angreifen!', t.owner !== 1, c.attackBlocker(t.id, f), t.owner === 1 ? '' : this.attackInfo(Math.round(armyStr(f, null, true, c.tideState(tt))), t.pirates) + `<div class="sm">${this.tideLine(tt)}</div>`);
     if (t.owner !== 1) out += this.extraActions(true);
     if (t.owner === 1 && uSum(t.gu) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+    return out;
+  }
+
+  /// Beschleuniger-Knöpfe für Bau, Ausbildung, Lazarett …
+  speedBtns(kind, target) {
+    const it = this.c.s.items || {}, have = SPEED_KEYS.filter((k) => it[k] > 0);
+    if (!have.length) return '';
+    return `<div class="speeds"><span class="sm">⚡</span>${have.map((k) => `<button class="btn sm2 ghost" data-a="speed" data-k="${k}" data-kind="${kind}" data-t="${target}">${ITEMS[k].sec >= 3600 ? ITEMS[k].sec / 3600 + ' Std' : ITEMS[k].sec / 60 + ' Min'} ×${it[k]}</button>`).join('')}</div>`;
+  }
+
+  botHtml() {
+    const c = this.c, s = c.s, f = this.form, b = (s.bots || []).find((x) => x.id === this.mapSel.id);
+    if (!b) return this.head('Piratenschiff') + '<div class="sm">Das Schiff ist weitergesegelt.</div>';
+    const tt = botTravel(b, f), tide = c.tideState(tt), r = botReward(b.level);
+    const def = Math.round(armyStr(b.u, uSum(f) ? f : null, false, tide)), att = Math.round(armyStr(f, b.u, true, tide));
+    let out = this.head(`🏴‍☠️ ${b.name} · Stufe ${b.level}`) +
+      `<div class="desc">Piratenschiff. Jede Stufe ist etwas stärker – versenke es für Beschleuniger und Beute. Fahrt ${fmtTime(tt)}</div>
+       <div class="inf">Mannschaft: ${troopStr(b.u)}</div>
+       <div class="sm">Beute: ${itemStr(r.items)} · ${r.res.map((v, i) => (v ? `${RES_IC[i]} ${v}` : '')).filter(Boolean).join(' ')}${uSum(r.u) ? ' · Überläufer ' + troopStr(r.u) : ''}${r.big ? ' · <b style="color:#ffd27a">Schatztruhe!</b>' : ''}</div>`;
+    out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm('Entern!', true, botBlocker(c, b.id, f), this.attackInfo(att, def) + `<div class="sm">${this.tideLine(tt)}</div>`, 'sendBot');
+    return out;
+  }
+
+  itemsHtml() {
+    const c = this.c, s = c.s, it = s.items || {};
+    let out = `<div class="desc">Beschleuniger erbeutest du von 🏴‍☠️ Piratenschiffen auf der Seekarte. Einsetzen kannst du sie bei Bauarbeiten (Gebäude antippen), in der Ausbildung (⚔️ Truppen), im Lazarett und hier für laufende Aufträge.</div>
+      <div class="inf">🏴‍☠️ Piratenschiffe: nächste Stufe <b>${s.botLevel || 1}</b> · Beschleuniger gesamt: <b>${speedCount(c)}</b></div>`;
+    out += SPEED_KEYS.map((k) => `<div class="row"><div class="ri"><b>${ITEMS[k].ic} ${ITEMS[k].name}</b></div><b>×${it[k] || 0}</b></div>`).join('');
+    if (s.expLeft > 0) out += `<div class="sub2">🧭 Wattwanderung (${fmtTime(s.expLeft)})</div>` + this.speedBtns('exp', 0);
+    (s.botMarches || []).forEach((m, k) => { out += `<div class="sub2">🏴‍☠️ Trupp ${m.phase === 'back' ? 'auf dem Heimweg' : 'zum ' + m.bot.name} (${fmtTime(m.left)})</div>` + this.speedBtns('bot', k); });
     return out;
   }
 
@@ -865,8 +900,8 @@ export class UI {
   giftHtml() {
     const c = this.c, tab = this.giftTab || 'daily';
     const ds = dailyState(c), qs = questsToday(c);
-    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['ach', '🏅', `Erfolge ${achCount(c)}/${ACH.length}`]];
-    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
+    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['items', '⚡', `Items ${speedCount(c)}`], ['ach', '🏅', `Erfolge ${achCount(c)}/${ACH.length}`]];
+    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(4,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
     if (tab === 'daily') {
       out += '<div class="desc">Schau jeden Tag vorbei! Wer einen Tag auslässt, fängt wieder bei Tag 1 an. Tag 7 ist der große Schatz.</div><div class="daily">';
       for (let d = 0; d < 7; d++) {
@@ -881,6 +916,8 @@ export class UI {
           <div class="bar"><div style="width:${Math.round(100 * Math.min(1, q.have / q.n))}%"></div></div></div>
           <button class="btn sm2" data-a="claimQuest" data-k="${k}" ${q.done || q.have < q.n ? 'disabled' : ''}>${q.done ? 'Erledigt' : 'Abholen'}</button></div>`;
       });
+    } else if (tab === 'items') {
+      out += this.itemsHtml();
     } else {
       const got = c.s.ach || {};
       out += '<div class="achs">' + ACH.map((a) => `<div class="ach ${got[a.id] ? 'on' : ''}"><span>${a.ic}</span><b>${a.name}</b><div class="sm">${a.text}</div></div>`).join('') + '</div>';
@@ -994,7 +1031,7 @@ export class UI {
       <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
     if (c.raidIn !== null) out += `<div class="sm">Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}</div>`;
     out += this.tideBox();
-    if (uSum(s.wounded || zeroU())) out += `<div class="inf">🩹 Im Lazarett: ${troopStr(s.wounded)} – werden nach und nach gesund.</div>`;
+    if (uSum(s.wounded || zeroU())) out += `<div class="inf">🩹 Im Lazarett: ${troopStr(s.wounded)} – werden nach und nach gesund.</div>` + this.speedBtns('heal', 0);
     else if (c.levels(T.LAZARETT) <= 0) out += '<div class="sm">Tipp: Ein 🩹 Lazarett rettet einen Teil der gefallenen Krieger.</div>';
     if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
     else out += `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div><div class="desc">Für Truppen brauchst du die <b>Kaserne</b> und für jeden Krieger seine <b>Ausbildungsstätte</b>. Baue sie unter <b>🏗️ Gebäude → Neu bauen</b>.</div>`;

@@ -378,6 +378,7 @@ export class World {
     }
     // Ausrückende Trupps: neue Märsche erkennen
     const o = c.online, list = o && o.active ? (o.marches || []).filter((m) => m.status === 'out' && m.kind !== 'scout') : c.s.marches.filter((m) => m.phase === 'out' && m.kind !== 'scout');
+    for (const m of c.s.botMarches || []) if (m.phase === 'out') list.push(m);
     for (const m of list) {
       const key = m.id !== undefined ? 'o' + m.id : m;
       if (this.seenMarch.has(key)) continue;

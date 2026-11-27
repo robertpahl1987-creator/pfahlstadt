@@ -44,6 +44,7 @@ function start() {
           if (t > 5) list.push([t, m.status === 'back' ? '⛵ Truppen zurück' : m.kind === 'scout' ? '🔭 Späherbericht' : '⚔️ Angriff erreicht das Ziel', m.status === 'back' ? 'Deine Krieger sind heimgekehrt.' : 'Schau in die Kampfberichte!']);
         }
       } else for (const m of s.marches) if (m.left > 5) list.push([m.left, m.phase === 'back' ? '⛵ Truppen zurück' : '⚔️ Trupp am Ziel', 'Schau in die Kampfberichte!']);
+      for (const m of s.botMarches || []) if (m.left > 5) list.push([m.left, m.phase === 'back' ? '⛵ Truppen zurück' : '🏴‍☠️ Piratenschiff erreicht', m.phase === 'back' ? 'Deine Krieger sind mit Beute zurück.' : 'Der Kampf beginnt – schau in die Berichte!']);
       if (s.trader && s.trader.left <= 0 && s.trader.next > 5) list.push([s.trader.next, '⛵ Händlerschiff', 'Ein Händler hat am Steg angelegt – nur kurz!']);
       list.push([20 * 3600, '🏝️ Deine Pfahlstadt wartet', 'Deine Tagesbelohnung liegt bereit!']);
       list.sort((a, b) => a[0] - b[0]).slice(0, 30).forEach((n, i) => N.schedule(i + 1, n[0], n[1], n[2]));

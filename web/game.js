@@ -857,7 +857,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { id: "win", text: (n) => `Gewinne ${n} Kampf${n > 1 ? "e" : ""}`, n: [1, 2], rw: [300, 0, 0, 80] },
     { id: "exp", text: (n) => `Mach ${n} Wattwanderung${n > 1 ? "en" : ""}`, n: [1, 2, 3], rw: [150, 150, 150, 0] },
     { id: "trade", text: () => "Handle mit dem H\xE4ndlerschiff", n: [1], rw: [0, 0, 200, 50] },
-    { id: "heal", text: (n) => `Heile ${n} verwundete Krieger`, n: [3, 6], rw: [0, 200, 200, 0] }
+    { id: "heal", text: (n) => `Heile ${n} verwundete Krieger`, n: [3, 6], rw: [0, 200, 200, 0] },
+    { id: "bot", text: (n) => `Versenke ${n} Piratenschiff${n > 1 ? "e" : ""}`, n: [1, 2, 3], rw: [250, 150, 0, 60] }
   ];
   function questsToday(c) {
     const s = c.s;
@@ -914,6 +915,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { id: "tr5", ic: "\u26F5", name: "Kaufmann", text: "5 Mal gehandelt", ok: (c) => c.s.stats && c.s.stats.trade >= 5 },
     { id: "dl7", ic: "\u{1F4C5}", name: "Treue Seele", text: "7 Tage am St\xFCck dabei", ok: (c) => c.s.daily && c.s.daily.streak >= 7 },
     { id: "p100", ic: "\u{1F465}", name: "Gro\xDFstadt", text: "100 Bewohner", ok: (c) => c.s.survivors >= 100 },
+    { id: "bot5", ic: "\u{1F3F4}\u200D\u2620\uFE0F", name: "Piratenj\xE4ger", text: "Piratenschiff Stufe 5 versenkt", ok: (c) => c.s.botLevel > 5 },
+    { id: "bot15", ic: "\u2620\uFE0F", name: "Schrecken der Meere", text: "Piratenschiff Stufe 15 versenkt", ok: (c) => c.s.botLevel > 15 },
+    { id: "bot30", ic: "\u{1F988}", name: "Admiral", text: "Piratenschiff Stufe 30 versenkt", ok: (c) => c.s.botLevel > 30 },
     { id: "all5", ic: "\u{1F393}", name: "Alle Waffengattungen", text: "Alle 5 Kriegerarten ausgebildet", ok: (c) => c.s.troops.slice(0, 5).every((v) => v > 0) }
   ];
   function checkAch(c) {
@@ -1025,6 +1029,189 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     questEvent(c, "trade", 1);
     return null;
   }
+
+  // src/bots.js
+  var ITEMS = {
+    sp1: { ic: "\u26A1", name: "Beschleuniger 1 Min.", sec: 60 },
+    sp5: { ic: "\u26A1", name: "Beschleuniger 5 Min.", sec: 300 },
+    sp15: { ic: "\u26A1", name: "Beschleuniger 15 Min.", sec: 900 },
+    sp60: { ic: "\u26A1", name: "Beschleuniger 1 Std.", sec: 3600 },
+    sp180: { ic: "\u26A1", name: "Beschleuniger 3 Std.", sec: 10800 }
+  };
+  var SPEED_KEYS = ["sp1", "sp5", "sp15", "sp60", "sp180"];
+  var SHIP_NAMES = ["Schwarze M\xF6we", "Rostiger Anker", "Seeteufel", "Krakenfaust", "Nebelhai", "Sturmkr\xE4he", "Blutige Auster", "Wattwolf", "Grauer Hering", "Knochenkiel"];
+  function botArmy(L) {
+    const n = Math.round(5 * Math.pow(1.12, L - 1) + L), fav = (L - 1) % 5;
+    const w = [1, 1, 1, 1, 1];
+    w[fav] = 3;
+    if (L >= 6) w[(fav + 2) % 5] = 2;
+    const sw = w.reduce((a, b) => a + b, 0), u = w.map((x) => Math.floor(n * x / sw));
+    u[fav] += n - uSum(u);
+    return u;
+  }
+  function botReward(L) {
+    const it = {};
+    const add2 = (k, v) => it[k] = (it[k] || 0) + v;
+    if (L <= 4) add2("sp1", 2);
+    else if (L <= 9) {
+      add2("sp1", 1);
+      add2("sp5", 1);
+    } else if (L <= 19) {
+      add2("sp5", 2);
+      if (L % 2) add2("sp15", 1);
+    } else {
+      add2("sp15", 2);
+      if (L % 3 === 0) add2("sp60", 1);
+    }
+    const big = L % 5 === 0;
+    if (big) {
+      add2(L >= 10 ? "sp60" : "sp15", 1);
+      if (L >= 25) add2("sp180", 1);
+    }
+    const res = [0, 0, 0, 0];
+    res[L % 4] = Math.round(150 * Math.pow(1.15, L - 1));
+    res[(L + 1) % 4] = Math.round(80 * Math.pow(1.15, L - 1));
+    const u = zeroU();
+    if (big) u[(L - 1) % 5] = 3 + Math.floor(L / 2);
+    return { items: it, res, u, big };
+  }
+  var itemStr = (it) => Object.keys(it).filter((k) => it[k] > 0).map((k) => `\u26A1${fmtShort(ITEMS[k].sec)}\xD7${it[k]}`).join(" ");
+  function fmtShort(sec) {
+    return sec >= 3600 ? `${sec / 3600}h` : `${sec / 60}m`;
+  }
+  function ensureBots(c) {
+    const s = c.s;
+    if (!s.botLevel) s.botLevel = 1;
+    if (!s.items) s.items = {};
+    if (!s.botMarches) s.botMarches = [];
+    if (!s.bots || s.bots.length !== 3) makeBots(c);
+  }
+  function makeBots(c) {
+    const s = c.s, L = s.botLevel, out = [];
+    const o = c.online, onl = o && o.active && o.world && o.me;
+    const pts = onl ? o.world.territories.map((t) => [t.x - o.me.x, t.y - o.me.y]).concat(o.world.players.map((p) => [p.x - o.me.x, p.y - o.me.y])) : (s.terr || []).map((t) => [t.x, t.y]);
+    pts.push([0, 0]);
+    const rnd = () => (s.botSeed = (s.botSeed || 7) * 1103515245 + 12345 >>> 0) / 4294967296;
+    for (let k = 0; k < 3; k++) {
+      const lv = L + k;
+      let best = null, bd = -1;
+      for (let tries = 0; tries < 40; tries++) {
+        const a = rnd() * Math.PI * 2, d = 0.75 + k * 0.45 + rnd() * 0.3, x = Math.cos(a) * d, y = Math.sin(a) * d;
+        const m = Math.min(...pts.map((p) => Math.hypot(p[0] - x, p[1] - y)));
+        if (m > bd) {
+          bd = m;
+          best = [x, y];
+        }
+        if (m > 0.6) break;
+      }
+      pts.push(best);
+      out.push({ id: lv, level: lv, name: SHIP_NAMES[lv * 7 % SHIP_NAMES.length], dx: best[0], dy: best[1], u: botArmy(lv) });
+    }
+    s.bots = out;
+  }
+  var botTravel = (b, u) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u);
+  function botBlocker(c, id, u) {
+    const b = c.s.bots.find((x) => x.id === id);
+    if (!b) return "Schiff ist weg";
+    if (uSum(u) <= 0) return "Keine Truppen ausgew\xE4hlt";
+    if (u.some((v, i) => v > c.s.troops[i])) return "So viele Truppen hast du nicht zu Hause";
+    if (c.s.botMarches.some((m) => m.bot.id === id && m.phase === "out")) return "Dorthin ist schon ein Trupp unterwegs";
+    return null;
+  }
+  function sendToBot(c, id, u) {
+    if (botBlocker(c, id, u)) return false;
+    const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u);
+    c.s.troops = uSub(c.s.troops, u);
+    c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: "out" });
+    c.msg(`\u2694\uFE0F Angriff auf das Piratenschiff \u201E${b.name}\u201C (Stufe ${b.level})!`);
+    return true;
+  }
+  function botTick(c, dt) {
+    ensureBots(c);
+    const s = c.s;
+    for (let i = s.botMarches.length - 1; i >= 0; i--) {
+      const m = s.botMarches[i];
+      m.left -= dt;
+      if (m.left > 0) continue;
+      if (m.phase === "back") {
+        s.troops = uAdd(s.troops, m.u);
+        s.botMarches.splice(i, 1);
+        c.msg(`${uSum(m.u)} Krieger sind vom Piratenschiff zur\xFCck.`);
+        continue;
+      }
+      fight(c, m);
+    }
+  }
+  function fight(c, m) {
+    const s = c.s, b = m.bot, tide = c.tideState(0);
+    const att = armyStr(m.u, b.u, true, tide) * (0.85 + Math.random() * 0.3);
+    const def = Math.max(1, armyStr(b.u, m.u, false, tide));
+    let lost;
+    if (att > def) {
+      lost = uScale(m.u, Math.min(0.85, Math.pow(def / att, 1.3) * 0.5));
+      const r = botReward(b.level);
+      for (const k in r.items) s.items[k] = (s.items[k] || 0) + r.items[k];
+      r.res.forEach((v, i) => v && c.addRes(i, v));
+      s.troops = uAdd(s.troops, r.u);
+      if (b.level >= s.botLevel) {
+        s.botLevel = b.level + 1;
+      }
+      s.bots = s.bots.filter((x) => x.id !== b.id);
+      if (s.bots.length < 3 || b.level >= s.botLevel - 1) makeBots(c);
+      questEvent(c, "bot", 1);
+      questEvent(c, "win", 1);
+      c.report(`\u{1F3F4}\u200D\u2620\uFE0F \u201E${b.name}\u201C (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)}${r.res.some((v) => v) ? " \xB7 " + r.res.map((v, i) => v ? `${v} ${RES[i]}` : "").filter(Boolean).join(", ") : ""}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer: " + troopStr(r.u) : ""}. Verluste: ${troopStr(lost)}.`, true);
+    } else {
+      lost = uScale(m.u, 0.55);
+      c.report(`\u{1F3F4}\u200D\u2620\uFE0F Angriff auf \u201E${b.name}\u201C (Stufe ${b.level}) gescheitert. Verluste: ${troopStr(lost)}. Tipp: Krieger w\xE4hlen, die gegen die Mannschaft stark sind.`, false);
+    }
+    c.addWounded(lost);
+    m.u = uSub(m.u, lost);
+    m.phase = "back";
+    m.left = m.total;
+    if (!uSum(m.u)) c.s.botMarches.splice(c.s.botMarches.indexOf(m), 1);
+  }
+  function useSpeed(c, key, kind, target) {
+    const s = c.s, it = ITEMS[key];
+    if (!it || !(s.items[key] > 0)) return "Keinen solchen Beschleuniger";
+    let sec = it.sec;
+    if (kind === "plot") {
+      const p = s.plots[target];
+      if (!p || p.buildLeft <= 0) return "Hier wird nicht gebaut";
+      p.buildLeft = Math.max(0.01, p.buildLeft - sec);
+    } else if (kind === "train") {
+      if (!s.train.length) return "Keine Ausbildung l\xE4uft";
+      while (sec > 0 && s.train.length) {
+        const q = s.train[0];
+        if (q.left <= sec) {
+          sec -= q.left;
+          q.n--;
+          s.troops[q.u]++;
+          questEvent(c, "train", 1);
+          q.left = q.per;
+          if (q.n <= 0) s.train.shift();
+        } else {
+          q.left -= sec;
+          sec = 0;
+        }
+      }
+    } else if (kind === "heal") {
+      const L = c.levels(20);
+      if (L <= 0 || !uSum(s.wounded)) return "Niemand im Lazarett";
+      s.healT = (s.healT || 0) + sec * L;
+    } else if (kind === "exp") {
+      if (!(s.expLeft > 0)) return "Keine Wattwanderung unterwegs";
+      s.expLeft = Math.max(0.01, s.expLeft - sec);
+    } else if (kind === "bot") {
+      const m = s.botMarches[target];
+      if (!m) return "Kein Trupp";
+      m.left = Math.max(0.01, m.left - sec);
+    } else return "Geht hier nicht";
+    s.items[key]--;
+    c.msg(`\u26A1 ${it.name} eingesetzt.`);
+    return null;
+  }
+  var speedCount = (c) => SPEED_KEYS.reduce((a, k) => a + (c.s.items && c.s.items[k] || 0), 0);
 
   // src/game.js
   var RES = ["Holz", "Muscheln", "Wasser", "Altmetall"];
@@ -1276,8 +1463,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return 1500 + 2500 * this.levels(T.LAGER);
     }
     get troopsAway() {
-      if (this.online && this.online.active) return this.online.troopsAway();
       let a = zeroU();
+      for (const m of this.s.botMarches || []) a = uAdd(a, m.u);
+      if (this.online && this.online.active) return uAdd(a, this.online.troopsAway());
       for (const m of this.s.marches) a = uAdd(a, m.u);
       for (const t of this.s.terr) a = uAdd(a, t.gu);
       return a;
@@ -1361,6 +1549,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.military(dt, false);
       this.gathering(dt, false);
       traderTick(this, dt);
+      botTick(this, dt);
       this.healTick(dt);
       if (this.eventStorm && this.freeboard < 0) {
         for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60;
@@ -1854,6 +2043,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (!s.troops) s.troops = zeroU();
       while (s.troops.length < NU) s.troops.push(0);
       if (!s.wounded) s.wounded = zeroU();
+      ensureBots(this);
       for (const m of s.marches || []) if (!m.u) {
         m.u = [m.h || 0, m.w || 0, 0, 0, 0];
         delete m.h;
@@ -2112,6 +2302,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
         this.military(dt, true);
         this.gathering(dt, true);
+        botTick(this, dt);
       }
       const gains = s.res.map((v, i) => v - before[i]).map((g, i) => Math.abs(g) >= 1 ? `${g > 0 ? "+" : ""}${Math.round(g)} ${RES[i]}` : "").filter(Boolean).join("  ");
       this.msg(`W\xE4hrend du weg warst (${fmtTime(sec)}): ${gains}`);
@@ -3129,6 +3320,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
       }
       const o = c.online, list = o && o.active ? (o.marches || []).filter((m) => m.status === "out" && m.kind !== "scout") : c.s.marches.filter((m) => m.phase === "out" && m.kind !== "scout");
+      for (const m of c.s.botMarches || []) if (m.phase === "out") list.push(m);
       for (const m of list) {
         const key = m.id !== void 0 ? "o" + m.id : m;
         if (this.seenMarch.has(key)) continue;
@@ -3638,6 +3830,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     /// Alles Anklickbare: { type: 'terr'|'player', id, x, y }
     items() {
+      const bots = (this.c.s.bots || []).map((b) => ({ type: "bot", id: b.id, x: this.home[0] + b.dx, y: this.home[1] + b.dy }));
+      return this.items0().concat(bots);
+    }
+    items0() {
       if (this.isOnline) {
         const w = this.o.world;
         return [...w.territories.map((t) => ({ ...t, type: "terr" })), ...w.players.filter((p) => p.id !== this.o.me.id).map((p) => ({ ...p, type: "player" }))];
@@ -3678,6 +3874,54 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
       if (this.isOnline) this.drawOnline(sel);
       else this.drawOffline(sel);
+      this.drawBots(sel);
+    }
+    /// Piratenschiffe (Bots) und Trupps dorthin
+    drawBots(sel) {
+      const ctx = this.ctx, u = this.u, s = this.c.s, [cx, cy] = this.pos(this.home[0], this.home[1]);
+      for (const m of s.botMarches || []) {
+        const [tx, ty] = this.pos(this.home[0] + m.bot.dx, this.home[1] + m.bot.dy), p = 1 - m.left / m.total;
+        this.march(cx, cy, tx, ty, m.phase === "out" ? p : 1 - p, m.phase === "out" ? "rgba(255,200,90,0.85)" : "rgba(200,220,255,0.7)");
+      }
+      for (const b of s.bots || []) {
+        const [x, y] = this.pos(this.home[0] + b.dx, this.home[1] + b.dy), bob = Math.sin(this.t * 1.6 + b.id) * 2;
+        if (sel && sel.type === "bot" && sel.id === b.id) {
+          ctx.fillStyle = "rgba(255,200,90,0.25)";
+          ctx.beginPath();
+          ctx.arc(x, y, u * 0.38, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = "rgba(255,255,255,0.35)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(x, y + u * 0.1, u * 0.2, u * 0.05, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        const k = u * 6e-3, yy = y + bob;
+        ctx.fillStyle = "#5a3a22";
+        ctx.beginPath();
+        ctx.moveTo(x - 30 * k, yy);
+        ctx.lineTo(x + 30 * k, yy);
+        ctx.lineTo(x + 20 * k, yy + 13 * k);
+        ctx.lineTo(x - 22 * k, yy + 13 * k);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#3a2414";
+        ctx.fillRect(x - 1.5 * k, yy - 40 * k, 3 * k, 40 * k);
+        ctx.fillStyle = "#1b1b1f";
+        ctx.beginPath();
+        ctx.moveTo(x - 20 * k, yy - 36 * k);
+        ctx.lineTo(x + 20 * k, yy - 34 * k);
+        ctx.lineTo(x + 17 * k, yy - 8 * k);
+        ctx.lineTo(x - 18 * k, yy - 6 * k);
+        ctx.closePath();
+        ctx.fill();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `${Math.round(16 * k)}px system-ui`;
+        ctx.fillStyle = "#fff";
+        ctx.fillText("\u2620", x, yy - 21 * k);
+        this.label(x, y + u * 0.1, `\u{1F3F4}\u200D\u2620\uFE0F Stufe ${b.level}`, b.level === s.botLevel ? "#ffd27a" : "#ffb0a0", b.name);
+      }
     }
     label(x, y, text, color, sub2) {
       const ctx = this.ctx;
@@ -4276,6 +4520,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           this.form = zeroU();
           this.mapSel = null;
         }
+      } else if (a === "sendBot") {
+        const sel = this.mapSel, f = this.form.slice();
+        if (sel && sendToBot(c, sel.id, f)) {
+          this.form = zeroU();
+          this.mapSel = null;
+        }
+      } else if (a === "speed") {
+        const e = useSpeed(c, ds.k, ds.kind, +ds.t);
+        if (e) c.msg(e);
       } else if (a === "scout") {
         const sel = this.mapSel;
         if (!sel) return;
@@ -4510,7 +4763,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const blk = c.expeditionBlocker();
       if (this.bExp.disabled !== !!blk) this.bExp.disabled = !!blk;
       btn(this.bExp, "\u{1F9ED}", "Watt", s.expLeft > 0 ? fmtTime(s.expLeft) : blk === "Wartet auf Ebbe" ? "bei Ebbe" : "los");
-      const nm = this.o.active ? this.o.marches.length : s.marches.length;
+      const nm = (this.o.active ? this.o.marches.length : s.marches.length) + (s.botMarches || []).length;
       if (this.view === "map") btn(this.bMap, "\u{1F3D8}\uFE0F", "Stadt", "");
       else btn(this.bMap, "\u{1F5FA}\uFE0F", "Karte", nm ? nm + " unterw." : "");
       const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
@@ -4582,7 +4835,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const ae = document.activeElement;
       if (ae && ae.tagName === "INPUT" && this.panel.contains(ae)) return;
       let html = "";
-      if (this.view === "map") html = this.showReports ? this.reportsHtml() : this.mapSel ? this.mapSel.type === "player" ? this.playerHtml() : this.terrHtml() : this.mapHtml();
+      if (this.view === "map") html = this.showReports ? this.reportsHtml() : this.mapSel ? this.mapSel.type === "player" ? this.playerHtml() : this.mapSel.type === "bot" ? this.botHtml() : this.terrHtml() : this.mapHtml();
       else if (this.mode === "ally") html = this.allyHtml();
       else if (this.mode === "build") html = this.buildingsHtml();
       else if (this.mode === "troops") html = this.troopsHtml();
@@ -4628,6 +4881,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const t = q.type !== null && q.type !== void 0 ? q.type : s.plots[q.plot].type;
         out.push({ ic: "\u{1F552}", t: `Wartet: ${DEFS[t].name}`, left: null, pct: null, a: `data-a="goto" data-i="${q.plot}"` });
       });
+      for (const m of s.botMarches || []) out.push({ ic: m.phase === "back" ? "\u21A9\uFE0F" : "\u{1F3F4}\u200D\u2620\uFE0F", t: `${m.phase === "back" ? "Heimweg" : "Entern"} ${m.bot.name}`, left: m.left, pct: 100 * (1 - m.left / m.total), a: 'data-a="gomap"' });
       if (s.trader && s.trader.left > 0) out.push({ ic: "\u26F5", t: "H\xE4ndler am Steg", left: s.trader.left, pct: null, a: 'data-a="trader"' });
       if (s.expLeft > 0) out.push({ ic: "\u{1F9ED}", t: "Wattwanderung", left: s.expLeft, pct: pct(s.expLeft, EXP_TIME), a: "" });
       if (o.active) {
@@ -4708,7 +4962,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (inf.length) out += `<div class="inf">${inf[0]}</div>`;
       }
       if (p.buildLeft > 0) {
-        out += `<div class="bline"><div class="ri" style="flex:1">\u{1F528} ${L > 0 ? "Ausbau auf " + (L + 1) : "Bau"} \xB7 noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>`;
+        out += `<div class="bline"><div class="ri" style="flex:1">\u{1F528} ${L > 0 ? "Ausbau auf " + (L + 1) : "Bau"} \xB7 noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>` + this.speedBtns("plot", i);
       } else if (L < MAX_LEVEL) {
         const blk = c.upgradeBlocker(i);
         out += `<div class="bline"><div class="ri" style="flex:1">\u2192 Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} \xB7 \u23F1 ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div>${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>\u{1F552} Sp\xE4ter</b></button>` : `<button class="btn" data-a="up" ${blk ? "disabled" : ""}><b>Ausbauen</b></button>`}</div>`;
@@ -4737,6 +4991,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.train.length) {
         const q = s.train[0];
         out += `<div class="sm">In Ausbildung: ${s.train.map((t) => `${t.n}\xD7 ${UNITS[t.u].name}`).join(", ")} \xB7 n\xE4chster in ${fmtTime(q.left)} (${c.queued()}/${c.trainSlots()})</div>`;
+        out += this.speedBtns("train", 0);
       } else out += `<div class="sm">Ausbildungsschlange leer (max. ${c.trainSlots()})</div>`;
       UNITS.forEach((u, k) => {
         const lv = c.levels(u.b), b1 = c.trainBlocker(k, 1), b5 = c.trainBlocker(k, 5), b10 = c.trainBlocker(k, 10);
@@ -4879,6 +5134,34 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       out += this.troopForm(t.owner === 1 ? "Verst\xE4rken" : "Angreifen!", t.owner !== 1, c.attackBlocker(t.id, f), t.owner === 1 ? "" : this.attackInfo(Math.round(armyStr(f, null, true, c.tideState(tt))), t.pirates) + `<div class="sm">${this.tideLine(tt)}</div>`);
       if (t.owner !== 1) out += this.extraActions(true);
       if (t.owner === 1 && uSum(t.gu) > 0) out += '<div class="btns"><button class="btn ghost" data-a="withdraw">Besatzung abziehen</button></div>';
+      return out;
+    }
+    /// Beschleuniger-Knöpfe für Bau, Ausbildung, Lazarett …
+    speedBtns(kind, target) {
+      const it = this.c.s.items || {}, have = SPEED_KEYS.filter((k) => it[k] > 0);
+      if (!have.length) return "";
+      return `<div class="speeds"><span class="sm">\u26A1</span>${have.map((k) => `<button class="btn sm2 ghost" data-a="speed" data-k="${k}" data-kind="${kind}" data-t="${target}">${ITEMS[k].sec >= 3600 ? ITEMS[k].sec / 3600 + " Std" : ITEMS[k].sec / 60 + " Min"} \xD7${it[k]}</button>`).join("")}</div>`;
+    }
+    botHtml() {
+      const c = this.c, s = c.s, f = this.form, b = (s.bots || []).find((x) => x.id === this.mapSel.id);
+      if (!b) return this.head("Piratenschiff") + '<div class="sm">Das Schiff ist weitergesegelt.</div>';
+      const tt = botTravel(b, f), tide = c.tideState(tt), r = botReward(b.level);
+      const def = Math.round(armyStr(b.u, uSum(f) ? f : null, false, tide)), att = Math.round(armyStr(f, b.u, true, tide));
+      let out = this.head(`\u{1F3F4}\u200D\u2620\uFE0F ${b.name} \xB7 Stufe ${b.level}`) + `<div class="desc">Piratenschiff. Jede Stufe ist etwas st\xE4rker \u2013 versenke es f\xFCr Beschleuniger und Beute. Fahrt ${fmtTime(tt)}</div>
+       <div class="inf">Mannschaft: ${troopStr(b.u)}</div>
+       <div class="sm">Beute: ${itemStr(r.items)} \xB7 ${r.res.map((v, i) => v ? `${RES_IC[i]} ${v}` : "").filter(Boolean).join(" ")}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer " + troopStr(r.u) : ""}${r.big ? ' \xB7 <b style="color:#ffd27a">Schatztruhe!</b>' : ""}</div>`;
+      out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Entern!", true, botBlocker(c, b.id, f), this.attackInfo(att, def) + `<div class="sm">${this.tideLine(tt)}</div>`, "sendBot");
+      return out;
+    }
+    itemsHtml() {
+      const c = this.c, s = c.s, it = s.items || {};
+      let out = `<div class="desc">Beschleuniger erbeutest du von \u{1F3F4}\u200D\u2620\uFE0F Piratenschiffen auf der Seekarte. Einsetzen kannst du sie bei Bauarbeiten (Geb\xE4ude antippen), in der Ausbildung (\u2694\uFE0F Truppen), im Lazarett und hier f\xFCr laufende Auftr\xE4ge.</div>
+      <div class="inf">\u{1F3F4}\u200D\u2620\uFE0F Piratenschiffe: n\xE4chste Stufe <b>${s.botLevel || 1}</b> \xB7 Beschleuniger gesamt: <b>${speedCount(c)}</b></div>`;
+      out += SPEED_KEYS.map((k) => `<div class="row"><div class="ri"><b>${ITEMS[k].ic} ${ITEMS[k].name}</b></div><b>\xD7${it[k] || 0}</b></div>`).join("");
+      if (s.expLeft > 0) out += `<div class="sub2">\u{1F9ED} Wattwanderung (${fmtTime(s.expLeft)})</div>` + this.speedBtns("exp", 0);
+      (s.botMarches || []).forEach((m, k) => {
+        out += `<div class="sub2">\u{1F3F4}\u200D\u2620\uFE0F Trupp ${m.phase === "back" ? "auf dem Heimweg" : "zum " + m.bot.name} (${fmtTime(m.left)})</div>` + this.speedBtns("bot", k);
+      });
       return out;
     }
     /// Späher und Sammelangriff (Sammelangriff nur online in einer Allianz)
@@ -5046,8 +5329,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     giftHtml() {
       const c = this.c, tab = this.giftTab || "daily";
       const ds = dailyState(c), qs = questsToday(c);
-      const tabs = [["daily", "\u{1F4C5}", "T\xE4glich" + (ds.can ? " \u2022" : "")], ["quests", "\u2705", "Aufgaben" + (qs.some((q) => !q.done && q.have >= q.n) ? " \u2022" : "")], ["ach", "\u{1F3C5}", `Erfolge ${achCount(c)}/${ACH.length}`]];
-      let out = this.head("Belohnungen") + `<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div><div class="tabbody">`;
+      const tabs = [["daily", "\u{1F4C5}", "T\xE4glich" + (ds.can ? " \u2022" : "")], ["quests", "\u2705", "Aufgaben" + (qs.some((q) => !q.done && q.have >= q.n) ? " \u2022" : "")], ["items", "\u26A1", `Items ${speedCount(c)}`], ["ach", "\u{1F3C5}", `Erfolge ${achCount(c)}/${ACH.length}`]];
+      let out = this.head("Belohnungen") + `<div class="tabs" style="grid-template-columns:repeat(4,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div><div class="tabbody">`;
       if (tab === "daily") {
         out += '<div class="desc">Schau jeden Tag vorbei! Wer einen Tag ausl\xE4sst, f\xE4ngt wieder bei Tag 1 an. Tag 7 ist der gro\xDFe Schatz.</div><div class="daily">';
         for (let d = 0; d < 7; d++) {
@@ -5062,6 +5345,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           <div class="bar"><div style="width:${Math.round(100 * Math.min(1, q.have / q.n))}%"></div></div></div>
           <button class="btn sm2" data-a="claimQuest" data-k="${k}" ${q.done || q.have < q.n ? "disabled" : ""}>${q.done ? "Erledigt" : "Abholen"}</button></div>`;
         });
+      } else if (tab === "items") {
+        out += this.itemsHtml();
       } else {
         const got = c.s.ach || {};
         out += '<div class="achs">' + ACH.map((a) => `<div class="ach ${got[a.id] ? "on" : ""}"><span>${a.ic}</span><b>${a.name}</b><div class="sm">${a.text}</div></div>`).join("") + "</div>";
@@ -5171,7 +5456,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
       if (c.raidIn !== null) out += `<div class="sm">N\xE4chster Piraten\xFCberfall in etwa ${fmtTime(c.raidIn)}</div>`;
       out += this.tideBox();
-      if (uSum(s.wounded || zeroU())) out += `<div class="inf">\u{1FA79} Im Lazarett: ${troopStr(s.wounded)} \u2013 werden nach und nach gesund.</div>`;
+      if (uSum(s.wounded || zeroU())) out += `<div class="inf">\u{1FA79} Im Lazarett: ${troopStr(s.wounded)} \u2013 werden nach und nach gesund.</div>` + this.speedBtns("heal", 0);
       else if (c.levels(T.LAZARETT) <= 0) out += '<div class="sm">Tipp: Ein \u{1FA79} Lazarett rettet einen Teil der gefallenen Krieger.</div>';
       if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
       else out += `<div class="inf">Zu Hause: ${troopStr(s.troops)}</div><div class="desc">F\xFCr Truppen brauchst du die <b>Kaserne</b> und f\xFCr jeden Krieger seine <b>Ausbildungsst\xE4tte</b>. Baue sie unter <b>\u{1F3D7}\uFE0F Geb\xE4ude \u2192 Neu bauen</b>.</div>`;
@@ -5779,6 +6064,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
             if (t > 5) list.push([t, m.status === "back" ? "\u26F5 Truppen zur\xFCck" : m.kind === "scout" ? "\u{1F52D} Sp\xE4herbericht" : "\u2694\uFE0F Angriff erreicht das Ziel", m.status === "back" ? "Deine Krieger sind heimgekehrt." : "Schau in die Kampfberichte!"]);
           }
         } else for (const m of s.marches) if (m.left > 5) list.push([m.left, m.phase === "back" ? "\u26F5 Truppen zur\xFCck" : "\u2694\uFE0F Trupp am Ziel", "Schau in die Kampfberichte!"]);
+        for (const m of s.botMarches || []) if (m.left > 5) list.push([m.left, m.phase === "back" ? "\u26F5 Truppen zur\xFCck" : "\u{1F3F4}\u200D\u2620\uFE0F Piratenschiff erreicht", m.phase === "back" ? "Deine Krieger sind mit Beute zur\xFCck." : "Der Kampf beginnt \u2013 schau in die Berichte!"]);
         if (s.trader && s.trader.left <= 0 && s.trader.next > 5) list.push([s.trader.next, "\u26F5 H\xE4ndlerschiff", "Ein H\xE4ndler hat am Steg angelegt \u2013 nur kurz!"]);
         list.push([20 * 3600, "\u{1F3DD}\uFE0F Deine Pfahlstadt wartet", "Deine Tagesbelohnung liegt bereit!"]);
         list.sort((a, b) => a[0] - b[0]).slice(0, 30).forEach((n, i) => N.schedule(i + 1, n[0], n[1], n[2]));
