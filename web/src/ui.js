@@ -43,7 +43,7 @@ export class UI {
     this.mapEl = $('#map');
     this.sea = new SeaMap($('#mapc'), this.c, this.o);
 
-    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild'); this.bTroops = $('#bTroops'); this.bTroops.dataset.a = 'troops'; this.tasksEl = $('#tasks'); this.bGift = $('#bGift'); this.bGift.dataset.a = 'gift'; this.tutEl = $('#tut');
+    this.bBeacon = $('#bBeacon'); this.bExp = $('#bExp'); this.bMap = $('#bMap'); this.bAlly = $('#bAlly'); this.bMenu = $('#bMenu'); this.bBuild = $('#bBuild'); this.bTroops = $('#bTroops'); this.bTroops.dataset.a = 'troops'; this.tasksEl = $('#tasks'); this.bGift = $('#bGift'); this.bGift.dataset.a = 'gift'; this.tutEl = $('#tut'); this.newsEl = $('#news');
     this.bBuild.dataset.a = 'buildings';
     this.bBeacon.dataset.a = 'beacon'; this.bExp.dataset.a = 'exp'; this.bMap.dataset.a = 'map'; this.bAlly.dataset.a = 'ally'; this.bMenu.dataset.a = 'menu';
     this.login = $('#login');
@@ -162,7 +162,7 @@ export class UI {
     else if (a === 'rank') { this.troopTab = 'rank'; if (this.mode !== 'troops') this.openMode('troops'); this.o.loadRanking(); }
     else if (a === 'account') this.openMenu('settings');
     else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu('settings'); }
-    else if (a === 'mtab') { this.menuTab = ds.t; this.codeMsg = null; if (ds.t === 'codes') this.o.loadCodes().then(() => (this.panelKey = null)); }
+    else if (a === 'mtab') { this.menuTab = ds.t; this.codeMsg = null; if (ds.t === 'codes') this.o.loadCodes().then(() => (this.panelKey = null)); if (ds.t === 'admin') this.o.adminPlayers().then(() => (this.panelKey = null)); }
     else if (a === 'redeem') {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       const code = val('codeIn'); if (!code) return;
@@ -244,6 +244,23 @@ export class UI {
       this.run(async () => { await o.rallyJoin(id, f); this.rallySel = null; this.form = zeroU(); c.msg('⚔️ Du bist beim Sammelangriff dabei!'); });
     }
     else if (a === 'rallyBack') { this.rallySel = null; }
+    else if (a === 'helpPick') { this.helpTo = { id: ds.id, name: ds.n }; }
+    else if (a === 'helpBack') { this.helpTo = null; }
+    else if (a === 'helpSend') {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      const res = [0, 1, 2, 3].map((k) => Math.max(0, Math.min(Math.floor(c.s.res[k]), Math.floor(+val('hp' + k) || 0))));
+      if (!res.some((v) => v > 0)) { c.msg('Bitte eine Menge eintragen.'); return; }
+      const to = this.helpTo;
+      this.run(async () => { await o.sendHelp(to.id, res); this.helpTo = null; c.msg(`🤝 Hilfe an ${to.name} geschickt.`); });
+    }
+    else if (a === 'newsOk') { o.newsPending = null; }
+    else if (a === 'admBroadcast') {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      const t = val('admText'); if (!t) return;
+      this.run(async () => { try { await o.adminBroadcast(t); this.codeMsg = { ok: true, text: 'Nachricht an alle gesendet.' }; const e = $('#admText'); if (e) e.value = ''; } catch (e) { this.codeMsg = { ok: false, text: e.message }; } });
+    }
+    else if (a === 'admEvent') { const k = ds.k, m = +ds.m; this.run(async () => { try { await o.adminEvent(k, m); this.codeMsg = { ok: true, text: k === 'stop' ? 'Alle Events beendet.' : 'Event gestartet!' }; } catch (e) { this.codeMsg = { ok: false, text: e.message }; } }); }
+    else if (a === 'admBan') { const id = ds.id, b = ds.b === '1'; if (this.confirm !== 'ban' + id && b) { this.confirm = 'ban' + id; return; } this.confirm = null; this.run(async () => { await o.adminBan(id, b); }); }
     else if (a === 'withdraw') {
       const sel = this.mapSel; if (!sel) return;
       if (this.sea.isOnline) this.run(async () => { await o.withdraw(sel.id); c.msg('Besatzung kehrt heim.'); });
@@ -307,7 +324,7 @@ export class UI {
     this.gd.style.left = `${Math.min(97, (c.deck / top) * 100)}%`;
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
     const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? 'Ebbe' : c.rising ? 'Flut ↑' : 'Flut ↓';
-    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
+    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${this.o.eventLeft('sturmflut') > 0 ? ` · <b style="color:#ff9a5a">Sturmflut-Event ${fmtTime(this.o.eventLeft('sturmflut'))}</b>` : ''}${this.o.eventLeft('doppelt') > 0 ? ' · <b style="color:#8ef0a0">🧺 2× Sammeln</b>' : ''}${this.o.lh && this.o.lh.bonus ? ' · 🗼+20 %' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
     let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${uSum(s.troops)}</b> · ${clock(s.dayTime)}`;
     if (this.o.active) st += this.o.incoming ? ` · <b style="color:#ff6060">⚠ Angriff!</b>` : this.o.status === 'online' ? ' <span style="color:#8ef0a0">●</span>' : ' <span style="color:#ffb070">●</span>';
     setHTML(this.st, st);
@@ -336,6 +353,9 @@ export class UI {
     const tq = c.queued ? c.queued() : 0;
     btn(this.bTroops, '⚔️', 'Truppen', this.o.active && this.o.incoming ? '<i style="color:#ff6060">Angriff!</i>' : tq ? `🎓 ${tq}` : '');
     this.renderTasks();
+    const nw = this.o.newsPending;
+    if (nw) { setHTML(this.newsEl, `<div class="nh">📢 Nachricht vom Spielleiter</div><div>${String(nw.text).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]))}</div><div class="btns"><button class="btn" data-a="newsOk"><b>OK</b></button></div>`); this.newsEl.style.display = ''; }
+    else this.newsEl.style.display = 'none';
     const ds = dailyState(c), qs = questsToday(c), qready = qs.some((q) => !q.done && q.have >= q.n);
     btn(this.bGift, '🎁', 'Belohn.', ds.can || qready ? '<i class="dot"></i>' : '');
     this.bGift.classList.toggle('on', ds.can || qready);
@@ -727,8 +747,15 @@ export class UI {
     const mine = (A.list || []).find((a) => a.id === o.me.alliance_id) || { name: 'Allianz', tag: '?', leader: null };
     const leader = mine.leader === o.me.id;
     const members = (A.members || []).map((m) => `<div class="row"><div class="ri">${m.id === mine.leader ? '👑 ' : ''}<b>${esc(m.name)}</b> <span class="sh">⚔ ${m.power}${m.online ? ' · online' : ''}</span></div>
+      ${m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="helpPick" data-id="${m.id}" data-n="${esc(m.name)}">🤝</button>` : ''}
       ${leader && m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="kick" data-id="${m.id}">Entfernen</button>` : ''}</div>`).join('');
     const chat = o.chat.slice(-30).map((m) => `<div class="msg ${m.me ? 'me' : ''} ${m.name === 'System' ? 'sys' : ''}"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join('') || '<div class="sm">Noch keine Nachrichten.</div>';
+    if (this.helpTo) {
+      const n = (k, ic) => `<input class="n" id="hp${k}" type="number" min="0" inputmode="numeric" placeholder="${ic} ${RES[k]}" style="flex:1 1 23%">`;
+      return this.head(`🤝 Hilfe für ${esc(this.helpTo.name)}`) + `<div class="desc">Schicke Rohstoffe an deinen Verbündeten – z. B. Holz für den Damm bei einer Sturmflut. (max. 20.000 pro Stunde)</div>
+        <div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map((k) => n(k, RES_IC[k])).join('')}</div>
+        <div class="btns"><button class="btn" data-a="helpSend" ${this.busy ? 'disabled' : ''}><b>Senden</b></button><button class="btn ghost" data-a="helpBack">Zurück</button></div>`;
+    }
     if (this.rallySel) {
       const r = (o.rallies || []).find((x) => x.id === this.rallySel);
       if (!r || r.status !== 'open') this.rallySel = null;
@@ -755,7 +782,7 @@ export class UI {
     if (!this.o.active) return this.head('Rangliste') + '<div class="desc">Die Rangliste gibt es im Online-Spiel.</div>';
     if (!r) return this.head('Rangliste') + '<div class="inf">Lade …</div>';
     const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-    return this.head('Rangliste') + r.map((p, i) => `<div class="row ${p.me ? 'meRow' : ''}"><div class="ri"><b>${i + 1}. ${p.tag ? '[' + esc(p.tag) + '] ' : ''}${esc(p.name)}</b><div class="sm">Macht ⚔ ${p.power} · ${p.terr} Gebiete</div></div></div>`).join('');
+    return this.head('Rangliste') + '<div class="sm">Jeden Monat Saisonwertung: Platz 1 wird „Wattkönig“, Platz 2 „Deichgraf“, Platz 3 „Strandvogt“, Platz 4–10 „Kapitän“.</div>' + r.map((p, i) => `<div class="row ${p.me ? 'meRow' : ''}"><div class="ri"><b>${i + 1}. ${p.tag ? '[' + esc(p.tag) + '] ' : ''}${esc(p.name)}</b>${p.title ? ` <span class="title">👑 ${esc(p.title)}</span>` : ''}<div class="sm">Macht ⚔ ${p.power} · ${p.terr} Gebiete · 🏅 ${p.badges || 0} Erfolge</div></div></div>`).join('');
   }
 
   accountHtml() {
@@ -771,9 +798,28 @@ export class UI {
   }
 
   menuHtml() {
-    const tab = this.menuTab === 'codes' ? 'codes' : 'settings';
-    const bar = `<div class="tabs two">${[['settings', '⚙️', 'Einstellungen'], ['codes', '🎁', 'Codes']].map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="mtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
-    return this.head('Menü') + bar + `<div class="tabbody">${tab === 'codes' ? this.codesHtml() : this.settingsHtml()}</div>`;
+    const adm = this.o.active && this.o.me && this.o.me.is_admin;
+    const tab = this.menuTab === 'codes' ? 'codes' : this.menuTab === 'admin' && adm ? 'admin' : 'settings';
+    const tl = [['settings', '⚙️', 'Einstellungen'], ['codes', '🎁', 'Codes']].concat(adm ? [['admin', '👑', 'Spielleiter']] : []);
+    const bar = `<div class="tabs" style="grid-template-columns:repeat(${tl.length},1fr)">${tl.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="mtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
+    return this.head('Menü') + bar + `<div class="tabbody">${tab === 'codes' ? this.codesHtml() : tab === 'admin' ? this.adminHtml() : this.settingsHtml()}</div>`;
+  }
+
+  adminHtml() {
+    const o = this.o, esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    let out = `<div class="sub2">📢 Nachricht an alle Spieler</div>
+      <div class="form"><input id="admText" maxlength="300" placeholder="z. B. Heute Abend Leuchtturm-Krieg!"><button class="btn sm2" data-a="admBroadcast">Senden</button></div>`;
+    if (this.codeMsg) out += `<div class="${this.codeMsg.ok ? 'inf' : 'warn'}">${this.codeMsg.text}</div>`;
+    const sf = o.eventLeft('sturmflut'), dp = o.eventLeft('doppelt');
+    out += `<div class="sub2">🎉 Events für alle</div>
+      <div class="sm">${sf > 0 ? `🌊 Sturmflut läuft noch ${fmtTime(sf)} · ` : ''}${dp > 0 ? `🧺 Sammel-Fest läuft noch ${fmtTime(dp)}` : ''}${!sf && !dp ? 'Gerade kein Event.' : ''}</div>
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="10">🌊 Sturmflut 10 Min.</button><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="30">🌊 30 Min.</button></div>
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="30">🧺 2× Sammeln 30 Min.</button><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="120">🧺 2 Std.</button></div>
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">⏹ Alle Events beenden</button></div>`;
+    out += '<div class="sub2">👥 Spieler</div>' + (o.players || []).map((p) => `<div class="row"><div class="ri"><b>${esc(p.name)}</b> <span class="sh">⚔ ${p.power}${p.admin ? ' · 👑' : ''}${p.banned ? ' · <span style="color:#ff6a6a">gesperrt</span>' : ''}</span>
+      <div class="sm">zuletzt ${new Date(p.seen).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div></div>
+      ${p.admin ? '' : p.banned ? `<button class="btn sm2 ghost" data-a="admBan" data-id="${p.id}" data-b="0">Entsperren</button>` : `<button class="btn sm2 ${this.confirm === 'ban' + p.id ? 'danger' : 'ghost'}" data-a="admBan" data-id="${p.id}" data-b="1">${this.confirm === 'ban' + p.id ? 'Sperren?' : 'Sperren'}</button>`}</div>`).join('');
+    return out;
   }
 
   codesHtml() {

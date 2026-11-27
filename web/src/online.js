@@ -28,6 +28,9 @@ const ERR = {
   CODE_FORMAT: 'Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.',
   LEER: 'Bitte eine Belohnung eintragen.',
   UNGUELTIG: 'Ungültige Eingabe.',
+  GESPERRT: 'Dieses Konto wurde vom Spielleiter gesperrt.',
+  HILFE_LIMIT: 'Höchstens 20.000 Rohstoffe Hilfe pro Stunde.',
+  ZU_WENIG: 'So viel hast du nicht.',
   NUR_WOCHENENDE: 'Um den Großen Leuchtturm wird nur am Wochenende gekämpft (Samstag 0 Uhr bis Sonntag 20 Uhr).',
 };
 
@@ -101,7 +104,7 @@ export class Online {
 
   snapshot() {
     const c = this.c, s = c.s;
-    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
   }
 
   async sync(strict) {
@@ -123,6 +126,8 @@ export class Online {
         if (w.some((v) => v > 0)) this.c.msg(`🩹 ${w.reduce((a, b) => a + b, 0)} Verwundete sind im Lazarett angekommen.`);
       }
       this.lh = r.lh || null; this.openRallies = r.rallies || 0;
+      this.events = r.events || []; this.title = r.title || null;
+      if (r.news && r.news.id > (+localStorage.getItem('pf_news') || 0)) { this.newsPending = r.news; localStorage.setItem('pf_news', String(r.news.id)); }
       const back = du.reduce((a, v) => a + Math.max(0, v), 0);
       if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? ' – mit Beute!' : '.'}`);
       this.reports = r.reports || [];
@@ -154,6 +159,23 @@ export class Online {
       if (msgs && msgs.length) { this.chat = this.chat.concat(msgs).slice(-80); this.chatAfter = msgs[msgs.length - 1].id; }
     } catch (e) { /* */ }
   }
+
+  // ---------- Events, Hilfe, Spielleiter ----------
+  eventLeft(kind) {
+    if (!this.active || !this.events) return 0;
+    const now = this.serverNow();
+    for (const e of this.events) if (e.kind === kind) { const l = (Date.parse(e.until) - now) / 1000; if (l > 0) return l; }
+    return 0;
+  }
+  async sendHelp(to, res) {
+    await this.call('send_help', { p_token: this.token, p_to: to, p_res: res });
+    res.forEach((v, i) => (this.c.s.res[i] = Math.max(0, this.c.s.res[i] - v)));
+    await this.sync();
+  }
+  async adminBroadcast(text) { await this.call('admin_broadcast', { p_token: this.token, p_text: text }); await this.sync(); }
+  async adminEvent(kind, min) { await this.call('admin_event', { p_token: this.token, p_kind: kind, p_minutes: min }); await this.sync(); }
+  async adminPlayers() { try { this.players = await this.call('admin_players', { p_token: this.token }); } catch (e) { /* */ } }
+  async adminBan(id, ban) { await this.call('admin_ban', { p_token: this.token, p_player: id, p_ban: ban }); await this.adminPlayers(); }
 
   // ---------- Späher & Sammelangriffe ----------
   async scout(kind, target) {

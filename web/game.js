@@ -1311,7 +1311,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return this.deck - this.inWater;
     }
     get storm() {
-      return this.s.stormLeft > 0;
+      return this.s.stormLeft > 0 || !!this.eventStorm;
     }
     get stormWarning() {
       return !this.storm && this.s.stormTimer < 30;
@@ -1362,6 +1362,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.gathering(dt, false);
       traderTick(this, dt);
       this.healTick(dt);
+      if (this.eventStorm && this.freeboard < 0) {
+        for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60;
+        this.floodWarnT = (this.floodWarnT || 0) - dt;
+        if (this.floodWarnT <= 0) {
+          this.floodWarnT = 30;
+          this.msg("\u{1F30A} Die Sturmflut sp\xFClt Vorr\xE4te weg! Damm oder Gezeitenturm ausbauen!");
+        }
+      }
       queueTick(this);
       this.achT = (this.achT || 0) - dt;
       if (this.achT <= 0) {
@@ -1379,6 +1387,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const ramp = Math.max(0, Math.min(1, Math.min((STORM_LEN - s.stormLeft) / 12, s.stormLeft / 12)));
         surge = ramp * (2.6 + 0.3 * Math.sin(this.time * 1.7));
       }
+      const ev = this.online ? this.online.eventLeft("sturmflut") : 0;
+      if (ev > 0) surge = Math.max(surge, Math.min(1, ev / 15) * (3.2 + 0.4 * Math.sin(this.time * 1.3)));
+      this.eventStorm = ev > 0;
       this.water = 1.4 + 1.6 * this.tideSin + surge;
     }
     /// Gezeitenphase jetzt + sec Sekunden. Online für alle Spieler gleich (Serverzeit), offline aus dem eigenen Tag
@@ -1878,7 +1889,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return Math.max(0, this.healthy - this.gatherers);
     }
     get carry() {
-      return 18 + 3 * this.towerLevel;
+      return (18 + 3 * this.towerLevel) * (this.online && this.online.eventLeft("doppelt") > 0 ? 2 : 1);
     }
     nodeById(id) {
       return this.s.nodes.find((n) => n.id === id);
@@ -3822,6 +3833,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.bGift = $("#bGift");
       this.bGift.dataset.a = "gift";
       this.tutEl = $("#tut");
+      this.newsEl = $("#news");
       this.bBuild.dataset.a = "buildings";
       this.bBeacon.dataset.a = "beacon";
       this.bExp.dataset.a = "exp";
@@ -4002,6 +4014,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         this.menuTab = ds.t;
         this.codeMsg = null;
         if (ds.t === "codes") this.o.loadCodes().then(() => this.panelKey = null);
+        if (ds.t === "admin") this.o.adminPlayers().then(() => this.panelKey = null);
       } else if (a === "redeem") {
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const code = val("codeIn");
@@ -4223,6 +4236,59 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         });
       } else if (a === "rallyBack") {
         this.rallySel = null;
+      } else if (a === "helpPick") {
+        this.helpTo = { id: ds.id, name: ds.n };
+      } else if (a === "helpBack") {
+        this.helpTo = null;
+      } else if (a === "helpSend") {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const res = [0, 1, 2, 3].map((k) => Math.max(0, Math.min(Math.floor(c.s.res[k]), Math.floor(+val("hp" + k) || 0))));
+        if (!res.some((v2) => v2 > 0)) {
+          c.msg("Bitte eine Menge eintragen.");
+          return;
+        }
+        const to = this.helpTo;
+        this.run(async () => {
+          await o.sendHelp(to.id, res);
+          this.helpTo = null;
+          c.msg(`\u{1F91D} Hilfe an ${to.name} geschickt.`);
+        });
+      } else if (a === "newsOk") {
+        o.newsPending = null;
+      } else if (a === "admBroadcast") {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const t = val("admText");
+        if (!t) return;
+        this.run(async () => {
+          try {
+            await o.adminBroadcast(t);
+            this.codeMsg = { ok: true, text: "Nachricht an alle gesendet." };
+            const e = $("#admText");
+            if (e) e.value = "";
+          } catch (e) {
+            this.codeMsg = { ok: false, text: e.message };
+          }
+        });
+      } else if (a === "admEvent") {
+        const k = ds.k, m = +ds.m;
+        this.run(async () => {
+          try {
+            await o.adminEvent(k, m);
+            this.codeMsg = { ok: true, text: k === "stop" ? "Alle Events beendet." : "Event gestartet!" };
+          } catch (e) {
+            this.codeMsg = { ok: false, text: e.message };
+          }
+        });
+      } else if (a === "admBan") {
+        const id = ds.id, b = ds.b === "1";
+        if (this.confirm !== "ban" + id && b) {
+          this.confirm = "ban" + id;
+          return;
+        }
+        this.confirm = null;
+        this.run(async () => {
+          await o.adminBan(id, b);
+        });
       } else if (a === "withdraw") {
         const sel = this.mapSel;
         if (!sel) return;
@@ -4340,7 +4406,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.gd.style.left = `${Math.min(97, c.deck / top * 100)}%`;
       const fb = c.freeboard, fbCol = fb >= 0.5 ? "#8ef0a0" : fb >= 0 ? "#ffd27a" : "#ff6a6a";
       const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? "Ebbe" : c.rising ? "Flut \u2191" : "Flut \u2193";
-      setHTML(this.tl, `${tide} \xB7 <b style="color:${fbCol}">${fb >= 0 ? "+" : ""}${fb.toFixed(1)} m</b>${c.damHolds ? ' \xB7 <span style="color:#8ef0a0">\u{1F30A} Damm h\xE4lt</span>' : ""}${c.stormWarning ? ' \xB7 <span style="color:#ffc060">Sturm naht</span>' : ""}${c.raidIn !== null && c.raidIn < 30 ? ' \xB7 <b style="color:#ff6060">Piraten!</b>' : ""}`);
+      setHTML(this.tl, `${tide} \xB7 <b style="color:${fbCol}">${fb >= 0 ? "+" : ""}${fb.toFixed(1)} m</b>${c.damHolds ? ' \xB7 <span style="color:#8ef0a0">\u{1F30A} Damm h\xE4lt</span>' : ""}${this.o.eventLeft("sturmflut") > 0 ? ` \xB7 <b style="color:#ff9a5a">Sturmflut-Event ${fmtTime(this.o.eventLeft("sturmflut"))}</b>` : ""}${this.o.eventLeft("doppelt") > 0 ? ' \xB7 <b style="color:#8ef0a0">\u{1F9FA} 2\xD7 Sammeln</b>' : ""}${this.o.lh && this.o.lh.bonus ? " \xB7 \u{1F5FC}+20 %" : ""}${c.stormWarning ? ' \xB7 <span style="color:#ffc060">Sturm naht</span>' : ""}${c.raidIn !== null && c.raidIn < 30 ? ' \xB7 <b style="color:#ff6060">Piraten!</b>' : ""}`);
       let st = `\u{1F465} <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` \u{1F912}${s.sick}` : ""} \xB7 \u2694 <b>${uSum(s.troops)}</b> \xB7 ${clock(s.dayTime)}`;
       if (this.o.active) st += this.o.incoming ? ` \xB7 <b style="color:#ff6060">\u26A0 Angriff!</b>` : this.o.status === "online" ? ' <span style="color:#8ef0a0">\u25CF</span>' : ' <span style="color:#ffb070">\u25CF</span>';
       setHTML(this.st, st);
@@ -4367,6 +4433,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const tq = c.queued ? c.queued() : 0;
       btn(this.bTroops, "\u2694\uFE0F", "Truppen", this.o.active && this.o.incoming ? '<i style="color:#ff6060">Angriff!</i>' : tq ? `\u{1F393} ${tq}` : "");
       this.renderTasks();
+      const nw = this.o.newsPending;
+      if (nw) {
+        setHTML(this.newsEl, `<div class="nh">\u{1F4E2} Nachricht vom Spielleiter</div><div>${String(nw.text).replace(/[&<>"]/g, (ch2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch2])}</div><div class="btns"><button class="btn" data-a="newsOk"><b>OK</b></button></div>`);
+        this.newsEl.style.display = "";
+      } else this.newsEl.style.display = "none";
       const ds = dailyState(c), qs = questsToday(c), qready = qs.some((q) => !q.done && q.have >= q.n);
       btn(this.bGift, "\u{1F381}", "Belohn.", ds.can || qready ? '<i class="dot"></i>' : "");
       this.bGift.classList.toggle("on", ds.can || qready);
@@ -4785,8 +4856,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const mine = (A.list || []).find((a) => a.id === o.me.alliance_id) || { name: "Allianz", tag: "?", leader: null };
       const leader = mine.leader === o.me.id;
       const members = (A.members || []).map((m) => `<div class="row"><div class="ri">${m.id === mine.leader ? "\u{1F451} " : ""}<b>${esc(m.name)}</b> <span class="sh">\u2694 ${m.power}${m.online ? " \xB7 online" : ""}</span></div>
+      ${m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="helpPick" data-id="${m.id}" data-n="${esc(m.name)}">\u{1F91D}</button>` : ""}
       ${leader && m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="kick" data-id="${m.id}">Entfernen</button>` : ""}</div>`).join("");
       const chat = o.chat.slice(-30).map((m) => `<div class="msg ${m.me ? "me" : ""} ${m.name === "System" ? "sys" : ""}"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join("") || '<div class="sm">Noch keine Nachrichten.</div>';
+      if (this.helpTo) {
+        const n = (k, ic) => `<input class="n" id="hp${k}" type="number" min="0" inputmode="numeric" placeholder="${ic} ${RES[k]}" style="flex:1 1 23%">`;
+        return this.head(`\u{1F91D} Hilfe f\xFCr ${esc(this.helpTo.name)}`) + `<div class="desc">Schicke Rohstoffe an deinen Verb\xFCndeten \u2013 z. B. Holz f\xFCr den Damm bei einer Sturmflut. (max. 20.000 pro Stunde)</div>
+        <div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map((k) => n(k, RES_IC[k])).join("")}</div>
+        <div class="btns"><button class="btn" data-a="helpSend" ${this.busy ? "disabled" : ""}><b>Senden</b></button><button class="btn ghost" data-a="helpBack">Zur\xFCck</button></div>`;
+      }
       if (this.rallySel) {
         const r = (o.rallies || []).find((x) => x.id === this.rallySel);
         if (!r || r.status !== "open") this.rallySel = null;
@@ -4809,7 +4887,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (!this.o.active) return this.head("Rangliste") + '<div class="desc">Die Rangliste gibt es im Online-Spiel.</div>';
       if (!r) return this.head("Rangliste") + '<div class="inf">Lade \u2026</div>';
       const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
-      return this.head("Rangliste") + r.map((p, i) => `<div class="row ${p.me ? "meRow" : ""}"><div class="ri"><b>${i + 1}. ${p.tag ? "[" + esc(p.tag) + "] " : ""}${esc(p.name)}</b><div class="sm">Macht \u2694 ${p.power} \xB7 ${p.terr} Gebiete</div></div></div>`).join("");
+      return this.head("Rangliste") + '<div class="sm">Jeden Monat Saisonwertung: Platz 1 wird \u201EWattk\xF6nig\u201C, Platz 2 \u201EDeichgraf\u201C, Platz 3 \u201EStrandvogt\u201C, Platz 4\u201310 \u201EKapit\xE4n\u201C.</div>' + r.map((p, i) => `<div class="row ${p.me ? "meRow" : ""}"><div class="ri"><b>${i + 1}. ${p.tag ? "[" + esc(p.tag) + "] " : ""}${esc(p.name)}</b>${p.title ? ` <span class="title">\u{1F451} ${esc(p.title)}</span>` : ""}<div class="sm">Macht \u2694 ${p.power} \xB7 ${p.terr} Gebiete \xB7 \u{1F3C5} ${p.badges || 0} Erfolge</div></div></div>`).join("");
     }
     accountHtml() {
       const o = this.o;
@@ -4822,9 +4900,27 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
        <button class="btn ${this.confirm === "logout" ? "danger" : "ghost"}" data-a="logout">${this.confirm === "logout" ? "<b>Wirklich abmelden? Ohne Umzugscode ist das Konto weg</b>" : "Abmelden"}</button></div>`;
     }
     menuHtml() {
-      const tab = this.menuTab === "codes" ? "codes" : "settings";
-      const bar = `<div class="tabs two">${[["settings", "\u2699\uFE0F", "Einstellungen"], ["codes", "\u{1F381}", "Codes"]].map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="mtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
-      return this.head("Men\xFC") + bar + `<div class="tabbody">${tab === "codes" ? this.codesHtml() : this.settingsHtml()}</div>`;
+      const adm = this.o.active && this.o.me && this.o.me.is_admin;
+      const tab = this.menuTab === "codes" ? "codes" : this.menuTab === "admin" && adm ? "admin" : "settings";
+      const tl = [["settings", "\u2699\uFE0F", "Einstellungen"], ["codes", "\u{1F381}", "Codes"]].concat(adm ? [["admin", "\u{1F451}", "Spielleiter"]] : []);
+      const bar = `<div class="tabs" style="grid-template-columns:repeat(${tl.length},1fr)">${tl.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="mtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
+      return this.head("Men\xFC") + bar + `<div class="tabbody">${tab === "codes" ? this.codesHtml() : tab === "admin" ? this.adminHtml() : this.settingsHtml()}</div>`;
+    }
+    adminHtml() {
+      const o = this.o, esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+      let out = `<div class="sub2">\u{1F4E2} Nachricht an alle Spieler</div>
+      <div class="form"><input id="admText" maxlength="300" placeholder="z. B. Heute Abend Leuchtturm-Krieg!"><button class="btn sm2" data-a="admBroadcast">Senden</button></div>`;
+      if (this.codeMsg) out += `<div class="${this.codeMsg.ok ? "inf" : "warn"}">${this.codeMsg.text}</div>`;
+      const sf = o.eventLeft("sturmflut"), dp = o.eventLeft("doppelt");
+      out += `<div class="sub2">\u{1F389} Events f\xFCr alle</div>
+      <div class="sm">${sf > 0 ? `\u{1F30A} Sturmflut l\xE4uft noch ${fmtTime(sf)} \xB7 ` : ""}${dp > 0 ? `\u{1F9FA} Sammel-Fest l\xE4uft noch ${fmtTime(dp)}` : ""}${!sf && !dp ? "Gerade kein Event." : ""}</div>
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="10">\u{1F30A} Sturmflut 10 Min.</button><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="30">\u{1F30A} 30 Min.</button></div>
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="30">\u{1F9FA} 2\xD7 Sammeln 30 Min.</button><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="120">\u{1F9FA} 2 Std.</button></div>
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">\u23F9 Alle Events beenden</button></div>`;
+      out += '<div class="sub2">\u{1F465} Spieler</div>' + (o.players || []).map((p) => `<div class="row"><div class="ri"><b>${esc(p.name)}</b> <span class="sh">\u2694 ${p.power}${p.admin ? " \xB7 \u{1F451}" : ""}${p.banned ? ' \xB7 <span style="color:#ff6a6a">gesperrt</span>' : ""}</span>
+      <div class="sm">zuletzt ${new Date(p.seen).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div></div>
+      ${p.admin ? "" : p.banned ? `<button class="btn sm2 ghost" data-a="admBan" data-id="${p.id}" data-b="0">Entsperren</button>` : `<button class="btn sm2 ${this.confirm === "ban" + p.id ? "danger" : "ghost"}" data-a="admBan" data-id="${p.id}" data-b="1">${this.confirm === "ban" + p.id ? "Sperren?" : "Sperren"}</button>`}</div>`).join("");
+      return out;
     }
     codesHtml() {
       const o = this.o;
@@ -5040,6 +5136,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     CODE_FORMAT: "Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.",
     LEER: "Bitte eine Belohnung eintragen.",
     UNGUELTIG: "Ung\xFCltige Eingabe.",
+    GESPERRT: "Dieses Konto wurde vom Spielleiter gesperrt.",
+    HILFE_LIMIT: "H\xF6chstens 20.000 Rohstoffe Hilfe pro Stunde.",
+    ZU_WENIG: "So viel hast du nicht.",
     NUR_WOCHENENDE: "Um den Gro\xDFen Leuchtturm wird nur am Wochenende gek\xE4mpft (Samstag 0 Uhr bis Sonntag 20 Uhr)."
   };
   var Online = class {
@@ -5140,7 +5239,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     snapshot() {
       const c = this.c, s = c.s;
-      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
     }
     async sync(strict) {
       if (!this.token) return;
@@ -5167,6 +5266,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
         this.lh = r.lh || null;
         this.openRallies = r.rallies || 0;
+        this.events = r.events || [];
+        this.title = r.title || null;
+        if (r.news && r.news.id > (+localStorage.getItem("pf_news") || 0)) {
+          this.newsPending = r.news;
+          localStorage.setItem("pf_news", String(r.news.id));
+        }
         const back = du.reduce((a, v) => a + Math.max(0, v), 0);
         if (back > 0) this.c.msg(`${back} Krieger sind eingetroffen${d.res.some((v) => v > 0) ? " \u2013 mit Beute!" : "."}`);
         this.reports = r.reports || [];
@@ -5213,6 +5318,39 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
       } catch (e) {
       }
+    }
+    // ---------- Events, Hilfe, Spielleiter ----------
+    eventLeft(kind) {
+      if (!this.active || !this.events) return 0;
+      const now = this.serverNow();
+      for (const e of this.events) if (e.kind === kind) {
+        const l = (Date.parse(e.until) - now) / 1e3;
+        if (l > 0) return l;
+      }
+      return 0;
+    }
+    async sendHelp(to, res) {
+      await this.call("send_help", { p_token: this.token, p_to: to, p_res: res });
+      res.forEach((v, i) => this.c.s.res[i] = Math.max(0, this.c.s.res[i] - v));
+      await this.sync();
+    }
+    async adminBroadcast(text) {
+      await this.call("admin_broadcast", { p_token: this.token, p_text: text });
+      await this.sync();
+    }
+    async adminEvent(kind, min) {
+      await this.call("admin_event", { p_token: this.token, p_kind: kind, p_minutes: min });
+      await this.sync();
+    }
+    async adminPlayers() {
+      try {
+        this.players = await this.call("admin_players", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async adminBan(id, ban) {
+      await this.call("admin_ban", { p_token: this.token, p_player: id, p_ban: ban });
+      await this.adminPlayers();
     }
     // ---------- Späher & Sammelangriffe ----------
     async scout(kind, target) {

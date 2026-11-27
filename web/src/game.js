@@ -163,7 +163,7 @@ export class Colony {
   get damHolds() { return this.water > this.deck && this.water <= this.damTop; }
   get inWater() { return this.damHolds ? this.deck - 0.35 : this.water; }
   get freeboard() { return this.deck - this.inWater; }
-  get storm() { return this.s.stormLeft > 0; }
+  get storm() { return this.s.stormLeft > 0 || !!this.eventStorm; }
   get stormWarning() { return !this.storm && this.s.stormTimer < 30; }
   get healthy() { return Math.max(0, this.s.survivors - this.s.sick); }
   get beaconBurning() { return this.s.beaconOn && this.s.res[HOLZ] > 0.01; }
@@ -198,6 +198,7 @@ export class Colony {
     this.gathering(dt, false);
     traderTick(this, dt);
     this.healTick(dt);
+    if (this.eventStorm && this.freeboard < 0) { for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60; this.floodWarnT = (this.floodWarnT || 0) - dt; if (this.floodWarnT <= 0) { this.floodWarnT = 30; this.msg('🌊 Die Sturmflut spült Vorräte weg! Damm oder Gezeitenturm ausbauen!'); } }
     queueTick(this);
     this.achT = (this.achT || 0) - dt;
     if (this.achT <= 0) { this.achT = 2; checkAch(this); }
@@ -213,6 +214,9 @@ export class Colony {
       const ramp = Math.max(0, Math.min(1, Math.min((STORM_LEN - s.stormLeft) / 12, s.stormLeft / 12)));
       surge = ramp * (2.6 + 0.3 * Math.sin(this.time * 1.7));
     }
+    const ev = this.online ? this.online.eventLeft('sturmflut') : 0;
+    if (ev > 0) surge = Math.max(surge, Math.min(1, ev / 15) * (3.2 + 0.4 * Math.sin(this.time * 1.3)));
+    this.eventStorm = ev > 0;
     this.water = 1.4 + 1.6 * this.tideSin + surge;
   }
 
@@ -644,7 +648,7 @@ export class Colony {
   // ---------- Sammeln mit Bewohnern ----------
   get gatherers() { return this.s.gath ? this.s.gath.length : 0; }
   get freeVillagers() { return Math.max(0, this.healthy - this.gatherers); }
-  get carry() { return 18 + 3 * this.towerLevel; }
+  get carry() { return (18 + 3 * this.towerLevel) * (this.online && this.online.eventLeft('doppelt') > 0 ? 2 : 1); }
   nodeById(id) { return this.s.nodes.find((n) => n.id === id); }
   nodeFlooded(n) { return this.water > n.h + 0.25; }
   assigned(id) { return this.s.gath.filter((g) => g.node === id).length; }
