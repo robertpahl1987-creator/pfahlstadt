@@ -168,7 +168,22 @@ namespace Pfahlstadt
             for (int i = 0; i < Colony.PlotCount; i++)
             {
                 var p = c.S.plots[i];
-                if (p.type < 0) continue;
+                if (p.type < 0)
+                {
+                    // freie, schon freigeschaltete Plätze klein anzeigen
+                    if (i == 0 || !WorldView.PlotVisible(c, i)) continue;
+                    string blk = c.BuildBlocker(i, (BType)Defs.Layout[i]);
+                    if (blk != null && (blk.StartsWith("Äußerer") || blk.StartsWith("Gelände") || blk.StartsWith("Erst die"))) continue;
+                    var fp = cam.WorldToScreenPoint(WorldView.LabelPos(i) - Vector3.up * 4f);
+                    if (fp.z < 0) continue;
+                    string ft = "+ " + Defs.Get(Defs.Layout[i]).Name;
+                    var fs = stWorld.CalcSize(new GUIContent(ft));
+                    var fr = new Rect(fp.x / sc - fs.x / 2f - 10, (Screen.height - fp.y) / sc - 16, fs.x + 20, 32);
+                    var old = GUI.color; GUI.color = new Color(1, 1, 1, 0.6f);
+                    GUI.DrawTexture(fr, txLabel); GUI.Label(fr, ft, stWorld);
+                    GUI.color = old;
+                    continue;
+                }
                 var sp = cam.WorldToScreenPoint(WorldView.LabelPos(i));
                 if (sp.z < 0) continue;
                 float gx = sp.x / sc, gy = (Screen.height - sp.y) / sc;
@@ -266,14 +281,15 @@ namespace Pfahlstadt
 
             if (p.type < 0)
             {
-                int n = Defs.All.Length - 1;
-                float h = 80f + n * 86f;
+                // Jeder Bauplatz hat sein festes Gebäude (wie in der Web-Fassung)
+                float h = 80f + 86f + 60f;
                 var r = Panel(new Rect(x, bottomY - h, w, h));
                 if (Header(r, "Freier Bauplatz")) { Select(-1); return; }
-                for (int t = 1; t < Defs.All.Length; t++)
                 {
+                    int t = Defs.Layout[Selected];
                     var d = Defs.All[t];
-                    var row = new Rect(r.x + 12, r.y + 72 + (t - 1) * 86f, w - 24, 80);
+                    GUI.Label(new Rect(r.x + 18, r.y + 160, w - 36, 54), d.Desc, stTiny);
+                    var row = new Rect(r.x + 12, r.y + 72, w - 24, 80);
                     GUI.DrawTexture(row, txCard);
                     GUI.Label(new Rect(row.x + 12, row.y + 4, row.width - 170, 28), $"<b>{d.Name}</b>  <size=16><color=#9FD8E0>{d.Short}</color></size>", st);
                     GUI.Label(new Rect(row.x + 12, row.y + 32, row.width - 170, 24), CostStr(d.CostFor(1)) + $"   ·  {Defs.Time(d.BuildTime(1))}", stTiny);
@@ -336,8 +352,20 @@ namespace Pfahlstadt
                     yield return $"Leuchtfeuer verbraucht {Colony.BeaconWoodPerSec(L) * 60f:0} Holz/min";
                     yield return $"Andere Gebäude bis Stufe {L}";
                     break;
-                case BType.Pfahlhaus:
+                case BType.Unterkunft:
                     yield return $"Platz für <b>{6 * L}</b> Siedler";
+                    break;
+                case BType.Kueche:
+                    yield return $"Alle Produktion +{Mathf.Min(60, 6 * L)} %";
+                    break;
+                case BType.Lager:
+                    yield return $"Lagerplatz je Rohstoff: <b>{c.Storage}</b>";
+                    break;
+                case BType.Damm:
+                    yield return $"Dammkrone: <b>{3.0f + 0.25f * L:0.00} m</b>" + (c.DamHolds ? "  ·  hält gerade die Flut ab" : "");
+                    break;
+                case BType.Wahrzeichen:
+                    yield return $"Alle Produktion +{2 * L} %";
                     break;
                 case BType.Heilerhuette:
                     yield return $"Heilung etwa {1 + 5 * L}× so schnell";

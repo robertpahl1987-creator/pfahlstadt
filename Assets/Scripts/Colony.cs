@@ -10,7 +10,7 @@ namespace Pfahlstadt
     {
         public static Colony I { get; private set; }
 
-        public const int PlotCount = 13;            // 0 = Gezeitenturm, 1..12 Bauplätze
+        public const int PlotCount = Defs.Plots;     // 0 Turm, 1–42 Gebäude, 43 Mauer, 44–51 Abwehrtürme, 52 Damm
         public const int MaxParallelBuilds = 2;
         public const float DayLength = 240f;        // Sekunden pro Spieltag (2 Fluten pro Tag)
         public const float StormDuration = 90f;
@@ -25,7 +25,18 @@ namespace Pfahlstadt
         public float TideSin { get; private set; }  // -1 Niedrigwasser, +1 Hochwasser
         public bool TideRising { get; private set; }
         public float DeckHeight => DeckFor(TowerLevel);
-        public float Freeboard => DeckHeight - WaterLevel;   // < 0 = Plattformen überspült
+        public float DamTop { get { int L = Levels(BType.Damm); return L > 0 ? 3.0f + 0.25f * L : -99f; } }
+        /// Hält der Damm, bleibt die Stadt trocken, auch wenn draußen das Wasser höher steht
+        public bool DamHolds => WaterLevel > DeckHeight && WaterLevel <= DamTop;
+        public float InWater => DamHolds ? DeckHeight - 0.35f : WaterLevel;
+        public float Freeboard => DeckHeight - InWater;   // < 0 = Plattformen überspült
+        public int Levels(BType t) { int n = 0; foreach (var p in S.plots) if (p.type == (int)t) n += p.level; return n; }
+        public int Storage => 1500 + 2500 * Levels(BType.Lager);
+        /// Gebäude auf dem Gelände (ohne Turm, Mauer, Abwehrtürme)
+        public int BuiltCount { get { int n = 0; for (int i = 1; i < Defs.Wall; i++) if (S.plots[i].type >= 0 && S.plots[i].level > 0) n++; return n; } }
+        public float AreaRadius => Mathf.Min(66f, 40f + 1.4f * BuiltCount);
+        public static int Ring3Needed(int i) => 8 + (i - Defs.Ring3);
+        public bool[] Ration = new bool[2];
         public bool Storm => S.stormLeft > 0f;
         public bool StormWarning => !Storm && S.stormTimer < 30f;
         public float Efficiency { get; private set; } = 1f;
@@ -43,7 +54,7 @@ namespace Pfahlstadt
         float autosave;
         bool wasBurning = true;
 
-        public static float DeckFor(int towerLevel) => 2.2f + 0.55f * Mathf.Max(1, towerLevel);
+        public static float DeckFor(int lvl) => 2.65f + 0.55f * Mathf.Clamp(lvl, 1, 10) + 0.2f * Mathf.Max(0, lvl - 10);
         public static float BeaconWoodPerSec(int level) => 0.04f + 0.04f * level;
 
         void Awake()
@@ -130,7 +141,7 @@ namespace Pfahlstadt
                 if (p.type < 0 || p.level <= 0) continue;
                 var d = Defs.Get(p.type);
                 workers += d.WorkersPerLevel * p.level;
-                if (d.Type == BType.Pfahlhaus) cap += 6 * p.level;
+                if (d.Type == BType.Unterkunft) cap += 6 * p.level;
                 if (d.Type == BType.Raeucherei) smokehouse += p.level;
             }
             WorkersNeeded = workers;
@@ -139,30 +150,57 @@ namespace Pfahlstadt
 
             float flood = offline ? 0.5f : (Freeboard < 0f ? Mathf.Clamp(1f + Freeboard / 2f, 0.25f, 1f) : 1f);
             float tide = offline ? 0f : TideSin;
-            foreach (var p in S.plots)
+
+            // Arbeiter zuerst für Essen und Wasser, dann Holz, dann der Rest
+            var prod = new List<PlotData>();
+            foreach (var p in S.plots) if (p.type >= 0 && p.level > 0 && Defs.Get(p.type).Produces >= 0) prod.Add(p);
+            prod.Sort((a, b) => Prio(a.type).CompareTo(Prio(b.type)));
+            float avail = Healthy;
+            foreach (var p in prod)
             {
-                if (p.type < 0 || p.level <= 0) continue;
                 var d = Defs.Get(p.type);
-                if (d.Produces < 0) continue;
+                float need = d.WorkersPerLevel * p.level;
+                float eff = need > 0 ? Mathf.Min(1f, avail / need) : 1f;
+                avail -= Mathf.Min(avail, need);
                 float f = 1f;
                 if (d.Type == BType.Muschelzucht) f = 1f - 0.5f * tide;          // Ebbe gut
                 if (d.Type == BType.Wracktaucher) f = 1f + 0.5f * tide;          // Flut gut
                 if (d.Type == BType.Regenfaenger && Storm && !offline) f = 2.5f;  // Sturm = viel Regen
-                rate[d.Produces] += d.RateAt(p.level) * Efficiency * flood * f;
+                rate[d.Produces] += d.RateAt(p.level) * eff * flood * f;
             }
+            float kitchen = 1f + Mathf.Min(0.6f, 0.06f * Levels(BType.Kueche));
+            float landmark = 1f + 0.02f * Levels(BType.Wahrzeichen);
+            for (int i = 0; i < 4; i++) if (rate[i] > 0f) rate[i] *= kitchen * landmark;
 
+            // Notvorrat des Gezeitenturms: niemand verhungert ganz
+            rate[(int)Res.Muscheln] += 0.25f;
+            rate[(int)Res.Wasser] += 0.25f;
+            // Notration: ist ein Vorrat leer, essen bzw. trinken alle nur noch 60 %
+            Ration[0] = S.res[(int)Res.Muscheln] <= 1f;
+            Ration[1] = S.res[(int)Res.Wasser] <= 1f;
             float foodPer = 0.035f * (1f - Mathf.Min(0.5f, 0.08f * smokehouse));
-            rate[(int)Res.Muscheln] -= S.survivors * foodPer;
-            rate[(int)Res.Wasser] -= S.survivors * 0.03f;
+            rate[(int)Res.Muscheln] -= S.survivors * foodPer * (Ration[0] ? 0.6f : 1f);
+            rate[(int)Res.Wasser] -= S.survivors * 0.03f * (Ration[1] ? 0.6f : 1f);
             if (S.beaconOn) rate[(int)Res.Holz] -= BeaconWoodPerSec(TowerLevel);
 
             for (int i = 0; i < 4; i++) RatePerMin[i] = rate[i] * 60f;
             return rate;
         }
 
+        static int Prio(int t)
+        {
+            int pr = Defs.Get(t).Produces;
+            return pr == (int)Res.Muscheln || pr == (int)Res.Wasser ? 0 : pr == (int)Res.Holz ? 1 : 2;
+        }
+
         void ApplyRates(float[] rate, float dt)
         {
-            for (int i = 0; i < 4; i++) S.res[i] = Mathf.Max(0f, S.res[i] + rate[i] * dt);
+            float cap = Storage;
+            for (int i = 0; i < 4; i++)
+            {
+                float v = S.res[i] + rate[i] * dt;
+                S.res[i] = Mathf.Max(0f, rate[i] > 0f ? Mathf.Min(v, Mathf.Max(cap, S.res[i])) : v);
+            }
         }
 
         void AdvanceConstruction(float dt)
@@ -263,6 +301,10 @@ namespace Pfahlstadt
         {
             if (plot == 0 || t == BType.Gezeitenturm) return "Nicht möglich";
             if (S.plots[plot].type >= 0) return "Platz belegt";
+            if (Defs.Layout[plot] != (int)t) return "Dieser Platz ist für: " + Defs.Get(Defs.Layout[plot]).Name;
+            if (plot >= Defs.Towers && plot < Defs.Dam && Levels(BType.Festungsmauer) <= 0) return "Erst die Festungsmauer bauen";
+            if (plot >= Defs.Inner && plot < Defs.Ring3 && TowerLevel < Defs.OuterLevel) return $"Äußerer Ring ab Gezeitenturm Stufe {Defs.OuterLevel}";
+            if (plot >= Defs.Ring3 && plot < Defs.Wall && BuiltCount < Ring3Needed(plot)) return $"Gelände zu klein: noch {Ring3Needed(plot) - BuiltCount} Gebäude bauen";
             if (ActiveBuilds >= MaxParallelBuilds) return "Alle Bautrupps beschäftigt";
             if (!CanAfford(Defs.Get(t).CostFor(1))) return "Zu wenig Rohstoffe";
             return null;
@@ -368,7 +410,7 @@ namespace Pfahlstadt
                 try { S = JsonUtility.FromJson<SaveData>(json); }
                 catch (Exception) { S = null; }
             }
-            if (S == null || S.plots == null || S.plots.Length != PlotCount || S.res == null || S.res.Length != 4)
+            if (S == null || S.plots == null || S.plots.Length != PlotCount || S.version < 2 || S.res == null || S.res.Length != 4)
                 NewGame();
             else
             {
@@ -399,10 +441,10 @@ namespace Pfahlstadt
             };
             for (int i = 0; i < PlotCount; i++) S.plots[i] = new PlotData();
             S.plots[0] = new PlotData { type = (int)BType.Gezeitenturm, level = 1 };
-            S.plots[1] = new PlotData { type = (int)BType.Treibholzsammler, level = 1 };
-            S.plots[4] = new PlotData { type = (int)BType.Muschelzucht, level = 1 };
-            S.plots[7] = new PlotData { type = (int)BType.Regenfaenger, level = 1 };
-            S.plots[10] = new PlotData { type = (int)BType.Pfahlhaus, level = 1 };
+            S.plots[2] = new PlotData { type = (int)BType.Treibholzsammler, level = 1 };
+            S.plots[3] = new PlotData { type = (int)BType.Muschelzucht, level = 1 };
+            S.plots[4] = new PlotData { type = (int)BType.Regenfaenger, level = 1 };
+            S.plots[5] = new PlotData { type = (int)BType.Unterkunft, level = 1 };
             Log.Clear();
             Msg("Willkommen in der Pfahlstadt! Bau den Gezeitenturm aus, bevor die große Flut kommt.");
             Save();

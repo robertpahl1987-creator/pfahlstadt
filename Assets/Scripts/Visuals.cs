@@ -137,6 +137,44 @@ namespace Pfahlstadt
 
         // ---------- Gebäude ----------
 
+        /// Vorläufige Form für die neuen Gebäude (bekommen später eigene Modelle)
+        static void Generic(Transform r, BType t)
+        {
+            Color wall = new Color(0.55f, 0.48f, 0.38f), roof = Reed;
+            switch (t)
+            {
+                case BType.Kueche: wall = new Color(0.7f, 0.62f, 0.5f); roof = new Color(0.55f, 0.25f, 0.2f); break;
+                case BType.Kaserne: case BType.Wachstube: wall = new Color(0.5f, 0.5f, 0.52f); roof = new Color(0.3f, 0.32f, 0.38f); break;
+                case BType.Lager: wall = new Color(0.5f, 0.38f, 0.26f); roof = new Color(0.35f, 0.3f, 0.25f); break;
+                case BType.Lazarett: wall = new Color(0.85f, 0.85f, 0.8f); roof = new Color(0.6f, 0.2f, 0.2f); break;
+                case BType.Akademie: wall = new Color(0.75f, 0.72f, 0.62f); roof = new Color(0.2f, 0.32f, 0.5f); break;
+                case BType.Werft: wall = new Color(0.45f, 0.34f, 0.24f); roof = new Color(0.3f, 0.26f, 0.2f); break;
+            }
+            switch (t)
+            {
+                case BType.Wachturm:
+                    for (int i = 0; i < 4; i++)
+                        Prim(PrimitiveType.Cube, r, new Vector3((i & 1) * 2.4f - 1.2f, 3f, (i >> 1) * 2.4f - 1.2f), new Vector3(0.3f, 6f, 0.3f), MatLib.Lit(Tar));
+                    Prim(PrimitiveType.Cube, r, new Vector3(0, 6.1f, 0), new Vector3(3.2f, 0.3f, 3.2f), MatLib.Lit(Plank, 0.2f));
+                    MeshObj(Cone, r, new Vector3(0, 6.3f, 0), new Vector3(3.6f, 1.6f, 3.6f), MatLib.Lit(roof, 0.05f));
+                    break;
+                case BType.Wahrzeichen:
+                    Prim(PrimitiveType.Cylinder, r, new Vector3(0, 3.5f, 0), new Vector3(2.6f, 3.5f, 2.6f), MatLib.Lit(new Color(0.6f, 0.58f, 0.55f), 0.2f));
+                    Prim(PrimitiveType.Cylinder, r, new Vector3(0, 5.2f, 1.32f), new Vector3(1.9f, 0.05f, 1.9f), MatLib.Lit(new Color(0.95f, 0.93f, 0.85f), 0.4f), new Vector3(90, 0, 0));
+                    MeshObj(Cone, r, new Vector3(0, 7f, 0), new Vector3(3.2f, 2.4f, 3.2f), MatLib.Lit(new Color(0.2f, 0.45f, 0.42f), 0.5f, 0.4f));
+                    break;
+                case BType.Schleuderplatz:
+                    Prim(PrimitiveType.Cube, r, new Vector3(0, 0.4f, 0), new Vector3(3f, 0.8f, 2f), MatLib.Lit(Plank, 0.2f));
+                    Prim(PrimitiveType.Cube, r, new Vector3(0, 2f, 0), new Vector3(0.3f, 3f, 0.3f), MatLib.Lit(Tar), new Vector3(0, 0, 25));
+                    Barrel(r, new Vector3(2.2f, 0, 1.2f)); Barrel(r, new Vector3(-2.2f, 0, -1.2f));
+                    break;
+                default:
+                    Hut(r, Vector3.zero, 4.2f, 2.6f, 3.6f, wall, roof, 2);
+                    Barrel(r, new Vector3(2.6f, 0, 1.8f));
+                    break;
+            }
+        }
+
         public static GameObject Building(BType t, int level, Transform parent)
         {
             var r = Root(t.ToString(), parent);
@@ -206,7 +244,7 @@ namespace Pfahlstadt
                     Prim(PrimitiveType.Cube, r, new Vector3(2.9f, 0.25f, 1.6f), new Vector3(0.9f, 0.15f, 0.15f), MatLib.Lit(Tar, 0.4f, 0.7f));
                     break;
 
-                case BType.Pfahlhaus:
+                case BType.Unterkunft:
                     Hut(r, new Vector3(0, 0, -0.3f), 5f, 2.4f, 3.2f, WallBlue, Reed, 4);
                     Prim(PrimitiveType.Cube, r, new Vector3(1.6f, 3.4f, -0.8f), new Vector3(0.5f, 1.6f, 0.5f), MatLib.Lit(new Color(0.5f, 0.3f, 0.25f)));
                     MakeSmoke(r, new Vector3(1.6f, 4.3f, -0.8f), 0.6f);
@@ -242,6 +280,10 @@ namespace Pfahlstadt
                     for (int i = 0; i < 4; i++)
                         Prim(PrimitiveType.Sphere, r, new Vector3(-2.4f, 1.5f, -0.2f + i * 0.4f), new Vector3(0.12f, 0.7f, 0.25f), MatLib.Lit(new Color(0.75f, 0.55f, 0.3f), 0.5f));
                     Barrel(r, new Vector3(2.4f, 0, 1.5f));
+                    break;
+
+                default:
+                    Generic(r, t);
                     break;
             }
             r.localScale = Vector3.one * (1f + 0.07f * (level - 1));

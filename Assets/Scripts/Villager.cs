@@ -68,7 +68,7 @@ namespace Pfahlstadt
             if (c.Freeboard >= 0f && Random.value < 0.6f)
             {
                 var built = new List<int>();
-                for (int i = 1; i < Colony.PlotCount; i++) if (c.S.plots[i].type >= 0) built.Add(i);
+                for (int i = 1; i < Defs.Wall; i++) if (c.S.plots[i].type >= 0) built.Add(i);
                 if (built.Count > 0) target = built[Random.Range(0, built.Count)];
             }
 

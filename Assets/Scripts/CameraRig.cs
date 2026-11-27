@@ -12,7 +12,7 @@ namespace Pfahlstadt
         public Vector3 Target = new Vector3(0, 3f, -3f);
         public float Dist = 52f;
 
-        const float MinDist = 16f, MaxDist = 90f, MaxPan = 55f;
+        const float MinDist = 16f, MaxDist = 140f, MaxPan = 75f;
         float yaw;
         Vector2 start, lastMouse;
         bool dragging, startOverUI;

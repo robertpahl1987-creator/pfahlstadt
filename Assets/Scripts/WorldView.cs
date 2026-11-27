@@ -27,11 +27,41 @@ namespace Pfahlstadt
         ParticleSystem rain;
         float shownDeck = -1f, stormBlend;
 
+        public const float Ring2Radius = 34f, Ring3Radius = 47f;
+        static float Area => Colony.I != null && Colony.I.S != null ? Colony.I.AreaRadius : 45f;
+        public static float WallRadius => Area + 3f;
+        public static float DamRadius => Area + 20f;
+
+        static float PlotAngle(int i)
+        {
+            if (i < Defs.Inner) return (i - 1) * Mathf.PI * 2f / 12f;
+            if (i < Defs.Ring3) return (i - Defs.Inner + 0.5f) * Mathf.PI * 2f / 12f;
+            if (i < Defs.Wall) return (i - Defs.Ring3 + 0.5f) * Mathf.PI * 2f / 18f;
+            if (i == Defs.Wall || i == Defs.Dam) return Mathf.PI;
+            return (i - Defs.Towers + 0.5f) * Mathf.PI * 2f / 8f;
+        }
+
+        static float PlotRadius(int i)
+        {
+            if (i == 0) return 0f;
+            if (i < Defs.Inner) return RingRadius;
+            if (i < Defs.Ring3) return Ring2Radius;
+            if (i < Defs.Wall) return Ring3Radius;
+            return i == Defs.Dam ? DamRadius : WallRadius;
+        }
+
         public static Vector3 PlotPos(int i)
         {
             if (i == 0) return Vector3.zero;
-            float a = (i - 1) * Mathf.PI * 2f / 12f;
-            return new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a)) * RingRadius;
+            float a = PlotAngle(i);
+            return new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a)) * PlotRadius(i);
+        }
+
+        /// Warft-Plätze (äußerer Ring) erscheinen erst, wenn das Gelände groß genug ist
+        public static bool PlotVisible(Colony c, int i)
+        {
+            if (i >= Defs.Ring3 && i < Defs.Wall) return c.S.plots[i].type >= 0 || c.BuiltCount >= Colony.Ring3Needed(i) - 2;
+            return true;
         }
 
         public static Vector3 LabelPos(int i)
@@ -153,7 +183,7 @@ namespace Pfahlstadt
             }
 
             // Wasser
-            water = Visuals.Prim(PrimitiveType.Plane, null, Vector3.zero, new Vector3(70, 1, 70), MatLib.Water(new Color(0.2f, 0.38f, 0.43f, 0.78f))).transform;
+            water = Visuals.Prim(PrimitiveType.Plane, null, Vector3.zero, new Vector3(70, 1, 70), MatLib.Water(new Color(0.08f, 0.4f, 0.62f, 0.8f))).transform;
             water.name = "Wasser";
             water.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
@@ -200,7 +230,7 @@ namespace Pfahlstadt
                 go.transform.position = p;
                 if (i > 0) go.transform.rotation = Quaternion.LookRotation(-p.normalized);   // Front (+z) zur Mitte
                 var col = go.AddComponent<BoxCollider>();
-                col.size = i == 0 ? new Vector3(10f, 16f, 10f) : new Vector3(8f, 6f, 8f);
+                col.size = i == 0 ? new Vector3(10f, 16f, 10f) : i >= Defs.Wall ? new Vector3(6f, 6f, 6f) : new Vector3(8f, 6f, 8f);
                 col.center = new Vector3(0, i == 0 ? 7f : 2.5f, 0);
                 go.AddComponent<PlotMarker>().Index = i;
                 plotRoots[i] = go.transform;
@@ -210,6 +240,9 @@ namespace Pfahlstadt
         /// Plattformen, Pfähle, Stege und Pegel – wird neu gebaut, wenn der Turm die Stadt anhebt.
         void BuildInfra(float deck)
         {
+            shownBuilt = Colony.I.BuiltCount;
+            shownWall = Colony.I.Levels(BType.Festungsmauer);
+            shownDam = Colony.I.Levels(BType.Damm);
             if (infraRoot != null) Destroy(infraRoot.gameObject);
             infraRoot = new GameObject("Pfahlwerk").transform;
             var plank = MatLib.Lit(Visuals.Plank, 0.2f);
@@ -232,8 +265,11 @@ namespace Pfahlstadt
             }
 
             // Bauplätze mit Stegen
-            for (int i = 1; i < Colony.PlotCount; i++)
+            for (int i = 1; i < Defs.Wall; i++)
             {
+                if (!PlotVisible(Colony.I, i)) { plotRoots[i].gameObject.SetActive(false); continue; }
+                plotRoots[i].gameObject.SetActive(true);
+                float stegLen = Mathf.Max(3f, PlotRadius(i) - 4f - 9.3f);
                 var root = new GameObject("Plattform").transform;
                 root.SetParent(infraRoot, false);
                 root.position = PlotPos(i);
@@ -246,16 +282,17 @@ namespace Pfahlstadt
                     Visuals.Prim(PrimitiveType.Cylinder, root, lp + Vector3.up * 0.4f, new Vector3(0.48f, 0.6f, 0.48f), algae);
                 }
                 // Steg vom Bauplatz zur Mitte (lokal +z)
-                Visuals.Prim(PrimitiveType.Cube, root, new Vector3(0, deck - 0.1f, 7.5f), new Vector3(2.2f, 0.2f, 7.2f), plank);
-                for (int k = 0; k < 2; k++)
+                Visuals.Prim(PrimitiveType.Cube, root, new Vector3(0, deck - 0.1f, 4f + stegLen / 2f), new Vector3(2.2f, 0.2f, stegLen), plank);
+                for (int k = 0; k < Mathf.Max(2, (int)(stegLen / 3.5f)); k++)
                 {
                     float z = 6f + k * 3f;
                     Visuals.Prim(PrimitiveType.Cylinder, root, new Vector3(-1f, postY, z), new Vector3(0.3f, postLen / 2f, 0.3f), post);
                     Visuals.Prim(PrimitiveType.Cylinder, root, new Vector3(1f, postY, z), new Vector3(0.3f, postLen / 2f, 0.3f), post);
                 }
-                Visuals.Prim(PrimitiveType.Cube, root, new Vector3(-1.1f, deck + 0.55f, 7.5f), new Vector3(0.08f, 0.08f, 7.2f), post);
-                Visuals.Prim(PrimitiveType.Cube, root, new Vector3(1.1f, deck + 0.55f, 7.5f), new Vector3(0.08f, 0.08f, 7.2f), post);
+                Visuals.Prim(PrimitiveType.Cube, root, new Vector3(-1.1f, deck + 0.55f, 4f + stegLen / 2f), new Vector3(0.08f, 0.08f, stegLen), post);
+                Visuals.Prim(PrimitiveType.Cube, root, new Vector3(1.1f, deck + 0.55f, 4f + stegLen / 2f), new Vector3(0.08f, 0.08f, stegLen), post);
             }
+            BuildDefenses(deck);
 
             // Pegel-Latte mit Markierung der Deckhöhe
             float pa = 15f * Mathf.Deg2Rad;
@@ -275,6 +312,71 @@ namespace Pfahlstadt
             shownDeck = deck;
         }
 
+        int shownBuilt = -1, shownWall = -1, shownDam = -1;
+
+        /// Festungsmauer mit Tor (Süden) und Damm ganz außen – Ringe um das ganze Gelände
+        void BuildDefenses(float deck)
+        {
+            var c = Colony.I;
+            int wall = c.Levels(BType.Festungsmauer), dam = c.Levels(BType.Damm);
+            if (wall > 0)
+            {
+                float R = WallRadius, h = 2.5f + 0.15f * wall;
+                Color col = wall <= 6 ? new Color(0.45f, 0.34f, 0.22f) : wall <= 13 ? new Color(0.55f, 0.53f, 0.5f) : new Color(0.42f, 0.42f, 0.45f);
+                var m = MatLib.Lit(col, 0.15f);
+                int seg = 72;
+                for (int k = 0; k < seg; k++)
+                {
+                    float a = (k + 0.5f) * Mathf.PI * 2f / seg;
+                    if (Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, 180f)) < 5f) continue;   // Tor im Süden
+                    var p = new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a)) * R;
+                    float len = 2f * Mathf.PI * R / seg + 0.1f;
+                    var g = Visuals.Prim(PrimitiveType.Cube, infraRoot, p + Vector3.up * (deck + h / 2f - 1f), new Vector3(len, h + 2f, 0.9f), m);
+                    g.transform.rotation = Quaternion.Euler(0, a * Mathf.Rad2Deg + 90f, 0);
+                }
+                // Torbogen
+                var gate = new Vector3(0, 0, -R);
+                Visuals.Prim(PrimitiveType.Cube, infraRoot, gate + new Vector3(-3.2f, deck + h / 2f + 0.5f, 0), new Vector3(1.4f, h + 3f, 1.4f), m);
+                Visuals.Prim(PrimitiveType.Cube, infraRoot, gate + new Vector3(3.2f, deck + h / 2f + 0.5f, 0), new Vector3(1.4f, h + 3f, 1.4f), m);
+                Visuals.Prim(PrimitiveType.Cube, infraRoot, gate + new Vector3(0, deck + h + 1.5f, 0), new Vector3(7.8f, 1f, 1.4f), m);
+            }
+            if (dam > 0)
+            {
+                float R = DamRadius, top = c.DamTop;
+                var m = MatLib.Lit(new Color(0.35f, 0.42f, 0.25f), 0.1f);
+                int seg = 90;
+                for (int k = 0; k < seg; k++)
+                {
+                    float a = (k + 0.5f) * Mathf.PI * 2f / seg;
+                    var p = new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a)) * R;
+                    float len = 2f * Mathf.PI * R / seg + 0.2f;
+                    var g = Visuals.Prim(PrimitiveType.Cube, infraRoot, p + Vector3.up * (top / 2f - 0.5f), new Vector3(len, top + 1f, 4f), m);
+                    g.transform.rotation = Quaternion.Euler(0, a * Mathf.Rad2Deg + 90f, 0);
+                }
+            }
+            for (int i = Defs.Wall; i < Colony.PlotCount; i++)
+            {
+                bool show = i == Defs.Wall || i == Defs.Dam || wall > 0;
+                plotRoots[i].gameObject.SetActive(show);
+            }
+        }
+
+        static GameObject DefenseTower(Transform parent, int level)
+        {
+            var r = new GameObject("Abwehrturm").transform;
+            r.SetParent(parent, false);
+            var stone = MatLib.Lit(new Color(0.5f, 0.49f, 0.47f), 0.15f);
+            float h = 4f + 0.2f * level;
+            Visuals.Prim(PrimitiveType.Cylinder, r, new Vector3(0, h / 2f, 0), new Vector3(3f, h / 2f, 3f), stone);
+            for (int k = 0; k < 8; k++)
+            {
+                float a = k * Mathf.PI / 4f;
+                Visuals.Prim(PrimitiveType.Cube, r, new Vector3(Mathf.Sin(a) * 1.35f, h + 0.35f, Mathf.Cos(a) * 1.35f), new Vector3(0.6f, 0.7f, 0.6f), stone);
+            }
+            Visuals.Prim(PrimitiveType.Cube, r, new Vector3(0, h + 0.6f, 0), new Vector3(0.2f, 0.2f, 2.4f), MatLib.Lit(Visuals.Tar), new Vector3(-15, 0, 0));
+            return r.gameObject;
+        }
+
         // ---------------- Aktualisierung ----------------
 
         void Update()
@@ -282,7 +384,8 @@ namespace Pfahlstadt
             var c = Colony.I;
             if (c == null || c.S == null) return;
 
-            if (!Mathf.Approximately(c.DeckHeight, shownDeck)) BuildInfra(c.DeckHeight);
+            if (!Mathf.Approximately(c.DeckHeight, shownDeck) || c.BuiltCount != shownBuilt
+                || c.Levels(BType.Festungsmauer) != shownWall || c.Levels(BType.Damm) != shownDam) BuildInfra(c.DeckHeight);
 
             for (int i = 0; i < Colony.PlotCount; i++)
             {
@@ -321,8 +424,10 @@ namespace Pfahlstadt
 
             if (i == 0)
                 visuals[0] = Visuals.Tower(Mathf.Max(1, p.level), root, out lamp, out beam, out lampMat);
-            else if (p.type >= 0 && p.level > 0)
+            else if (p.type >= 0 && p.level > 0 && i < Defs.Wall)
                 visuals[i] = Visuals.Building((BType)p.type, p.level, root);
+            else if (p.type == (int)BType.Abwehrturm && p.level > 0)
+                visuals[i] = DefenseTower(root, p.level);
 
             if (shownBuilding[i])
                 scaffolds[i] = Visuals.Scaffold(root, i == 0 ? 4.5f : 3f, p.level == 0, out ghosts[i]);
