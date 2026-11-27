@@ -59,11 +59,26 @@ jobs:
           echo "Neuester Build: $num"
 
           tag="unity-$num"
-          if gh release view "$tag" >/dev/null 2>&1; then echo "$tag ist schon veröffentlicht."; exit 0; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            size=$(gh release view "$tag" --json assets --jq '[.assets[].size] | max // 0')
+            if [ "${size:-0}" -gt 1000000 ]; then echo "$tag ist schon veröffentlicht."; exit 0; fi
+            echo "$tag ist kaputt (${size} Bytes) – wird neu angelegt."
+            gh release delete "$tag" --yes --cleanup-tag
+          fi
           if [ -z "$url" ]; then echo "Kein Download-Link gefunden. Antwort:"; head -c 2500 builds.json; echo; exit 1; fi
 
-          curl -sSL "$url" -o "$APP_NAME-Unity-$num.apk"
-          ls -l "$APP_NAME-Unity-$num.apk"
-          gh release create "$tag" "$APP_NAME-Unity-$num.apk" --prerelease --latest=false \
+          f="$APP_NAME-Unity-$num.apk"
+          # Link der Unity-API braucht die Anmeldung; die Weiterleitung zum Speicher geht ohne
+          curl -sSL -H "Authorization: $H" "$url" -o "$f"
+          size=$(stat -c %s "$f")
+          if [ "$size" -lt 1000000 ]; then
+            echo "Antwort ist keine APK ($size Bytes):"; head -c 600 "$f"; echo
+            # zweiter Versuch: Link zeigt auf JSON mit der eigentlichen Adresse
+            real=$(jq -r '.. | .href? // .url? // empty | select(test("^https?://"))' "$f" 2>/dev/null | head -1)
+            if [ -n "$real" ]; then curl -sSL "$real" -o "$f"; size=$(stat -c %s "$f"); fi
+          fi
+          ls -l "$f"
+          if [ "$size" -lt 1000000 ]; then echo "Download fehlgeschlagen."; head -c 600 "$f"; echo; exit 1; fi
+          gh release create "$tag" "$f" --prerelease --latest=false \
             --title "$APP_NAME Unity – Build $num" \
             --notes "Unity-Fassung, Build $num aus Unity Build Automation. Die Unity-App aktualisiert sich damit von selbst."

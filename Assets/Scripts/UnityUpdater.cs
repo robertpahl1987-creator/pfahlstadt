@@ -19,7 +19,7 @@ public class UnityUpdater : MonoBehaviour
     GUIStyle box, label, button;
 
     [Serializable] class Manifest { public string buildNumber; }
-    [Serializable] class Asset { public string name; public string browser_download_url; }
+    [Serializable] class Asset { public string name; public string browser_download_url; public long size; }
     [Serializable] class Release { public string tag_name; public Asset[] assets; }
     [Serializable] class ReleaseList { public Release[] items; }
 
@@ -68,7 +68,7 @@ public class UnityUpdater : MonoBehaviour
             int n;
             if (!int.TryParse(r.tag_name.Substring(TagPrefix.Length), out n) || n <= best) continue;
             foreach (var a in r.assets)
-                if (a != null && a.name != null && a.name.EndsWith(".apk")) { best = n; url = a.browser_download_url; break; }
+                if (a != null && a.name != null && a.name.EndsWith(".apk") && a.size > 1000000) { best = n; url = a.browser_download_url; break; }
         }
         if (url == null) yield break;
 
