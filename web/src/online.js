@@ -1,6 +1,7 @@
 // Verbindung zum Mehrspieler-Server (Supabase). Alle Spielregeln laufen auf dem Server.
 import { RES, uAdd, zeroU, uSum } from './game.js';
 import { questEvent } from './features.js';
+import { vipLevel, addVip } from './progress.js';
 
 export const SERVER = 'https://qoatkmjobrlnqadsfmhs.supabase.co';
 const KEY = 'sb_publishable_J84AUIbZnb_CZuak5SiKRg_f5nLkn1w';
@@ -28,6 +29,9 @@ const ERR = {
   CODE_FORMAT: 'Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.',
   LEER: 'Bitte eine Belohnung eintragen.',
   UNGUELTIG: 'Ungültige Eingabe.',
+  KEINE_KRAKE: 'Gerade ist keine Riesenkrake da.',
+  VIP4: 'Eigene Fotos gibt es ab VIP 4.',
+  BILD: 'Das Bild ist ungültig oder zu groß.',
   GESPERRT: 'Dieses Konto wurde vom Spielleiter gesperrt.',
   HILFE_LIMIT: 'Höchstens 20.000 Rohstoffe Hilfe pro Stunde.',
   ZU_WENIG: 'So viel hast du nicht.',
@@ -104,7 +108,7 @@ export class Online {
 
   snapshot() {
     const c = this.c, s = c.s;
-    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), vip: vipLevel(c), lm: c.levels(23), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
   }
 
   async sync(strict) {
@@ -126,6 +130,17 @@ export class Online {
         if (w.some((v) => v > 0)) this.c.msg(`🩹 ${w.reduce((a, b) => a + b, 0)} Verwundete sind im Lazarett angekommen.`);
       }
       this.lh = r.lh || null; this.openRallies = r.rallies || 0;
+      this.ally = r.ally || {}; this.boss = r.boss || null;
+      if (d.vip) addVip(this.c, d.vip);
+      if (d.items) { s.items = s.items || {}; for (const k in d.items) if (d.items[k] > 0) s.items[k] = (s.items[k] || 0) + d.items[k]; }
+      const av = r.avatar;
+      if (!av) this.avatar = null;
+      else if (av.status !== 'ok') this.avatar = { status: av.status };
+      else if (!this.avatar || this.avatar.v !== av.v || !this.avatar.data) {
+        const cached = JSON.parse(localStorage.getItem('pf_av') || 'null');
+        if (cached && cached.v === av.v) this.avatar = { status: 'ok', v: av.v, data: cached.data };
+        else this.call('avatar_get', { p_token: this.token }).then((g) => { if (g && g.data) { this.avatar = { status: 'ok', v: av.v, data: g.data }; try { localStorage.setItem('pf_av', JSON.stringify(this.avatar)); } catch (e) { /* */ } } }).catch(() => {});
+      }
       this.events = r.events || []; this.title = r.title || null;
       if (r.news && r.news.id > (+localStorage.getItem('pf_news') || 0)) { this.newsPending = r.news; localStorage.setItem('pf_news', String(r.news.id)); }
       const back = du.reduce((a, v) => a + Math.max(0, v), 0);
@@ -159,6 +174,25 @@ export class Online {
       if (msgs && msgs.length) { this.chat = this.chat.concat(msgs).slice(-80); this.chatAfter = msgs[msgs.length - 1].id; }
     } catch (e) { /* */ }
   }
+
+  // ---------- Riesenkrake, Allianz-Projekte, Profilbild ----------
+  async bossInfo() { try { this.bossI = await this.call('boss_info', { p_token: this.token }); } catch (e) { /* */ } }
+  async bossAttack(u, boost) {
+    const r = await this.call('boss_attack', { p_token: this.token, p_u: u, p_boost: boost });
+    const s = this.c.s; s.troops = s.troops.map((v, i) => Math.max(0, v - (r.lost[i] || 0)));
+    await this.sync(); await this.bossInfo();
+    return r;
+  }
+  async adminBoss() { await this.call('admin_boss', { p_token: this.token }); await this.sync(); }
+  async allyProjects() { try { this.projects = await this.call('ally_projects', { p_token: this.token }); } catch (e) { /* */ } }
+  async allyDonate(kind, res) {
+    await this.call('ally_donate', { p_token: this.token, p_kind: kind, p_res: res });
+    res.forEach((v, i) => (this.c.s.res[i] = Math.max(0, this.c.s.res[i] - v)));
+    await this.allyProjects(); await this.sync();
+  }
+  async avatarUpload(data) { await this.call('avatar_upload', { p_token: this.token, p_data: data }); await this.sync(); }
+  async adminAvatars() { try { this.avQueue = await this.call('admin_avatars', { p_token: this.token }); } catch (e) { /* */ } }
+  async adminAvatarSet(id, ok) { await this.call('admin_avatar_set', { p_token: this.token, p_player: id, p_ok: ok }); await this.adminAvatars(); }
 
   // ---------- Events, Hilfe, Spielleiter ----------
   eventLeft(kind) {
@@ -204,8 +238,8 @@ export class Online {
     return r.text;
   }
   async loadCodes() { if (this.me && this.me.is_admin) try { this.codes = await this.call('admin_codes', { p_token: this.token }); } catch (e) { /* */ } }
-  async saveCode(code, res, u, days, max) {
-    await this.call('admin_code_save', { p_token: this.token, p_code: code, p_res: res, p_u: u, p_days: days, p_max: max });
+  async saveCode(code, res, u, days, max, vip) {
+    await this.call('admin_code_save', { p_token: this.token, p_code: code, p_res: res, p_u: u, p_days: days, p_max: max, p_vip: vip || 0 });
     await this.loadCodes();
   }
   async deleteCode(code) { await this.call('admin_code_delete', { p_token: this.token, p_code: code }); await this.loadCodes(); }
@@ -215,10 +249,10 @@ export class Online {
     try { this.ranking = await this.call('ranking', { p_token: this.token }); } catch (e) { /* */ }
   }
 
-  async sendMarch(kind, target, u) {
+  async sendMarch(kind, target, u, boost, speed) {
     const s = this.c.s;
     const r = await this.call('send_march', () => ({
-      p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u,
+      p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u, p_boost: boost || 1, p_speed: speed || 1,
     }));
     s.troops = s.troops.map((v, i) => v - (u[i] || 0));
     await this.sync();

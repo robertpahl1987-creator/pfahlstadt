@@ -63,7 +63,7 @@
   .tl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .st { white-space: nowrap; }
   .st b { color: var(--txt); }
-  #toasts { top: calc(env(safe-area-inset-top) + 78px); gap: 4px; }
+  #toasts { top: calc(env(safe-area-inset-top) + 104px); gap: 4px; left: calc(50% + 34px); width: min(calc(100vw - 84px), 600px); }
   .toast { font-size: 13px; padding: 6px 10px; }
   .bb { min-height: 54px; gap: 1px; }
   .bb .ic { font-size: 20px; line-height: 1; }
@@ -176,21 +176,49 @@
   #panel.seamini .x { width: 32px; height: 32px; }
   #panel.seamini .sm { margin: 3px 0; }
   #panel.sea { max-height: 46vh; }
+  #top .prof { display: flex; gap: 8px; align-items: stretch; max-width: 720px; margin: 0 auto; }
+  #top .ava { position: relative; flex: 0 0 58px; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+  #top .avi { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(145deg, #2a6f86, #12384a); border: 2px solid #7fd3f0; display: flex; align-items: center; justify-content: center; font-size: 30px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  #top .avi img { width: 100%; height: 100%; object-fit: cover; }
+  #top .ava.gold .avi { border-color: #ffd27a; box-shadow: 0 0 10px rgba(255,210,122,.7); }
+  #top .vipb { margin-top: -8px; z-index: 1; background: linear-gradient(90deg, #b8860b, #ffd27a); color: #2a1a00; font-weight: 900; font-size: 10px; border-radius: 8px; padding: 1px 6px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  #top .vipb.v0 { background: #3b5560; color: #cfe6ea; }
+  #top .pr { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  #top .pn { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 1.2; }
+  #top .pn b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #top .clock { margin-left: auto; font-variant-numeric: tabular-nums; color: #cfe6ea; font-size: 13px; font-weight: 700; }
+  #top .res { margin: 0 !important; max-width: none !important; gap: 4px !important; }
+  #top .card { padding: 4px 6px !important; }
+  #top .card .ic { font-size: 13px; }
+  #top .rv { font-size: 14px !important; }
+  .avgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 6px 0; }
+  .avgrid button { font-size: 26px; padding: 6px 0; border-radius: 12px; background: rgba(255,255,255,.06); }
+  .avgrid button.on { box-shadow: 0 0 0 2px #ffd27a; }
+  .avprev { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; border: 2px solid #7fd3f0; margin: 6px auto; display: flex; align-items: center; justify-content: center; font-size: 56px; background: #12384a; }
+  .avprev img { width: 100%; height: 100%; object-fit: cover; }
+  #raid { position: fixed; left: 6px; top: calc(env(safe-area-inset-top) + 112px); z-index: 3; width: 58px; padding: 5px 0 4px; border-radius: 14px; background: rgba(40, 12, 12, .85); border: 2px solid #8a3a2a; display: flex; flex-direction: column; align-items: center; line-height: 1.1; box-shadow: 0 3px 10px rgba(0,0,0,.4); cursor: pointer; }
+  #raid .ri2 { font-size: 22px; }
+  #raid b { font-size: 12px; color: #ffd27a; font-variant-numeric: tabular-nums; }
+  #raid small { font-size: 9px; color: #ffb0a0; }
+  #raid.alarm { border-color: #ff4040; animation: raidpulse .8s infinite alternate; }
+  @keyframes raidpulse { from { box-shadow: 0 0 0 rgba(255,60,60,.0); } to { box-shadow: 0 0 16px rgba(255,60,60,.9); } }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="labels"></div>
 <div id="map" style="display:none"><canvas id="mapc"></canvas></div>
-<div id="top"><div class="res"></div>
+<div id="top"><div class="prof"><div class="ava" id="ava"><span class="avi"></span><span class="vipb"></span></div><div class="pr"><div class="pn"><b class="pname"></b><span class="clock"></span></div><div class="res"></div></div></div>
   <div class="status"><div class="tide"><div class="gauge"><div class="gw"></div><div class="gd"></div></div><span class="tl"></span></div><div class="st"></div></div>
 </div>
+<div id="raid" style="display:none"></div>
 <div id="toasts"></div>
 <div id="badge" style="display:none"></div>
 <div id="panel" style="display:none"></div>
 <div id="tasks" style="display:none"></div>
 <div id="tut" style="display:none"></div>
 <div id="news" style="display:none"></div>
+<input type="file" id="avFile" accept="image/*" style="display:none">
 <div id="quick"><button class="qb" id="bGift"></button><button class="qb" id="bBeacon"></button><button class="qb" id="bExp"></button></div>
 <div id="bottom"><div class="row4">
   <button class="bb" id="bBuild"></button>

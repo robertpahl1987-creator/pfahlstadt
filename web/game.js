@@ -814,8 +814,205 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
   };
 
-  // src/features.js
+  // src/progress.js
   var today = () => {
+    const d = /* @__PURE__ */ new Date();
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  };
+  var VIP_PTS = [0, 100, 300, 700, 1500, 3e3, 5e3, 8e3, 12e3, 17e3, 25e3];
+  var VIP_PERKS = [
+    "",
+    "T\xE4gliche VIP-Truhe \xB7 +2 % Produktion",
+    "+5 % schneller bauen",
+    "+1 Bautrupp (3 gleichzeitig)",
+    "+10 % Sammler-Traglast \xB7 +5 % Produktion",
+    "+1 Platz in der Bauwarteschlange \xB7 +10 % schneller ausbilden \xB7 +10 % schneller bauen",
+    "+5 % Angriff und Verteidigung",
+    "+1 Bautrupp (4 gleichzeitig) \xB7 +8 % Produktion",
+    "Lazarett rettet +10 % mehr \xB7 +15 % schneller bauen",
+    "+10 % schnellere Fahrten \xB7 +20 % schneller ausbilden",
+    "+12 % Produktion \xB7 +10 % Angriff und Verteidigung \xB7 goldener VIP-Rahmen"
+  ];
+  function vipLevel(c) {
+    const p = c.s.vipPts || 0;
+    let L = 0;
+    for (let i = 1; i <= 10; i++) if (p >= VIP_PTS[i]) L = i;
+    return L;
+  }
+  function addVip(c, n) {
+    const before = vipLevel(c);
+    c.s.vipPts = (c.s.vipPts || 0) + n;
+    const after = vipLevel(c);
+    if (after > before) c.msg(`\u{1F451} VIP-Stufe ${after} erreicht! ${VIP_PERKS[after]}`);
+  }
+  var vipChestCan = (c) => vipLevel(c) >= 1 && c.s.vipDay !== today();
+  function vipChest(c) {
+    const L = vipLevel(c), f = 1 + 0.3 * (c.towerLevel - 1);
+    return { res: [1, 1, 1, 0.3].map((v) => Math.round(300 * L * v * f)), items: { sp5: L, ...L >= 4 ? { sp15: L - 3 } : {}, ...L >= 8 ? { sp60: L - 7 } : {} }, medals: Math.ceil(L / 3) };
+  }
+  function claimVipChest(c) {
+    if (!vipChestCan(c)) return null;
+    const r = vipChest(c), s = c.s;
+    r.res.forEach((v, i) => v && c.addRes(i, v));
+    s.items = s.items || {};
+    for (const k in r.items) s.items[k] = (s.items[k] || 0) + r.items[k];
+    s.medals = (s.medals || 0) + r.medals;
+    s.vipDay = today();
+    return r;
+  }
+  var TECH = [
+    { id: "pile", ic: "\u{1FAB5}", name: "Bessere Pf\xE4hle", text: "+0,3 m Deckh\xF6he", cost: [300, 60, 0, 60] },
+    { id: "gath", ic: "\u{1F9FA}", name: "Flinke Sammler", text: "+10 % Traglast der Sammler", cost: [200, 120, 60, 20] },
+    { id: "atk", ic: "\u{1F531}", name: "Sch\xE4rfere Harpunen", text: "+5 % Angriff", cost: [250, 80, 0, 100] },
+    { id: "def", ic: "\u{1F6E1}\uFE0F", name: "Eichenschilde", text: "+5 % Verteidigung", cost: [300, 60, 0, 80] },
+    { id: "prod", ic: "\u{1F372}", name: "Wattk\xFCche", text: "+5 % Produktion", cost: [200, 200, 100, 0] },
+    { id: "build", ic: "\u{1F528}", name: "Zimmermannskunst", text: "\u22126 % Bauzeit", cost: [400, 50, 0, 60] },
+    { id: "drill", ic: "\u{1F393}", name: "Drill", text: "\u22128 % Ausbildungszeit", cost: [150, 150, 50, 60] },
+    { id: "med", ic: "\u{1FA79}", name: "Wundkr\xE4uter", text: "+5 % gerettete Verwundete", cost: [100, 200, 200, 0] },
+    { id: "store", ic: "\u{1F4E6}", name: "Speicherkunst", text: "+10 % Lagerplatz", cost: [350, 100, 100, 20] },
+    { id: "navi", ic: "\u{1F9ED}", name: "Navigation", text: "\u22126 % Fahrzeit", cost: [250, 100, 50, 80] }
+  ];
+  var TECH_MAX = 5;
+  var techLv = (c, id) => (c.s.tech || {})[id] || 0;
+  var techCost = (t, k) => t.cost.map((v) => Math.round(v * Math.pow(1.8, k - 1)));
+  var techTime = (c, k) => 60 * Math.pow(2, k - 1) / (1 + 0.1 * Math.max(0, c.levels(T.AKADEMIE) - 1));
+  function techBlocker(c, id) {
+    const t = TECH.find((x) => x.id === id), k = techLv(c, id) + 1, ak = c.levels(T.AKADEMIE);
+    if (ak <= 0) return "Erst die Akademie bauen";
+    if (k > TECH_MAX) return "Fertig erforscht";
+    if (c.s.research) return "Es wird schon geforscht";
+    if (ak < 2 * k - 1) return `Braucht Akademie Stufe ${2 * k - 1}`;
+    if (!c.canAfford(techCost(t, k))) return "Zu wenig Rohstoffe";
+    return null;
+  }
+  function startTech(c, id) {
+    if (techBlocker(c, id)) return false;
+    const t = TECH.find((x) => x.id === id), k = techLv(c, id) + 1, tt = techTime(c, k);
+    c.pay(techCost(t, k));
+    c.s.research = { id, left: tt, total: tt };
+    c.msg(`\u{1F4DA} Forschung gestartet: ${t.name} ${k}`);
+    return true;
+  }
+  function researchTick(c, dt) {
+    const r = c.s.research;
+    if (!r) return;
+    if (c.levels(T.AKADEMIE) <= 0) return;
+    r.left -= dt;
+    if (r.left <= 0) {
+      c.s.tech = c.s.tech || {};
+      c.s.tech[r.id] = (c.s.tech[r.id] || 0) + 1;
+      const t = TECH.find((x) => x.id === r.id);
+      c.msg(`\u{1F4DA} Erforscht: ${t.name} Stufe ${c.s.tech[r.id]} (${t.text})`);
+      c.s.research = null;
+    }
+  }
+  var CAPTAINS = [
+    { id: "hanne", ic: "\u{1F30A}", name: "Hanne Gezeitenkund", text: "+20 % Kampfkraft bei Ebbe", cost: 5 },
+    { id: "okko", ic: "\u26C8\uFE0F", name: "Okko Sturmkapit\xE4n", text: "+20 % Kampfkraft bei Flut", cost: 5 },
+    { id: "gesa", ic: "\u{1F4AA}", name: "Gesa Eisenfaust", text: "+12 % Kampfkraft immer", cost: 10 },
+    { id: "fiete", ic: "\u{1F4B0}", name: "Fiete Pl\xFCnderer", text: "+30 % Beute", cost: 10 },
+    { id: "wiebke", ic: "\u{1F9ED}", name: "Wiebke Lotsin", text: "\u221225 % Fahrzeit", cost: 15 }
+  ];
+  var capOf = (c, id) => (c.s.captains || {})[id];
+  var capMul = (lvl) => 1 + 0.1 * (lvl - 1);
+  function capFree(c, id) {
+    const k = capOf(c, id);
+    return k && !(k.busy > Date.now());
+  }
+  function hireCaptain(c, id) {
+    const d = CAPTAINS.find((x) => x.id === id), s = c.s;
+    if (!d || capOf(c, id)) return "Schon angeheuert";
+    if ((s.medals || 0) < d.cost) return `Braucht ${d.cost} Kapit\xE4nsabzeichen`;
+    s.medals -= d.cost;
+    s.captains = s.captains || {};
+    s.captains[id] = { lvl: 1, xp: 0, busy: 0 };
+    c.msg(`\u{1F396}\uFE0F ${d.name} ist an Bord!`);
+    return null;
+  }
+  function upCaptain(c, id) {
+    const k = capOf(c, id), s = c.s;
+    if (!k) return "Nicht angeheuert";
+    if (k.lvl >= 10) return "H\xF6chste Stufe";
+    const need = k.lvl * 2;
+    if ((s.medals || 0) < need) return `Braucht ${need} Abzeichen`;
+    s.medals -= need;
+    k.lvl++;
+    c.msg(`\u{1F396}\uFE0F ${CAPTAINS.find((x) => x.id === id).name} ist jetzt Stufe ${k.lvl}.`);
+    return null;
+  }
+  function capAtk(c, id, tide) {
+    const k = capOf(c, id);
+    if (!k) return 1;
+    const m = capMul(k.lvl);
+    if (id === "hanne") return tide === -1 ? 1 + 0.2 * m : 1;
+    if (id === "okko") return tide === 1 ? 1 + 0.2 * m : 1;
+    if (id === "gesa") return 1 + 0.12 * m;
+    return 1;
+  }
+  var capLoot = (c, id) => id === "fiete" && capOf(c, id) ? 1 + 0.3 * capMul(capOf(c, id).lvl) : 1;
+  var capSpeed = (c, id) => id === "wiebke" && capOf(c, id) ? Math.max(0.5, 1 - 0.25 * capMul(capOf(c, id).lvl) * 0.8) : 1;
+  function capSend(c, id, travel) {
+    const k = capOf(c, id);
+    if (k) {
+      k.busy = Date.now() + travel * 2e3 + 5e3;
+      k.xp = (k.xp || 0) + 1;
+    }
+  }
+  var BOAT_COST = [220, 0, 0, 70];
+  var BOAT_TIME = 60;
+  var BOAT_CAP = 25;
+  var maxBoats = (c) => 2 * c.levels(T.WERFT);
+  function boatBlocker(c) {
+    if (c.levels(T.WERFT) <= 0) return "Erst die Werft bauen";
+    if ((c.s.boats || 0) + (c.s.boatQ ? 1 : 0) >= maxBoats(c)) return `H\xF6chstens ${maxBoats(c)} Kutter (Werft ausbauen)`;
+    if (c.s.boatQ) return "Es wird schon ein Kutter gebaut";
+    if (!c.canAfford(BOAT_COST)) return "Zu wenig Rohstoffe";
+    return null;
+  }
+  function buildBoat(c) {
+    if (boatBlocker(c)) return false;
+    c.pay(BOAT_COST);
+    const tt = BOAT_TIME / (1 + 0.1 * (c.levels(T.WERFT) - 1));
+    c.s.boatQ = { left: tt, total: tt };
+    c.msg("\u2693 Ein Kutter wird gebaut.");
+    return true;
+  }
+  function boatTick(c, dt) {
+    const q = c.s.boatQ;
+    if (!q) return;
+    q.left -= dt;
+    if (q.left <= 0) {
+      c.s.boats = (c.s.boats || 0) + 1;
+      c.s.boatQ = null;
+      c.msg("\u2693 Neuer Kutter vom Stapel gelaufen!");
+    }
+  }
+  var fleetFits = (c, u) => (c.s.boats || 0) * BOAT_CAP >= uSum(u) && uSum(u) > 0;
+  var fleetSpeed = (c, u) => fleetFits(c, u) ? 0.75 : 1;
+  var fleetLoot = (c, u) => fleetFits(c, u) ? 1.25 : 1;
+  function mods(c) {
+    const v = vipLevel(c), L = c.levels(T.WAHRZEICHEN), o = c.online;
+    const ally = o && o.active && o.ally ? o.ally : {};
+    return {
+      prod: (1 + [0, 0.02, 0.02, 0.02, 0.05, 0.05, 0.05, 0.08, 0.08, 0.08, 0.12][v]) * (1 + 0.05 * techLv(c, "prod")) * (1 + 0.02 * L) * (1 + (ally.landmark || 0) + (ally.workshop || 0)),
+      build: 1 / (1 + [0, 0, 0.05, 0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15][v]) * Math.max(0.5, 1 - 0.06 * techLv(c, "build")),
+      train: 1 / (1 + (v >= 9 ? 0.2 : v >= 5 ? 0.1 : 0)) * Math.max(0.5, 1 - 0.08 * techLv(c, "drill")),
+      builds: 2 + (v >= 3 ? 1 : 0) + (v >= 7 ? 1 : 0),
+      queue: 3 + (v >= 5 ? 1 : 0),
+      gather: 1 + (v >= 4 ? 0.1 : 0) + 0.1 * techLv(c, "gath"),
+      atk: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, "atk")),
+      def: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, "def")),
+      save: (v >= 8 ? 0.1 : 0) + 0.05 * techLv(c, "med"),
+      travel: (v >= 9 ? 0.9 : 1) * Math.max(0.6, 1 - 0.06 * techLv(c, "navi")),
+      store: (1 + 0.1 * techLv(c, "store")) * (1 + (ally.storage || 0)),
+      deck: 0.3 * techLv(c, "pile"),
+      dam: ally.dike || 0
+    };
+  }
+
+  // src/features.js
+  var addVipX = (c, n) => addVip(c, n);
+  var today2 = () => {
     const d = /* @__PURE__ */ new Date();
     return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
   };
@@ -839,7 +1036,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   function dailyState(c) {
     const s = c.s;
     if (!s.daily) s.daily = { last: "", streak: 0 };
-    const can = s.daily.last !== today();
+    const can = s.daily.last !== today2();
     const day = can ? s.daily.last === yesterday() ? s.daily.streak % 7 : 0 : (s.daily.streak - 1) % 7;
     return { can, day };
   }
@@ -849,8 +1046,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const r = dailyReward(c, st.day);
     r.res.forEach((v, i) => v && c.addRes(i, v));
     c.s.troops = c.s.troops.map((v, i) => v + (r.u[i] || 0));
-    c.s.daily = { last: today(), streak: st.day + 1 };
+    c.s.daily = { last: today2(), streak: st.day + 1 };
     questEvent(c, "daily", 1);
+    addVipX(c, 50 + 10 * Math.min(7, c.s.daily.streak));
     return r;
   }
   var QUESTS = [
@@ -865,8 +1063,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   ];
   function questsToday(c) {
     const s = c.s;
-    if (!s.quests || s.quests.day !== today()) {
-      let seed = [...today()].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0;
+    if (!s.quests || s.quests.day !== today2()) {
+      let seed = [...today2()].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) >>> 0;
       const R = () => {
         seed = seed * 1664525 + 1013904223 >>> 0;
         return seed / 4294967296;
@@ -876,7 +1074,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const q = pool.splice(Math.floor(R() * pool.length), 1)[0];
         list.push({ id: q.id, n: q.n[Math.floor(R() * q.n.length)], have: 0, done: false });
       }
-      s.quests = { day: today(), list };
+      s.quests = { day: today2(), list };
     }
     return s.quests.list.map((q) => {
       const d = QUESTS.find((x) => x.id === q.id);
@@ -886,7 +1084,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   }
   function questEvent(c, id, n) {
     const s = c.s;
-    if (!s.quests || s.quests.day !== today()) questsToday(c);
+    if (!s.quests || s.quests.day !== today2()) questsToday(c);
     for (const q of s.quests.list) if (q.id === id && !q.done && q.have < q.n) {
       q.have = Math.min(q.n, q.have + n);
       if (q.have >= q.n) c.msg("\u2705 Tagesaufgabe erf\xFCllt \u2013 Belohnung abholen unter \u{1F381}!");
@@ -900,6 +1098,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     if (!q || q.done || q.have < q.n) return false;
     q.rw.forEach((v, i) => v && c.addRes(i, v));
     c.s.quests.list[k].done = true;
+    addVipX(c, 15);
     return true;
   }
   var ACH = [
@@ -941,7 +1140,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { text: "F\xFCr Krieger brauchst du die <b>Kaserne</b> und einen <b>Harpunierhof</b>.", ok: (c) => c.levels(T.KASERNE) > 0 && c.levels(T.HARPHOF) > 0 },
     { text: "Bilde unter <b>\u2694\uFE0F Truppen</b> 5 Harpuniere aus.", ok: (c) => c.troopTotal >= 5 },
     { text: "\xD6ffne die <b>\u{1F5FA}\uFE0F Karte</b> und erobere eine Pirateninsel in deiner N\xE4he.", ok: (c) => c.s.stats && c.s.stats.win >= 1 },
-    { text: "Hol dir jeden Tag deine Belohnung bei <b>\u{1F381}</b> rechts unten. Viel Spa\xDF!", ok: (c) => c.s.daily && c.s.daily.last === today() }
+    { text: "Hol dir jeden Tag deine Belohnung bei <b>\u{1F381}</b> rechts unten. Viel Spa\xDF!", ok: (c) => c.s.daily && c.s.daily.last === today2() }
   ];
   function tutStep(c) {
     const s = c.s;
@@ -952,11 +1151,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     return s.tut;
   }
-  var MAX_QUEUE = 3;
   function queueAdd(c, plot, type) {
     const s = c.s;
     s.bq = s.bq || [];
-    if (s.bq.length >= MAX_QUEUE) return "Warteschlange voll (max. 3)";
+    if (s.bq.length >= c.queueMax) return `Warteschlange voll (max. ${c.queueMax})`;
     if (s.bq.some((q) => q.plot === plot)) return "Steht schon in der Warteschlange";
     s.bq.push({ plot, type });
     c.msg(`In Warteschlange: ${DEFS[type !== null && type !== void 0 ? type : s.plots[plot].type].name}`);
@@ -1082,6 +1280,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     for (const k in r.items) c.s.items[k] = (c.s.items[k] || 0) + r.items[k];
     c.s.troops = c.s.troops.map((v, i) => v + (r.u[i] || 0));
     c.s.pass.got.push(t);
+    addVipX(c, 20);
+    if (t % 5 === 0) c.s.medals = (c.s.medals || 0) + 2;
     return true;
   }
   function addXp(c, id, n) {
@@ -1128,6 +1328,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     c.msg(`\u2728 Schatz im Watt gefunden: ${txt}`);
     questEvent(c, "treasure", 1);
+    addVipX(c, 3);
   }
 
   // src/bots.js
@@ -1209,7 +1410,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     s.bots = out;
   }
-  var botTravel = (b, u) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u);
+  var botTravel = (b, u, c, cap) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u) * (c ? mods(c).travel * fleetSpeed(c, u) * capSpeed(c, cap) : 1);
   function botBlocker(c, id, u) {
     const b = c.s.bots.find((x) => x.id === id);
     if (!b) return "Schiff ist weg";
@@ -1218,11 +1419,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     if (c.s.botMarches.some((m) => m.bot.id === id && m.phase === "out")) return "Dorthin ist schon ein Trupp unterwegs";
     return null;
   }
-  function sendToBot(c, id, u) {
+  function sendToBot(c, id, u, cap) {
     if (botBlocker(c, id, u)) return false;
-    const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u);
+    const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u, c, cap);
+    if (cap) capSend(c, cap, tt);
     c.s.troops = uSub(c.s.troops, u);
-    c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: "out" });
+    c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: "out", cap: cap || null, loot: capLoot(c, cap) * fleetLoot(c, u) });
     c.msg(`\u2694\uFE0F Angriff auf das Piratenschiff \u201E${b.name}\u201C (Stufe ${b.level})!`);
     return true;
   }
@@ -1244,15 +1446,18 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   }
   function fight(c, m) {
     const s = c.s, b = m.bot, tide = c.tideState(0);
-    const att = armyStr(m.u, b.u, true, tide) * (0.85 + Math.random() * 0.3);
+    const att = armyStr(m.u, b.u, true, tide) * mods(c).atk * capAtk(c, m.cap, tide) * (0.85 + Math.random() * 0.3);
     const def = Math.max(1, armyStr(b.u, m.u, false, tide));
     let lost;
     if (att > def) {
       lost = uScale(m.u, Math.min(0.85, Math.pow(def / att, 1.3) * 0.5));
       const r = botReward(b.level);
       for (const k in r.items) s.items[k] = (s.items[k] || 0) + r.items[k];
+      r.res = r.res.map((v) => Math.round(v * (m.loot || 1)));
       r.res.forEach((v, i) => v && c.addRes(i, v));
       s.troops = uAdd(s.troops, r.u);
+      s.medals = (s.medals || 0) + (r.big ? 3 : 1);
+      addVip(c, 2 * b.level);
       if (b.level >= s.botLevel) {
         s.botLevel = b.level + 1;
       }
@@ -1260,7 +1465,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.bots.length < 3 || b.level >= s.botLevel - 1) makeBots(c);
       questEvent(c, "bot", 1);
       questEvent(c, "win", 1);
-      c.report(`\u{1F3F4}\u200D\u2620\uFE0F \u201E${b.name}\u201C (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)}${r.res.some((v) => v) ? " \xB7 " + r.res.map((v, i) => v ? `${v} ${RES[i]}` : "").filter(Boolean).join(", ") : ""}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer: " + troopStr(r.u) : ""}. Verluste: ${troopStr(lost)}.`, true);
+      c.report(`\u{1F3F4}\u200D\u2620\uFE0F \u201E${b.name}\u201C (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)} \xB7 \u{1F396}\uFE0F${r.big ? 3 : 1}${r.res.some((v) => v) ? " \xB7 " + r.res.map((v, i) => v ? `${v} ${RES[i]}` : "").filter(Boolean).join(", ") : ""}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer: " + troopStr(r.u) : ""}. Verluste: ${troopStr(lost)}.`, true);
     } else {
       lost = uScale(m.u, 0.55);
       c.report(`\u{1F3F4}\u200D\u2620\uFE0F Angriff auf \u201E${b.name}\u201C (Stufe ${b.level}) gescheitert. Verluste: ${troopStr(lost)}. Tipp: Krieger w\xE4hlen, die gegen die Mannschaft stark sind.`, false);
@@ -1302,6 +1507,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     } else if (kind === "exp") {
       if (!(s.expLeft > 0)) return "Keine Wattwanderung unterwegs";
       s.expLeft = Math.max(0.01, s.expLeft - sec);
+    } else if (kind === "research") {
+      if (!s.research) return "Keine Forschung l\xE4uft";
+      s.research.left = Math.max(0.01, s.research.left - sec);
     } else if (kind === "bot") {
       const m = s.botMarches[target];
       if (!m) return "Kein Trupp";
@@ -1320,7 +1528,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var MUSCHELN = 1;
   var WASSER = 2;
   var METALL = 3;
-  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19, LAZARETT: 20 };
+  var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19, LAZARETT: 20, AKADEMIE: 21, WERFT: 22, WAHRZEICHEN: 23 };
   var DEFS = [
     { name: "Gezeitenturm", short: "Herz der Stadt", desc: "Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt h\xF6her \xFCber das Wasser.", cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
     { name: "Treibholzsammler", short: "+Holz", desc: "Fischt angeschwemmtes Holz aus dem Wasser.", cost: [40, 0, 0, 0], prod: HOLZ, rate: 0.9, workers: 2, build: 6 },
@@ -1342,7 +1550,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     { name: "Enterhalle", short: "bildet Enterer aus", desc: "Lange Halle mit Kletternetzen und Enterhaken. Schaltet Enterer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [160, 60, 0, 30], prod: -1, rate: 0, workers: 1, build: 9 },
     { name: "Schleuderplatz", short: "bildet Schleuderer aus", desc: "Offener Platz mit Wurfschleuder. Schaltet Schleuderer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [180, 40, 0, 50], prod: -1, rate: 0, workers: 1, build: 9 },
     { name: "Wattl\xE4uferh\xFCtte", short: "bildet Wattl\xE4ufer aus", desc: "H\xFCtte mit Wattstiefeln und Laufstegen. Schaltet Wattl\xE4ufer frei; jede Stufe bildet sie 10 % schneller aus.", cost: [120, 50, 20, 0], prod: -1, rate: 0, workers: 1, build: 8 },
-    { name: "Lazarett", short: "rettet verwundete Krieger", desc: "Ein Teil der gefallenen Krieger kommt verwundet zur\xFCck statt zu sterben und wird hier wieder gesund (kostet etwas Muscheln und Wasser). Jede Stufe: mehr Betten, mehr Gerettete, schnellere Heilung.", cost: [140, 60, 80, 10], prod: -1, rate: 0, workers: 2, build: 8 }
+    { name: "Lazarett", short: "rettet verwundete Krieger", desc: "Ein Teil der gefallenen Krieger kommt verwundet zur\xFCck statt zu sterben und wird hier wieder gesund (kostet etwas Muscheln und Wasser). Jede Stufe: mehr Betten, mehr Gerettete, schnellere Heilung.", cost: [140, 60, 80, 10], prod: -1, rate: 0, workers: 2, build: 8 },
+    { name: "Seefahrer-Akademie", short: "Forschung mit Dauerboni", desc: "Hier erforschen Gelehrte Verbesserungen: h\xF6here Pf\xE4hle, sch\xE4rfere Harpunen, schnelleres Bauen \u2026 Jede Akademie-Stufe forscht schneller und schaltet h\xF6here Forschungsstufen frei.", cost: [300, 120, 80, 60], prod: -1, rate: 0, workers: 2, build: 12 },
+    { name: "Werft", short: "baut Kutter f\xFCr die Flotte", desc: "Baut Kutter. Passt ein Trupp komplett auf deine Flotte (25 Krieger je Kutter), segelt er 25 % schneller und bringt 25 % mehr Beute heim. Jede Stufe: 2 Kutter mehr.", cost: [350, 40, 0, 90], prod: -1, rate: 0, workers: 2, build: 12 },
+    { name: "Gezeitenuhr (Wahrzeichen)", short: "Wahrzeichen mit Bonus", desc: "Das riesige Wahrzeichen deiner Stadt. Jede Stufe: +2 % auf alle Produktion f\xFCr dich \u2013 und online +1 % f\xFCr jedes Mitglied deiner Allianz.", cost: [500, 200, 200, 150], prod: -1, rate: 0, workers: 0, build: 20 }
   ];
   var lazSave = (L) => L > 0 ? Math.min(0.6, 0.25 + 0.02 * L) : 0;
   var lazBeds = (L) => 25 * L;
@@ -1350,7 +1561,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var TIDE_NAME = { "-1": "Ebbe", "0": "Wechsel", "1": "Flut" };
   var tideStateOf = (v) => v > 0.35 ? 1 : v < -0.35 ? -1 : 0;
   var damTopFor = (lvl) => lvl > 0 ? 3 + 0.25 * lvl : -99;
-  var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20];
+  var CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21, 22, 23];
   var UNITS = [
     { name: "Harpunier", ic: "\u{1F531}", att: 10, def: 5, carry: 30, cost: [25, 15, 0, 4], time: 6, b: 15, info: "Fernkampf. Stark gegen Enterer, schwach gegen Schildwachen." },
     { name: "Schildwache", ic: "\u{1F6E1}\uFE0F", att: 3, def: 12, carry: 15, cost: [20, 10, 0, 6], time: 5, b: 16, info: "Verteidiger. Stark gegen Harpuniere, schwach gegen Schleuderer." },
@@ -1445,7 +1656,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var LAYOUT = [
     0,
     // Ring 1 (Stadtkern, Plätze 1–12, im Uhrzeigersinn ab Norden; 7 = Torseite)
-    _T.L,
+    23,
     _T.TH,
     _T.MU,
     _T.RE,
@@ -1481,14 +1692,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     _T.W,
     _T.WL,
     _T.W,
-    _T.H,
+    22,
     _T.TA,
     _T.RE,
     _T.MU,
     _T.TH,
     _T.H,
-    _T.TH,
-    _T.MU,
+    _T.L,
+    21,
     12,
     13,
     13,
@@ -1506,7 +1717,6 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var WALL = 43;
   var TOWERS = 44;
   var OUTER_LEVEL = 3;
-  var MAX_BUILDS = 2;
   var DAY = 240;
   var STORM_LEN = 90;
   var EXP_TIME = 40;
@@ -1561,7 +1771,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return 8 + (i - RING3);
     }
     get storage() {
-      return 1500 + 2500 * this.levels(T.LAGER);
+      return Math.round((1500 + 2500 * this.levels(T.LAGER)) * mods(this).store);
+    }
+    get maxBuilds() {
+      return mods(this).builds;
+    }
+    get queueMax() {
+      return mods(this).queue;
     }
     get troopsAway() {
       let a = zeroU();
@@ -1606,7 +1822,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return uSum(this.s.troops) + uSum(this.troopsAway);
     }
     get defense() {
-      const base = armyStr(this.s.troops, null, false) + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
+      const base = armyStr(this.s.troops, null, false) * mods(this).def + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
       return Math.round(base * (1 + 0.12 * this.levels(T.WACHTURM) + 0.15 * this.levels(T.MAUER)));
     }
     get power() {
@@ -1615,10 +1831,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return b + this.troopTotal * 2 + this.defense;
     }
     get deck() {
-      return deckFor(this.towerLevel);
+      return deckFor(this.towerLevel) + mods(this).deck;
     }
     get damTop() {
-      return damTopFor(this.levels(T.DAMM));
+      const L = this.levels(T.DAMM);
+      return L > 0 ? damTopFor(L) + mods(this).dam : -99;
     }
     /// Wasser innerhalb des Damms: hält der Damm, bleibt die Stadt trocken
     get damHolds() {
@@ -1684,6 +1901,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       treasureTick(this, dt);
       this.summerTick(dt);
       botTick(this, dt);
+      researchTick(this, dt);
+      boatTick(this, dt);
       this.healTick(dt);
       if (this.eventStorm && this.freeboard < 0) {
         for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60;
@@ -1766,7 +1985,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const owned = this.online && this.online.active ? this.online.owned : s.terr.filter((t) => t.owner === 1);
       for (const t of owned) terrBonus[t.res] += t.pct / 100;
       const lh = this.online && this.online.active && this.online.lh && this.online.lh.bonus ? 1.2 : 1;
-      for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh;
+      const pm = mods(this).prod;
+      for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh * pm;
       r[MUSCHELN] -= this.upkeep / 60;
       r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
       r[WASSER] -= s.survivors * 0.03;
@@ -1866,14 +2086,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (plot >= TOWERS && plot < DAMM && this.levels(T.MAUER) <= 0) return "Erst die Festungsmauer bauen";
       if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `\xC4u\xDFerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
       if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gel\xE4nde zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Geb\xE4ude bauen`;
-      if (this.activeBuilds >= MAX_BUILDS) return "Alle Bautrupps besch\xE4ftigt";
+      if (this.activeBuilds >= this.maxBuilds) return "Alle Bautrupps besch\xE4ftigt";
       if (!this.canAfford(costFor(t, 1))) return "Zu wenig Rohstoffe";
       return null;
     }
     startBuild(plot, t) {
       if (this.buildBlocker(plot, t)) return false;
       this.pay(costFor(t, 1));
-      this.s.plots[plot] = { type: t, level: 0, buildLeft: buildTime(t, 1), buildTotal: buildTime(t, 1) };
+      const bt = buildTime(t, 1) * mods(this).build;
+      this.s.plots[plot] = { type: t, level: 0, buildLeft: bt, buildTotal: bt };
       this.msg(`Bau von ${DEFS[t].name} begonnen.`);
       questEvent(this, "build", 1);
       return true;
@@ -1884,7 +2105,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (p.buildLeft > 0) return "Wird gerade gebaut";
       if (p.level >= MAX_LEVEL) return "Maximale Stufe";
       if (plot !== 0 && p.level + 1 > this.towerLevel) return `Erst Gezeitenturm auf Stufe ${p.level + 1}`;
-      if (this.activeBuilds >= MAX_BUILDS) return "Alle Bautrupps besch\xE4ftigt";
+      if (this.activeBuilds >= this.maxBuilds) return "Alle Bautrupps besch\xE4ftigt";
       if (!this.canAfford(costFor(p.type, p.level + 1))) return "Zu wenig Rohstoffe";
       return null;
     }
@@ -1892,7 +2113,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.upgradeBlocker(plot)) return false;
       const p = this.s.plots[plot];
       this.pay(costFor(p.type, p.level + 1));
-      p.buildTotal = p.buildLeft = buildTime(p.type, p.level + 1);
+      p.buildTotal = p.buildLeft = buildTime(p.type, p.level + 1) * mods(this).build;
       this.msg(`Ausbau: ${DEFS[p.type].name} \u2192 Stufe ${p.level + 1}`);
       questEvent(this, "build", 1);
       return true;
@@ -1966,7 +2187,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     startTrain(u, n) {
       if (this.trainBlocker(u, n)) return false;
       this.pay(unitCost(u, n));
-      const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1)) / (1 + 0.1 * (this.levels(UNITS[u].b) - 1));
+      const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1)) / (1 + 0.1 * (this.levels(UNITS[u].b) - 1)) * mods(this).train;
       this.s.train.push({ u, n, per, left: per });
       this.msg(`${n}\xD7 ${UNITS[u].name} in Ausbildung.`);
       return true;
@@ -1992,7 +2213,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     addWounded(u) {
       const L = this.levels(T.LAZARETT);
       if (L <= 0 || !u) return;
-      const s = this.s, f = lazSave(L), cap = lazBeds(L);
+      const s = this.s, f = Math.min(0.8, lazSave(L) + mods(this).save), cap = lazBeds(L);
       let w = uScale(u, f), room = cap - uSum(s.wounded);
       if (room <= 0) return;
       if (uSum(w) > room) w = uScale(w, room / uSum(w));
@@ -2027,11 +2248,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.s.marches.some((m) => m.target === id && m.phase === "out" && m.kind !== "scout")) return "Dorthin ist schon ein Trupp unterwegs";
       return null;
     }
-    sendTroops(id, u) {
+    sendTroops(id, u, cap) {
       if (this.attackBlocker(id, u)) return false;
-      const t = this.s.terr[id], tt = travelTime(t) * speedFactor(u);
+      const t = this.s.terr[id], tt = travelTime(t) * speedFactor(u) * mods(this).travel * fleetSpeed(this, u) * capSpeed(this, cap);
+      if (cap) capSend(this, cap, tt);
       this.s.troops = uSub(this.s.troops, u);
-      this.s.marches.push({ target: id, u: u.slice(), left: tt, total: tt, phase: "out", kind: t.owner === 1 ? "reinforce" : "attack" });
+      this.s.marches.push({ target: id, u: u.slice(), left: tt, total: tt, phase: "out", kind: t.owner === 1 ? "reinforce" : "attack", cap: cap || null });
       this.msg(t.owner === 1 ? `Verst\xE4rkung nach ${t.name} unterwegs.` : `Angriff auf ${t.name} gestartet!`);
       return true;
     }
@@ -2046,7 +2268,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     battle(m, t) {
       const tide = this.tideState(0);
-      const att = armyStr(m.u, null, true, tide) * (0.85 + Math.random() * 0.3);
+      const att = armyStr(m.u, null, true, tide) * mods(this).atk * capAtk(this, m.cap, tide) * (0.85 + Math.random() * 0.3);
       if (att > t.pirates) {
         const loss = Math.min(0.9, Math.pow(t.pirates / att, 1.3) * 0.6);
         const lost = uScale(m.u, loss);
@@ -2204,9 +2426,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.raidTimer === void 0) s.raidTimer = 480;
       if (s.counterTimer === void 0) s.counterTimer = 420;
       while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
-      if ((s.layoutV || 0) < 3) {
+      if ((s.layoutV || 0) < 4) {
         this.relayout();
-        s.layoutV = 3;
+        s.layoutV = 4;
       }
       if (!s.nodes.length && !s.gath.length) {
         for (let k = 0; k < 4; k++) {
@@ -2222,7 +2444,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return Math.max(0, this.healthy - this.gatherers);
     }
     get carry() {
-      return (18 + 3 * this.towerLevel) * (this.online && this.online.eventLeft("doppelt") > 0 ? 2 : 1);
+      return (18 + 3 * this.towerLevel) * (this.online && this.online.eventLeft("doppelt") > 0 ? 2 : 1) * mods(this).gather;
     }
     nodeById(id) {
       return this.s.nodes.find((n) => n.id === id);
@@ -2405,7 +2627,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         sick: 0,
         beaconOn: true,
         plots,
-        layoutV: 3,
+        layoutV: 4,
         lastSave: Date.now(),
         dayTime: 0.3,
         days: 1,
@@ -2647,6 +2869,52 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         B.add("cube", [0, 0.15, 2.3], [5, 0.12, 0.8], C.plank);
         B.add("cylinder", [2.5, 2, 1.9], [0.07, 2, 0.07], C.tar);
         B.add("cube", [2.95, 3.5, 1.9], [0.9, 0.5, 0.03], [0.95, 0.75, 0.2]);
+        break;
+      }
+      case T.AKADEMIE: {
+        const st = [0.78, 0.75, 0.68];
+        B.add("cube", [0, 1.4, -0.4], [5, 2.8, 3.4], st, { g: 0.15 });
+        B.add("prism", [0, 3.3, -0.4], [5.3, 1.1, 3.7], [0.3, 0.35, 0.42], { g: 0.3 });
+        for (let k = 0; k < 4; k++) B.add("cylinder", [-1.8 + k * 1.2, 1.3, 1.55], [0.32, 1.3, 0.32], [0.92, 0.9, 0.85]);
+        B.add("cube", [0, 2.75, 1.55], [5, 0.3, 0.5], [0.92, 0.9, 0.85]);
+        B.add("cylinder", [1.8, 4.2, -1.2], [0.9, 0.5, 0.9], [0.45, 0.5, 0.58], { g: 0.6 });
+        B.add("sphere", [1.8, 4.7, -1.2], [1, 0.8, 1], [0.45, 0.55, 0.62], { g: 0.7 });
+        B.add("cylinder", [2.2, 4.9, -0.8], [0.18, 0.6, 0.18], [0.75, 0.62, 0.3], { rot: [-40, 30, 0], g: 0.8 });
+        for (let k = 0; k < 3; k++) B.add("cube", [-1.2 + k * 1.2, 1.6, 1.32], [0.5, 0.8, 0.04], C.window, { e: 1.5 });
+        break;
+      }
+      case T.WERFT: {
+        B.add("cube", [0, 0.1, 0], [6, 0.2, 5.4], C.plank);
+        for (let k = 0; k < 2; k++) {
+          B.add("cylinder", [-2.6 + k * 5.2, 2.2, -2.2], [0.25, 2.2, 0.25], C.tar);
+          B.add("cylinder", [-2.6 + k * 5.2, 2.2, 2.2], [0.25, 2.2, 0.25], C.tar);
+        }
+        B.add("cube", [0, 4.4, -2.2], [5.6, 0.25, 0.25], C.tar);
+        B.add("cube", [0, 4.4, 2.2], [5.6, 0.25, 0.25], C.tar);
+        B.add("cube", [0, 1, 0], [4.2, 1.2, 1.8], [0.55, 0.38, 0.22], { g: 0.2 });
+        B.add("prism", [2.6, 1.05, 0], [1, 1.3, 1.8], [0.55, 0.38, 0.22], { rot: [0, 0, -90] });
+        for (let k = 0; k < 6; k++) B.add("cube", [-1.8 + k * 0.7, 1.75, 0], [0.12, 0.2, 2], [0.4, 0.28, 0.16]);
+        B.add("cylinder", [0, 3, 0], [0.12, 1.8, 0.12], C.tar);
+        B.add("cube", [-2.4, 0.6, 2.5], [1.2, 1, 0.8], [0.6, 0.48, 0.3]);
+        break;
+      }
+      case T.WAHRZEICHEN: {
+        const st = [0.72, 0.7, 0.66], gold = [0.95, 0.78, 0.3], H = 6 + 0.25 * level;
+        B.add("cylinder", [0, 0.4, 0], [5, 0.4, 5], st, { g: 0.2 });
+        B.add("cylinder", [0, 0.9, 0], [4, 0.2, 4], [0.6, 0.58, 0.55]);
+        B.add(frustum(0.7), [0, 1, 0], [2.6, H, 2.6], st, { g: 0.2 });
+        for (const r of [0, 90, 180, 270]) {
+          const a = r * Math.PI / 180, x = Math.sin(a) * 0.93, z = Math.cos(a) * 0.93;
+          B.add("cylinder", [x, H - 0.5, z], [1.3, 0.06, 1.3], [0.95, 0.94, 0.88], { rot: [90, r, 0], e: 0.6 });
+          B.add("cube", [x * 1.03, H - 0.5 + 0.25, z * 1.03], [0.06, 0.55, 0.04], [0.15, 0.15, 0.18], { rot: [0, r, 0] });
+          B.add("cube", [x * 1.03, H - 0.5, z * 1.03], [0.4, 0.06, 0.04], [0.15, 0.15, 0.18], { rot: [0, r, 0] });
+        }
+        B.add("cone", [0, H + 0.9, 0], [2.4, 1.8, 2.4], [0.25, 0.45, 0.4], { g: 0.5 });
+        B.add("sphere", [0, H + 2, 0], [0.4, 0.4, 0.4], gold, { g: 0.9, e: 0.4 });
+        for (let k = 0; k < 6; k++) {
+          const a = k * Math.PI / 3;
+          B.add("cube", [Math.sin(a) * 4.3, 0.95, Math.cos(a) * 4.3], [0.5, 0.15, 0.5], [0.95, 0.75, 0.3], { e: 1.2 });
+        }
         break;
       }
       case T.LAZARETT: {
@@ -3765,6 +4033,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const y = this.groundAt(tr.x, tr.z), p = 0.6 + 0.4 * Math.sin(this.time * 5 + tr.id);
         draws.push({ mesh: this.chestMesh, model: trs([tr.x, y + 0.1, tr.z], [0, this.time * 40 + tr.id * 50, 0], [1.4, 1.4, 1.4]), emis: p, noShadow: true });
       }
+      for (let k = 0; k < Math.min(6, c2.s.boats || 0); k++) {
+        const x = (k % 2 ? 1 : -1) * (5 + Math.floor(k / 2) * 4.5), z = -(wallRadius() + 7);
+        draws.push({ mesh: this.shipMesh, model: trs([x, wyNow(c2) + Math.sin(this.time + k) * 0.08, z], [Math.sin(this.time * 0.8 + k) * 1.5, 90, 0], [0.45, 0.45, 0.45]) });
+      }
       if (c2.s.trader && c2.s.trader.left > 0) {
         const zr = -(damRadius() + 12), arrive = Math.min(1, (150 - c2.s.trader.left) / 8), leave = Math.min(1, c2.s.trader.left / 8);
         const off = (1 - Math.min(arrive, leave)) * 40;
@@ -3987,8 +4259,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     /// Alles Anklickbare: { type: 'terr'|'player', id, x, y }
     items() {
+      const ex = this.isOnline && this.o.boss ? [{ type: "boss", id: 1, x: 3.5, y: -3.5 }] : [];
       const bots = (this.c.s.bots || []).map((b) => ({ type: "bot", id: b.id, x: this.home[0] + b.dx, y: this.home[1] + b.dy }));
-      return this.items0().concat(bots);
+      return this.items0().concat(bots, ex);
     }
     items0() {
       if (this.isOnline) {
@@ -4032,6 +4305,35 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.isOnline) this.drawOnline(sel);
       else this.drawOffline(sel);
       this.drawBots(sel);
+      if (this.isOnline && this.o.boss) this.drawBoss(sel);
+    }
+    drawBoss(sel) {
+      const ctx = this.ctx, u = this.u, b = this.o.boss, [x, y] = this.pos(3.5, -3.5), t = this.t;
+      if (sel && sel.type === "boss") {
+        ctx.fillStyle = "rgba(255,90,90,0.25)";
+        ctx.beginPath();
+        ctx.arc(x, y, u * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = "rgba(160,40,120,0.5)";
+      ctx.lineWidth = 3;
+      for (let k = 0; k < 6; k++) {
+        const a = k * Math.PI / 3 + Math.sin(t + k) * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + Math.cos(a) * u * 0.35, y + Math.sin(a) * u * 0.35 + Math.sin(t * 2 + k) * 6, x + Math.cos(a + 0.4) * u * 0.6, y + Math.sin(a + 0.4) * u * 0.6);
+        ctx.stroke();
+      }
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `${Math.round(u * 0.6)}px system-ui`;
+      ctx.fillText("\u{1F419}", x, y + Math.sin(t * 1.3) * 3);
+      const w = u * 0.9;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(x - w / 2, y + u * 0.38, w, 7);
+      ctx.fillStyle = "#ff5a5a";
+      ctx.fillRect(x - w / 2, y + u * 0.38, w * b.hp / b.maxhp, 7);
+      this.label(x, y + u * 0.45, `Riesenkrake Stufe ${b.level}`, "#ffb0e0");
     }
     /// Piratenschiffe (Bots) und Trupps dorthin
     drawBots(sel) {
@@ -4246,7 +4548,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     return (v < 0 ? "\u2212" : "+") + s;
   };
   var RES_IC = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
-  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}", "\u{1F531}", "\u{1F6E1}\uFE0F", "\u{1F5E1}\uFE0F", "\u{1FAA8}", "\u{1F3C3}", "\u{1FA79}"];
+  var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}", "\u{1F531}", "\u{1F6E1}\uFE0F", "\u{1F5E1}\uFE0F", "\u{1FAA8}", "\u{1F3C3}", "\u{1FA79}", "\u{1F4DA}", "\u2693", "\u{1F570}\uFE0F"];
   var NODE_NAME = ["Treibholz", "Muschelbank", "S\xFC\xDFwassert\xFCmpel", "Wrackteile"];
   var setHTML = (el, html) => {
     if (el._h !== html) {
@@ -4285,6 +4587,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         top.querySelector(".res").appendChild(card);
         return { v: card.querySelector(".rv"), r: card.querySelector(".rr") };
       });
+      this.avaEl = $("#ava");
+      this.avaEl.dataset.a = "profile";
+      this.raidEl = $("#raid");
+      this.raidEl.dataset.a = "troops";
+      this.aviEl = top.querySelector(".avi");
+      this.vipEl = top.querySelector(".vipb");
+      this.nameEl = top.querySelector(".pname");
+      this.clockEl = top.querySelector(".clock");
+      $("#avFile").addEventListener("change", (e) => this.avatarFile(e.target.files && e.target.files[0]));
       this.gw = top.querySelector(".gw");
       this.gd = top.querySelector(".gd");
       this.tl = top.querySelector(".tl");
@@ -4377,6 +4688,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         md = null;
         const r = mc.getBoundingClientRect();
         this.mapSel = this.sea.pick(e.clientX - r.left, e.clientY - r.top);
+        if (this.mapSel && this.mapSel.type === "boss") this.o.bossInfo().then(() => this.panelKey = null);
         this.form = zeroU();
         this.showReports = false;
         this.panelKey = null;
@@ -4438,6 +4750,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         this.o.loadAlliances();
         this.o.loadChat();
         this.o.loadRallies();
+        this.o.allyProjects().then(() => this.panelKey = null);
       }
       if (this.mode === "rank") this.o.loadRanking();
     }
@@ -4497,7 +4810,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         this.menuTab = ds.t;
         this.codeMsg = null;
         if (ds.t === "codes") this.o.loadCodes().then(() => this.panelKey = null);
-        if (ds.t === "admin") this.o.adminPlayers().then(() => this.panelKey = null);
+        if (ds.t === "admin") {
+          this.o.adminPlayers().then(() => this.panelKey = null);
+          this.o.adminAvatars().then(() => this.panelKey = null);
+        }
       } else if (a === "redeem") {
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const code = val("codeIn");
@@ -4524,10 +4840,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const num = (id) => Math.max(0, Math.floor(+val(id) || 0));
         const code = val("ncCode").toUpperCase(), res = [0, 1, 2, 3].map((i) => num("ncR" + i)), u = [0, 1, 2, 3, 4].map((i) => num("ncU" + i));
-        const days = val("ncDays") === "" ? 1 : num("ncDays"), max = num("ncMax");
+        const days = val("ncDays") === "" ? 1 : num("ncDays"), max = num("ncMax"), vp = num("ncVip");
         this.run(async () => {
           try {
-            await o.saveCode(code, res, u, days, max);
+            await o.saveCode(code, res, u, days, max, vp);
             this.codeMsg = { ok: true, text: `Code <b>${code}</b> gespeichert \u2013 gib ihn an deine Spieler weiter.` };
           } catch (e) {
             this.codeMsg = { ok: false, text: e.message };
@@ -4610,6 +4926,81 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (r) c.msg(`\u{1F381} Tagesbelohnung: ${this.rewardStr(r.res, r.u)}`);
       } else if (a === "toggleDismiss") {
         this.showDismiss = !this.showDismiss;
+      } else if (a === "openMode") {
+        this.openMode(ds.m);
+      } else if (a === "bossHit") {
+        const f = this.form.slice(), cap = this.capSel && capFree(c, this.capSel) ? this.capSel : null, boost = mods(c).atk * capAtk(c, cap, c.tideState(0));
+        this.run(async () => {
+          try {
+            const r = await o.bossAttack(f, boost);
+            if (cap) capSend(c, cap, 30);
+            this.form = zeroU();
+            this.capSel = null;
+            c.msg(r.killed ? "\u{1F419} Die Riesenkrake ist besiegt! Belohnungen kommen gleich." : `\u{1F419} Treffer! ${r.dmg.toLocaleString("de-DE")} Schaden \xB7 Verluste ${troopStr(r.lost)}`);
+          } catch (e) {
+            c.msg(e.message);
+          }
+        });
+      } else if (a === "admBoss") {
+        this.run(async () => {
+          try {
+            await o.adminBoss();
+            this.codeMsg = { ok: true, text: "\u{1F419} Die Riesenkrake ist aufgetaucht!" };
+          } catch (e) {
+            this.codeMsg = { ok: false, text: e.message };
+          }
+        });
+      } else if (a === "avOk" || a === "avNo") {
+        const id = ds.id;
+        this.run(async () => {
+          await o.adminAvatarSet(id, a === "avOk");
+        });
+      } else if (a === "donPick") {
+        this.donKind = ds.k;
+      } else if (a === "donBack") {
+        this.donKind = null;
+      } else if (a === "donSend") {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        const res = [0, 1, 2, 3].map((k2) => Math.max(0, Math.min(Math.floor(c.s.res[k2]), Math.floor(+val("dn" + k2) || 0))));
+        if (!res.some((v2) => v2 > 0)) {
+          c.msg("Bitte eine Menge eintragen.");
+          return;
+        }
+        const k = this.donKind;
+        this.run(async () => {
+          await o.allyDonate(k, res);
+          this.donKind = null;
+          c.msg("\u{1F3D7}\uFE0F Danke f\xFCr deine Spende!");
+        });
+      } else if (a === "profile") {
+        if (this.mode === "profile") this.mode = null;
+        else this.openMode("profile");
+      } else if (a === "avPreset") {
+        c.s.avatar = ds.v;
+        c.s.avatarPhoto = false;
+      } else if (a === "avPhotoUse") {
+        c.s.avatarPhoto = !c.s.avatarPhoto;
+      } else if (a === "avUpload") {
+        const f = $("#avFile");
+        if (f) {
+          f.value = "";
+          f.click();
+        }
+      } else if (a === "tech") {
+        startTech(c, ds.id);
+      } else if (a === "boat") {
+        buildBoat(c);
+      } else if (a === "hire") {
+        const e = hireCaptain(c, ds.id);
+        if (e) c.msg(e);
+      } else if (a === "capUp") {
+        const e = upCaptain(c, ds.id);
+        if (e) c.msg(e);
+      } else if (a === "capSel") {
+        this.capSel = this.capSel === ds.id ? null : ds.id;
+      } else if (a === "vipChest") {
+        const r = claimVipChest(c);
+        if (r) c.msg(`\u{1F451} VIP-Truhe: ${this.rewardStr(r.res)} \xB7 ${itemStr(r.items)} \xB7 \u{1F396}\uFE0F${r.medals}`);
       } else if (a === "claimPass") {
         if (claimPass(c, +ds.t)) c.msg(`\u{1F3AB} Pass-Belohnung Stufe ${ds.t} erhalten!`);
       } else if (a === "dismiss") {
@@ -4676,22 +5067,28 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       } else if (a === "send") {
         const sel = this.mapSel, f = this.form.slice();
         if (!sel) return;
+        const cap = this.capSel && capFree(c, this.capSel) ? this.capSel : null;
+        const boost = mods(c).atk * capAtk(c, cap, c.tideState(30)), speed = mods(c).travel * fleetSpeed(c, f) * capSpeed(c, cap);
         if (this.sea.isOnline) this.run(async () => {
-          await o.sendMarch(sel.type, sel.id, f);
+          await o.sendMarch(sel.type, sel.id, f, boost, speed);
+          if (cap) capSend(c, cap, 60);
+          this.capSel = null;
           this.form = zeroU();
           this.mapSel = null;
           c.msg(sel.type === "player" ? "Angriff gestartet!" : "Trupp ist unterwegs.");
           await o.loadWorld();
         });
-        else if (c.sendTroops(sel.id, f)) {
+        else if (c.sendTroops(sel.id, f, this.capSel)) {
           this.form = zeroU();
           this.mapSel = null;
+          this.capSel = null;
         }
       } else if (a === "sendBot") {
         const sel = this.mapSel, f = this.form.slice();
-        if (sel && sendToBot(c, sel.id, f)) {
+        if (sel && sendToBot(c, sel.id, f, this.capSel && capFree(c, this.capSel) ? this.capSel : null)) {
           this.form = zeroU();
           this.mapSel = null;
+          this.capSel = null;
         }
       } else if (a === "speed") {
         const e = useSpeed(c, ds.k, ds.kind, +ds.t);
@@ -4913,7 +5310,20 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const fb = c.freeboard, fbCol = fb >= 0.5 ? "#8ef0a0" : fb >= 0 ? "#ffd27a" : "#ff6a6a";
       const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? "Ebbe" : c.rising ? "Flut \u2191" : "Flut \u2193";
       setHTML(this.tl, `${tide} \xB7 <b style="color:${fbCol}">${fb >= 0 ? "+" : ""}${fb.toFixed(1)} m</b>${c.damHolds ? ' \xB7 <span style="color:#8ef0a0">\u{1F30A} Damm h\xE4lt</span>' : ""}${" \xB7 " + season().ic}${this.o.eventLeft("sturmflut") > 0 ? ` \xB7 <b style="color:#ff9a5a">Sturmflut-Event ${fmtTime(this.o.eventLeft("sturmflut"))}</b>` : ""}${this.o.eventLeft("doppelt") > 0 ? ' \xB7 <b style="color:#8ef0a0">\u{1F9FA} 2\xD7 Sammeln</b>' : ""}${this.o.lh && this.o.lh.bonus ? " \xB7 \u{1F5FC}+20 %" : ""}${c.stormWarning ? ' \xB7 <span style="color:#ffc060">Sturm naht</span>' : ""}${c.raidIn !== null && c.raidIn < 30 ? ' \xB7 <b style="color:#ff6060">Piraten!</b>' : ""}`);
-      let st = `\u{1F465} <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` \u{1F912}${s.sick}` : ""} \xB7 \u2694 <b>${uSum(s.troops)}</b> \xB7 ${clock(s.dayTime)}`;
+      let st = `\u{1F465} <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` \u{1F912}${s.sick}` : ""} \xB7 \u2694 <b>${uSum(s.troops)}</b> \xB7 ${s.dayTime < 0.25 || s.dayTime > 0.75 ? "\u{1F319}" : "\u2600\uFE0F"} ${clock(s.dayTime)}`;
+      const vl = vipLevel(c);
+      setHTML(this.vipEl, "VIP " + vl);
+      this.vipEl.className = "vipb" + (vl ? "" : " v0");
+      this.avaEl.classList.toggle("gold", vl >= 10);
+      setHTML(this.nameEl, (this.o.active && this.o.name ? this.o.name : s.playerName || "Pfahlst\xE4dter").replace(/[&<>"]/g, ""));
+      setHTML(this.aviEl, this.avatarHtml());
+      if (c.raidIn !== null && this.view === "city") {
+        setHTML(this.raidEl, `<span class="ri2">\u{1F3F4}\u200D\u2620\uFE0F</span><b>${fmtTime(c.raidIn)}</b><small>Piraten</small>`);
+        this.raidEl.style.display = "";
+        this.raidEl.classList.toggle("alarm", c.raidIn < 30);
+      } else this.raidEl.style.display = "none";
+      const d = /* @__PURE__ */ new Date();
+      setHTML(this.clockEl, d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
       if (this.o.active) st += this.o.incoming ? ` \xB7 <b style="color:#ff6060">\u26A0 Angriff!</b>` : this.o.status === "online" ? ' <span style="color:#8ef0a0">\u25CF</span>' : ' <span style="color:#ffb070">\u25CF</span>';
       setHTML(this.st, st);
       const now = c.time;
@@ -5003,11 +5413,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const ae = document.activeElement;
       if (ae && ae.tagName === "INPUT" && this.panel.contains(ae)) return;
       let html = "";
-      if (this.view === "map") html = this.showReports ? this.reportsHtml() : this.mapSel ? this.mapSel.type === "player" ? this.playerHtml() : this.mapSel.type === "bot" ? this.botHtml() : this.terrHtml() : this.mapHtml();
+      if (this.view === "map") html = this.showReports ? this.reportsHtml() : this.mapSel ? this.mapSel.type === "player" ? this.playerHtml() : this.mapSel.type === "bot" ? this.botHtml() : this.mapSel.type === "boss" ? this.bossHtml() : this.terrHtml() : this.mapHtml();
       else if (this.mode === "ally") html = this.allyHtml();
       else if (this.mode === "build") html = this.buildingsHtml();
       else if (this.mode === "troops") html = this.troopsHtml();
       else if (this.mode === "gift") html = this.giftHtml();
+      else if (this.mode === "research") html = this.researchHtml();
+      else if (this.mode === "profile") html = this.profileHtml();
+      else if (this.mode === "yard") html = this.yardHtml();
       else if (this.mode === "trader") html = this.traderHtml();
       else if (this.mode === "rank") html = this.rankHtml();
       else if (this.mode === "account") html = this.accountHtml();
@@ -5069,7 +5482,6 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           out.push({ ic: m.kind === "scout" ? "\u{1F52D}" : back ? "\u21A9\uFE0F" : m.kind === "attack" ? "\u2694\uFE0F" : "\u{1F6E1}\uFE0F", t: `${m.kind === "scout" ? "Sp\xE4her" : back ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rk."} ${nm}`, left: m.left, pct: pct(m.left, m.total), a: 'data-a="gomap"' });
         }
       }
-      if (c.raidIn !== null && c.raidIn < 180) out.push({ ic: "\u{1F3F4}\u200D\u2620\uFE0F", t: "Piraten kommen", left: c.raidIn, pct: null, red: true, a: 'data-a="troops"' });
       const by = {};
       for (const g of s.gath || []) by[g.node] = (by[g.node] || 0) + 1;
       for (const id in by) {
@@ -5118,7 +5530,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           rows += `<div class="row"><div class="ri"><div><b>${d2.name}</b> <span class="sh">${d2.short}</span></div>
           <div class="sm">${this.costStr(costFor(t, 1))} &nbsp;\xB7&nbsp; ${fmtTime(buildTime(t, 1))}</div>
           ${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div>
-          ${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qplot" data-v="${t}">\u{1F552} Sp\xE4ter</button>` : `<button class="btn" data-a="build" data-v="${t}" ${blk ? "disabled" : ""}>Bauen</button>`}</div>`;
+          ${QOK.includes(blk) && (c.s.bq || []).length < c.queueMax && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qplot" data-v="${t}">\u{1F552} Sp\xE4ter</button>` : `<button class="btn" data-a="build" data-v="${t}" ${blk ? "disabled" : ""}>Bauen</button>`}</div>`;
         }
         const zone = i === DAMM ? "ganz au\xDFen" : i === WALL ? "Festung" : i >= TOWERS ? "auf der Mauer" : i >= RING3 ? "Warft" : i >= INNER ? "Ring 2" : "Stadtkern";
         const title = `${B_IC[LAYOUT[i]]} Bauplatz \xB7 ${zone}`;
@@ -5135,10 +5547,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         out += `<div class="bline"><div class="ri" style="flex:1">\u{1F528} ${L > 0 ? "Ausbau auf " + (L + 1) : "Bau"} \xB7 noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>` + this.speedBtns("plot", i);
       } else if (L < MAX_LEVEL) {
         const blk = c.upgradeBlocker(i);
-        out += `<div class="bline"><div class="ri" style="flex:1">\u2192 Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} \xB7 \u23F1 ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div>${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>\u{1F552} Sp\xE4ter</b></button>` : `<button class="btn" data-a="up" ${blk ? "disabled" : ""}><b>Ausbauen</b></button>`}</div>`;
+        out += `<div class="bline"><div class="ri" style="flex:1">\u2192 Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} \xB7 \u23F1 ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div>${QOK.includes(blk) && (c.s.bq || []).length < c.queueMax && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>\u{1F552} Sp\xE4ter</b></button>` : `<button class="btn" data-a="up" ${blk ? "disabled" : ""}><b>Ausbauen</b></button>`}</div>`;
       } else out += '<div class="sm">Maximale Stufe erreicht.</div>';
       const extra = [];
-      if (L > 0 && (p.type === T.KASERNE || p.type >= T.HARPHOF)) extra.push('<button class="btn ghost" data-a="troops">\u2694\uFE0F Truppen ausbilden</button>');
+      if (L > 0 && p.type === T.AKADEMIE) extra.push('<button class="btn" data-a="openMode" data-m="research">\u{1F4DA} Forschung</button>');
+      if (L > 0 && p.type === T.WERFT) extra.push('<button class="btn" data-a="openMode" data-m="yard">\u2693 Werft</button>');
+      if (L > 0 && (p.type === T.KASERNE || p.type >= T.HARPHOF && p.type <= T.LAZARETT)) extra.push('<button class="btn ghost" data-a="troops">\u2694\uFE0F Truppen ausbilden</button>');
       if (i !== 0) extra.push(`<button class="btn ${this.confirm === "demo" ? "danger" : "ghost"}" data-a="demo" style="padding:7px 10px;font-size:12px">${this.confirm === "demo" ? "<b>Wirklich abrei\xDFen?</b>" : "Abrei\xDFen"}</button>`);
       return out + (extra.length ? `<div class="btns" style="margin-top:8px">${extra.join("")}</div>` : "");
     }
@@ -5191,6 +5605,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           return [`Alle Produktion <b>+${Math.min(60, 6 * L)} %</b>`, `Arbeiter: ${d.workers * L}`];
         case T.KASERNE:
           return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller \xB7 Schlange bis ${10 * L}`];
+        case T.AKADEMIE:
+          return [`Forscht ${10 * (L - 1)} % schneller \xB7 Forschungsstufen bis ${Math.min(TECH_MAX, Math.floor((L + 1) / 2))}`, c.s.research ? `Forscht gerade: ${TECH.find((t2) => t2.id === c.s.research.id).name} (${fmtTime(c.s.research.left)})` : "Gerade keine Forschung"];
+        case T.WERFT:
+          return [`Flotte: <b>${c.s.boats || 0}/${maxBoats(c)}</b> Kutter \xB7 ${(c.s.boats || 0) * BOAT_CAP} Pl\xE4tze`, "Trupps, die ganz auf die Flotte passen: \u221225 % Fahrzeit, +25 % Beute"];
+        case T.WAHRZEICHEN:
+          return [`Produktion <b>+${2 * L} %</b> f\xFCr dich`, `Online: +${L} % f\xFCr jedes Allianz-Mitglied`];
         case T.LAZARETT:
           return [`Rettet <b>${Math.round(lazSave(L) * 100)} %</b> der Gefallenen \xB7 ${lazBeds(L)} Betten`, `Verwundet: ${troopStr(c.s.wounded)} \xB7 Heilung ${L} alle 8 s`];
         case T.HARPHOF:
@@ -5228,6 +5648,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="-5">\u22125</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="-1">\u22121</button>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="1">+1</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="5">+5</button></div>`;
       });
+      const caps = CAPTAINS.filter((k) => capOf(this.c, k.id));
+      if (caps.length) out += `<div class="speeds"><span class="sm">\u{1F396}\uFE0F Kapit\xE4n:</span>${caps.map((k) => {
+        const free = capFree(this.c, k.id);
+        return `<button class="btn sm2 ${this.capSel === k.id ? "" : "ghost"}" data-a="capSel" data-id="${k.id}" ${free ? "" : "disabled"}>${k.ic} ${k.name.split(" ")[0]}${free ? "" : " \u23F3"}</button>`;
+      }).join("")}</div>`;
+      if (fleetFits(this.c, f)) out += '<div class="sm">\u2693 Passt auf deine Flotte: \u221225 % Fahrzeit, +25 % Beute</div>';
       if (!uSum(s.troops) && !uSum(f)) out += '<div class="sm">Keine Krieger zu Hause. Bilde sie unter \u2694\uFE0F Truppen aus.</div>';
       else if (uSum(f)) out += `<div class="sm">Trupp: ${troopStr(f)} \xB7 Beute bis ${carryOf(f)} \xB7 Tempo ${speedFactor(f) < 1 ? "schnell \u{1F3C3}" : speedFactor(f) > 1 ? "langsam \u{1FAA8}" : "normal"}</div>`;
       if (extra) out += extra;
@@ -5335,6 +5761,33 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       });
       return out;
     }
+    bossHtml() {
+      const c = this.c, o = this.o, b = o.boss, I = o.bossI || {}, f = this.form;
+      if (!b) return this.head("\u{1F419} Riesenkrake") + '<div class="sm">Die Krake ist abgetaucht.</div>';
+      const left = (Date.parse(b.ends) - o.serverNow()) / 1e3, cd = I.cooldown || 0;
+      let out = this.head(`\u{1F419} Riesenkrake \xB7 Stufe ${b.level}`) + `<div class="desc">Alle Spieler k\xE4mpfen gemeinsam! Jeder Angriff macht Schaden; deine Krieger kehren sofort zur\xFCck, etwa 12 % fallen. Ist die Krake besiegt, bekommt jeder Teilnehmer Beute \u2013 die Besten und die st\xE4rkste Allianz extra viel.</div>
+      <div class="inf">\u2764\uFE0F ${b.hp.toLocaleString("de-DE")} / ${b.maxhp.toLocaleString("de-DE")} \xB7 taucht ab in ${fmtTime(Math.max(0, left))}</div><div class="bar big"><div style="width:${Math.round(100 * b.hp / b.maxhp)}%;background:#ff5a5a"></div></div>`;
+      if (I.mine) out += `<div class="sm">Dein Schaden: <b>${I.mine.toLocaleString("de-DE")}</b>${cd > 0 ? ` \xB7 n\xE4chster Angriff in ${fmtTime(cd)}` : ""}</div>`;
+      if ((I.players || []).length) out += '<div class="sm">\u{1F3C6} ' + I.players.slice(0, 5).map((p, i) => `${i + 1}. ${p.name} ${p.dmg.toLocaleString("de-DE")}`).join(" \xB7 ") + "</div>";
+      if ((I.alliances || []).length) out += '<div class="sm">\u{1F91D} ' + I.alliances.map((a) => `[${a.tag}] ${a.dmg.toLocaleString("de-DE")}`).join(" \xB7 ") + "</div>";
+      out += '<div class="sub2">Angriffstrupp</div>' + this.troopForm("Angreifen!", true, cd > 0 ? "Kurz warten \u2013 alle 5 Minuten ein Angriff" : null, `<div class="sm">Erwarteter Schaden: ~${Math.round(armyStr(f, null, true) * mods(c).atk).toLocaleString("de-DE")}</div>`, "bossHit");
+      return out;
+    }
+    projectsHtml() {
+      const o = this.o, P = o.projects || [];
+      const NAMES = { deich: ["\u{1F30A} Allianz-Deich", "+0,5 m Dammschutz je Stufe f\xFCr alle"], speicher: ["\u{1F4E6} Gemeinschaftsspeicher", "+10 % Lagerplatz je Stufe"], werkstatt: ["\u{1F6E0}\uFE0F Werkstatt", "+4 % Produktion je Stufe"] };
+      if (this.donKind) {
+        const n = (k) => `<input class="n" id="dn${k}" type="number" min="0" inputmode="numeric" placeholder="${RES_IC[k]} ${RES[k]}" style="flex:1 1 23%">`;
+        return `<div class="sub2">Spenden f\xFCr ${NAMES[this.donKind][0]}</div><div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map(n).join("")}</div>
+        <div class="btns"><button class="btn" data-a="donSend" ${this.busy ? "disabled" : ""}><b>Spenden</b></button><button class="btn ghost" data-a="donBack">Zur\xFCck</button></div>`;
+      }
+      return '<div class="sub2">\u{1F3D7}\uFE0F Allianz-Projekte</div><div class="sm">Alle Mitglieder spenden Rohstoffe \u2013 jede Stufe gilt f\xFCr die ganze Allianz.</div>' + ["deich", "speicher", "werkstatt"].map((k) => {
+        const p = P.find((x) => x.kind === k) || { level: 0, progress: 0, goal: 4e3 };
+        return `<div class="row"><div class="ri"><b>${NAMES[k][0]}</b> <span class="sh">Stufe ${p.level}/10 \xB7 ${NAMES[k][1]}</span>
+        ${p.level < 10 ? `<div class="bar"><div style="width:${Math.round(100 * p.progress / p.goal)}%"></div></div><div class="sm">${p.progress.toLocaleString("de-DE")} / ${p.goal.toLocaleString("de-DE")}</div>` : ""}</div>
+        ${p.level < 10 ? `<button class="btn sm2" data-a="donPick" data-k="${k}">Spenden</button>` : "<b>MAX</b>"}</div>`;
+      }).join("");
+    }
     /// Späher und Sammelangriff (Sammelangriff nur online in einer Allianz)
     extraActions(noRally) {
       const c = this.c, o = this.o, blk = c.scoutBlocker();
@@ -5417,7 +5870,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         <div class="sm">${troopStr(tot)} \xB7 ${r.status === "open" ? "Start in " : "Ankunft in "}${fmtTime(Math.max(0, left))}</div></div>
         ${r.status === "open" ? `<button class="btn sm2" data-a="rallyPick" data-id="${r.id}">Mitmachen</button>` : ""}</div>`;
       }).join("");
-      return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) + (rl ? `<div class="sub2">\u2694\uFE0F Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der \u{1F5FA}\uFE0F Karte antippen, Trupp w\xE4hlen, \u201EAllianz-Sammelangriff\u201C.</div>') + `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
+      return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) + (rl ? `<div class="sub2">\u2694\uFE0F Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der \u{1F5FA}\uFE0F Karte antippen, Trupp w\xE4hlen, \u201EAllianz-Sammelangriff\u201C.</div>') + this.projectsHtml() + `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
        <div class="form"><input id="chatIn" maxlength="200" placeholder="Nachricht an die Allianz \u2026"><button class="btn sm2" data-a="chat">Senden</button></div>
        <div class="sub2">Mitglieder (${(A.members || []).length}/20)</div>${members}
        <div class="btns"><button class="btn ${this.confirm === "leave" ? "danger" : "ghost"}" data-a="allyLeave">${this.confirm === "leave" ? "<b>Wirklich verlassen?</b>" : "Allianz verlassen"}</button></div>`;
@@ -5456,7 +5909,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       <div class="sm">${sf > 0 ? `\u{1F30A} Sturmflut l\xE4uft noch ${fmtTime(sf)} \xB7 ` : ""}${dp > 0 ? `\u{1F9FA} Sammel-Fest l\xE4uft noch ${fmtTime(dp)}` : ""}${!sf && !dp ? "Gerade kein Event." : ""}</div>
       <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="10">\u{1F30A} Sturmflut 10 Min.</button><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="30">\u{1F30A} 30 Min.</button></div>
       <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="30">\u{1F9FA} 2\xD7 Sammeln 30 Min.</button><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="120">\u{1F9FA} 2 Std.</button></div>
-      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">\u23F9 Alle Events beenden</button></div>`;
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">\u23F9 Alle Events beenden</button><button class="btn ghost" data-a="admBoss">\u{1F419} Krake rufen</button></div>`;
+      const avq = o.avQueue || [];
+      out += `<div class="sub2">\u{1F4F7} Profilbilder pr\xFCfen (${avq.length})</div>` + (avq.length ? avq.map((a) => `<div class="row"><img src="${a.data}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-right:8px"><div class="ri"><b>${esc(a.name)}</b><div class="sm">Verst\xF6\xDFt das Bild gegen Gesetze oder ist es anst\xF6\xDFig? Dann ablehnen.</div></div>
+      <button class="btn sm2" data-a="avOk" data-id="${a.player}">\u2714</button><button class="btn sm2 danger" data-a="avNo" data-id="${a.player}">\u2716</button></div>`).join("") : '<div class="sm">Keine Bilder zu pr\xFCfen.</div>');
       out += '<div class="sub2">\u{1F465} Spieler</div>' + (o.players || []).map((p) => `<div class="row"><div class="ri"><b>${esc(p.name)}</b> <span class="sh">\u2694 ${p.power}${p.admin ? " \xB7 \u{1F451}" : ""}${p.banned ? ' \xB7 <span style="color:#ff6a6a">gesperrt</span>' : ""}</span>
       <div class="sm">zuletzt ${new Date(p.seen).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div></div>
       ${p.admin ? "" : p.banned ? `<button class="btn sm2 ghost" data-a="admBan" data-id="${p.id}" data-b="0">Entsperren</button>` : `<button class="btn sm2 ${this.confirm === "ban" + p.id ? "danger" : "ghost"}" data-a="admBan" data-id="${p.id}" data-b="1">${this.confirm === "ban" + p.id ? "Sperren?" : "Sperren"}</button>`}</div>`).join("");
@@ -5478,7 +5934,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         <div class="form" style="flex-wrap:wrap;gap:4px">${f("ncR0", "\u{1FAB5} Holz", 23)}${f("ncR1", "\u{1F9AA} Muscheln", 23)}${f("ncR2", "\u{1F4A7} Wasser", 23)}${f("ncR3", "\u2699\uFE0F Metall", 23)}</div>
         <div class="sm">Krieger</div>
         <div class="form" style="flex-wrap:wrap;gap:4px">${UNITS.map((u, k) => f("ncU" + k, u.ic + " " + u.name.slice(0, 6), 18)).join("")}</div>
-        <div class="form" style="gap:4px">${f("ncDays", "g\xFCltig Tage (1)", 48)}${f("ncMax", "max. Spieler (\u221E)", 48)}</div>
+        <div class="form" style="gap:4px">${f("ncDays", "g\xFCltig Tage (1)", 31)}${f("ncMax", "max. Spieler (\u221E)", 31)}${f("ncVip", "\u{1F451} VIP-Punkte", 31)}</div>
         <div class="btns"><button class="btn" data-a="codeSave" ${this.busy ? "disabled" : ""}><b>Code speichern</b></button></div>`;
         const list = o.codes || [];
         out += `<div class="sub2" style="margin-top:12px">Deine Codes</div>` + (list.length ? list.map((c) => `<div class="row"><div class="ri"><b style="letter-spacing:.05em">${c.code}</b> <span class="sh">${c.active ? '<span style="color:#8ef0a0">aktiv</span>' : "abgelaufen"} \xB7 ${c.uses}${c.max ? "/" + c.max : ""}\xD7 eingel\xF6st</span>
@@ -5490,6 +5946,113 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     ttabLoad() {
       if (this.troopTab === "rank") this.o.loadRanking();
       if (this.troopTab === "reports" && this.o.active) this.o.sync();
+    }
+    avatarHtml() {
+      const s = this.c.s, o = this.o;
+      if (s.avatarPhoto && o.avatar && o.avatar.status === "ok" && o.avatar.data) return `<img src="${o.avatar.data}" alt="">`;
+      return s.avatar || "\u{1F9D1}\u200D\u2708\uFE0F";
+    }
+    profileHtml() {
+      const c = this.c, s = c.s, o = this.o, vl = vipLevel(c), av = o.avatar || {};
+      const PRE = ["\u{1F9D1}\u200D\u2708\uFE0F", "\u{1F469}\u200D\u2708\uFE0F", "\u{1F9D4}", "\u{1F469}", "\u{1F468}\u200D\u{1F9B0}", "\u{1F469}\u200D\u{1F9B3}", "\u{1F9D3}", "\u{1F466}", "\u{1F9AD}", "\u{1F419}", "\u{1F980}", "\u2693"];
+      let out = this.head("Profil") + `<div class="avprev">${this.avatarHtml()}</div>
+      <div class="inf" style="text-align:center"><b>${(o.active && o.name ? o.name : s.playerName || "Pfahlst\xE4dter").replace(/[&<>"]/g, "")}</b> \xB7 \u{1F451} VIP ${vl} \xB7 Macht \u2694 ${c.power}</div>
+      <div class="sub2">Profilbild w\xE4hlen</div><div class="avgrid">${PRE.map((e) => `<button class="${!s.avatarPhoto && (s.avatar || "\u{1F9D1}\u200D\u2708\uFE0F") === e ? "on" : ""}" data-a="avPreset" data-v="${e}">${e}</button>`).join("")}</div>
+      <div class="sub2">\u{1F4F7} Eigenes Foto ${vl >= 4 ? "" : "(ab VIP 4)"}</div>`;
+      if (vl < 4) out += `<div class="sm">Ab VIP 4 kannst du ein eigenes Foto hochladen. Dir fehlen noch ${(VIP_PTS[4] - (s.vipPts || 0)).toLocaleString("de-DE")} VIP-Punkte.</div>`;
+      else if (!o.active) out += '<div class="sm">Eigene Fotos gibt es nur mit Online-Konto, weil sie vor der Freischaltung gepr\xFCft werden.</div>';
+      else {
+        out += `<div class="sm">Erlaubt sind nur Bilder, die nicht gegen deutsches Recht versto\xDFen: keine Nacktheit, Gewalt, verbotenen Symbole, Beleidigungen oder fremden Personen ohne deren Einverst\xE4ndnis. Jedes Foto wird vor der Freischaltung gepr\xFCft.</div>`;
+        if (av.status === "pending") out += '<div class="inf">\u23F3 Dein Foto wird gerade gepr\xFCft.</div>';
+        else if (av.status === "rejected") out += '<div class="warn">\u274C Dein letztes Foto wurde abgelehnt. Bitte ein anderes w\xE4hlen.</div>';
+        else if (av.status === "ok") out += `<div class="btns"><button class="btn ${s.avatarPhoto ? "" : "ghost"}" data-a="avPhotoUse">${s.avatarPhoto ? "\u2714 Foto wird angezeigt" : "Freigegebenes Foto anzeigen"}</button></div>`;
+        if (this.avMsg) out += `<div class="${this.avMsg.ok ? "inf" : "warn"}">${this.avMsg.text}</div>`;
+        out += `<div class="btns"><button class="btn" data-a="avUpload" ${this.busy ? "disabled" : ""}>\u{1F4F7} Foto hochladen</button></div>`;
+      }
+      return out;
+    }
+    /// Foto verkleinern (128×128, JPEG) und zur Prüfung schicken
+    avatarFile(file) {
+      if (!file) return;
+      if (!/^image\//.test(file.type)) {
+        this.avMsg = { ok: false, text: "Das ist kein Bild." };
+        this.panelKey = null;
+        return;
+      }
+      if (file.size > 15e6) {
+        this.avMsg = { ok: false, text: "Das Bild ist zu gro\xDF (max. 15 MB)." };
+        this.panelKey = null;
+        return;
+      }
+      const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => {
+        const S = 128, cv = document.createElement("canvas");
+        cv.width = cv.height = S;
+        const k = Math.min(img.width, img.height), sx = (img.width - k) / 2, sy = (img.height - k) / 2;
+        cv.getContext("2d").drawImage(img, sx, sy, k, k, 0, 0, S, S);
+        URL.revokeObjectURL(url);
+        const data = cv.toDataURL("image/jpeg", 0.75);
+        this.run(async () => {
+          try {
+            await this.o.avatarUpload(data);
+            this.avMsg = { ok: true, text: "\u{1F4E8} Foto hochgeladen \u2013 es wird jetzt gepr\xFCft und danach freigeschaltet." };
+          } catch (e) {
+            this.avMsg = { ok: false, text: e.message };
+          }
+        });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        this.avMsg = { ok: false, text: "Das Bild konnte nicht gelesen werden." };
+        this.panelKey = null;
+      };
+      img.src = url;
+    }
+    vipHtml() {
+      const c = this.c, L = vipLevel(c), pts = c.s.vipPts || 0;
+      let out = `<div class="inf">\u{1F451} <b>VIP ${L}</b> \xB7 ${pts.toLocaleString("de-DE")} VIP-Punkte${L < 10 ? ` \xB7 noch ${(VIP_PTS[L + 1] - pts).toLocaleString("de-DE")} bis VIP ${L + 1}` : ""}</div>
+      ${L < 10 ? `<div class="bar big"><div style="width:${Math.round(100 * (pts - VIP_PTS[L]) / (VIP_PTS[L + 1] - VIP_PTS[L]))}%"></div></div>` : ""}
+      <div class="sm">VIP-Punkte gibt es f\xFCr die t\xE4gliche Anmeldung, Tagesaufgaben, Saison-Pass-Stufen, Piratenschiffe, Sch\xE4tze und Geschenk-Codes.</div>`;
+      if (L >= 1) {
+        const r = vipChest(c);
+        out += `<div class="row meRow"><div class="ri"><b>\u{1F451} T\xE4gliche VIP-Truhe</b><div class="sm">${this.rewardStr(r.res)} \xB7 ${itemStr(r.items)} \xB7 \u{1F396}\uFE0F${r.medals}</div></div><button class="btn sm2" data-a="vipChest" ${vipChestCan(c) ? "" : "disabled"}>${vipChestCan(c) ? "\xD6ffnen" : "Morgen"}</button></div>`;
+      } else out += '<div class="sm">Ab VIP 1 gibt es jeden Tag eine VIP-Truhe.</div>';
+      for (let k = 1; k <= 10; k++) out += `<div class="row ${k === L ? "meRow" : ""}" style="${k > L ? "opacity:.6" : ""}"><div class="ri"><b>${k <= L ? "\u2714" : "\u{1F512}"} VIP ${k}</b> <span class="sh">${VIP_PTS[k].toLocaleString("de-DE")} Punkte</span><div class="sm">${VIP_PERKS[k]}</div></div></div>`;
+      return out;
+    }
+    researchHtml() {
+      const c = this.c, r = c.s.research;
+      let out = this.head("\u{1F4DA} Seefahrer-Akademie") + `<div class="desc">Forschung gibt dauerhafte Boni. Es l\xE4uft immer nur eine Forschung; h\xF6here Stufen brauchen eine h\xF6here Akademie.</div>`;
+      if (r) {
+        const t = TECH.find((x) => x.id === r.id);
+        out += `<div class="inf">Forscht: <b>${t.ic} ${t.name} ${techLv(c, r.id) + 1}</b> \xB7 noch ${fmtTime(r.left)}</div><div class="bar big"><div style="width:${Math.round(100 * (1 - r.left / r.total))}%"></div></div>` + this.speedBtns("research", 0);
+      }
+      for (const t of TECH) {
+        const lv = techLv(c, t.id), k = lv + 1, blk = techBlocker(c, t.id);
+        out += `<div class="row"><div class="ri"><b>${t.ic} ${t.name}</b> <span class="sh">${lv}/${TECH_MAX} \xB7 ${t.text} je Stufe</span>
+        ${k <= TECH_MAX ? `<div class="sm">${this.costStr(techCost(t, k))} \xB7 \u23F1 ${fmtTime(techTime(c, k))}</div>${blk && !["Zu wenig Rohstoffe", "Es wird schon geforscht"].includes(blk) ? `<div class="warn">${blk}</div>` : ""}` : ""}</div>
+        ${k <= TECH_MAX ? `<button class="btn sm2" data-a="tech" data-id="${t.id}" ${blk ? "disabled" : ""}>Forschen</button>` : "<b>\u2714</b>"}</div>`;
+      }
+      return out;
+    }
+    yardHtml() {
+      const c = this.c, s = c.s, blk = boatBlocker(c);
+      let out = this.head("\u2693 Werft") + `<div class="desc">Kutter bringen deine Trupps \xFCbers Meer. Passt ein Trupp ganz auf die Flotte (${BOAT_CAP} Krieger je Kutter), ist er 25 % schneller und bringt 25 % mehr Beute.</div>
+      <div class="inf">Flotte: <b>${s.boats || 0}/${maxBoats(c)}</b> Kutter \xB7 ${(s.boats || 0) * BOAT_CAP} Pl\xE4tze</div>`;
+      if (s.boatQ) out += `<div class="sm">Im Bau: Kutter \xB7 noch ${fmtTime(s.boatQ.left)}</div><div class="bar"><div style="width:${Math.round(100 * (1 - s.boatQ.left / s.boatQ.total))}%"></div></div>`;
+      out += `<div class="row"><div class="ri"><b>\u26F5 Kutter bauen</b><div class="sm">${this.costStr(BOAT_COST)}</div>${blk && blk !== "Zu wenig Rohstoffe" ? `<div class="warn">${blk}</div>` : ""}</div><button class="btn sm2" data-a="boat" ${blk ? "disabled" : ""}>Bauen</button></div>`;
+      return out;
+    }
+    captainsHtml() {
+      const c = this.c, s = c.s;
+      let out = `<div class="inf">\u{1F396}\uFE0F Kapit\xE4nsabzeichen: <b>${s.medals || 0}</b></div><div class="sm">Abzeichen gibt es von Piratenschiffen, Saison-Pass und VIP-Truhe. W\xE4hle beim Losschicken einen Kapit\xE4n f\xFCr den Trupp \u2013 er ist dann bis zur R\xFCckkehr unterwegs.</div>`;
+      for (const k of CAPTAINS) {
+        const cp = capOf(c, k.id), m = cp ? capMul(cp.lvl) : 1;
+        out += `<div class="row"><div class="ri"><b>${k.ic} ${k.name}</b> ${cp ? `<span class="sh">Stufe ${cp.lvl}/10${cp.busy > Date.now() ? " \xB7 unterwegs" : ""}</span>` : ""}
+        <div class="sm">${k.text}${cp && cp.lvl > 1 ? ` (\xD7${m.toFixed(1)})` : ""}</div></div>
+        ${cp ? cp.lvl < 10 ? `<button class="btn sm2" data-a="capUp" data-id="${k.id}" ${(s.medals || 0) >= cp.lvl * 2 ? "" : "disabled"}>\u2B06 ${cp.lvl * 2}\u{1F396}\uFE0F</button>` : "<b>MAX</b>" : `<button class="btn sm2" data-a="hire" data-id="${k.id}" ${(s.medals || 0) >= k.cost ? "" : "disabled"}>Anheuern ${k.cost}\u{1F396}\uFE0F</button>`}</div>`;
+      }
+      return out;
     }
     passReady() {
       const ps = passState(this.c);
@@ -5505,8 +6068,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     giftHtml() {
       const c = this.c, tab = this.giftTab || "daily";
       const ds = dailyState(c), qs = questsToday(c);
-      const tabs = [["daily", "\u{1F4C5}", "T\xE4glich" + (ds.can ? " \u2022" : "")], ["quests", "\u2705", "Aufgaben" + (qs.some((q) => !q.done && q.have >= q.n) ? " \u2022" : "")], ["pass", "\u{1F3AB}", "Pass" + (this.passReady() ? " \u2022" : "")], ["items", "\u26A1", `Items ${speedCount(c)}`], ["ach", "\u{1F3C5}", `${achCount(c)}/${ACH.length}`]];
-      let out = this.head("Belohnungen") + `<div class="tabs" style="grid-template-columns:repeat(5,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div><div class="tabbody">`;
+      const tabs = [["daily", "\u{1F4C5}", "T\xE4glich" + (ds.can ? " \u2022" : "")], ["quests", "\u2705", "Aufgaben" + (qs.some((q) => !q.done && q.have >= q.n) ? " \u2022" : "")], ["pass", "\u{1F3AB}", "Pass" + (this.passReady() ? " \u2022" : "")], ["vip", "\u{1F451}", "VIP " + vipLevel(c) + (vipChestCan(c) ? " \u2022" : "")], ["items", "\u26A1", `${speedCount(c)}`], ["ach", "\u{1F3C5}", `${achCount(c)}/${ACH.length}`]];
+      let out = this.head("Belohnungen") + `<div class="tabs" style="grid-template-columns:repeat(6,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div><div class="tabbody">`;
       if (tab === "daily") {
         out += '<div class="desc">Schau jeden Tag vorbei! Wer einen Tag ausl\xE4sst, f\xE4ngt wieder bei Tag 1 an. Tag 7 ist der gro\xDFe Schatz.</div><div class="daily">';
         for (let d = 0; d < 7; d++) {
@@ -5521,6 +6084,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           <div class="bar"><div style="width:${Math.round(100 * Math.min(1, q.have / q.n))}%"></div></div></div>
           <button class="btn sm2" data-a="claimQuest" data-k="${k}" ${q.done || q.have < q.n ? "disabled" : ""}>${q.done ? "Erledigt" : "Abholen"}</button></div>`;
         });
+      } else if (tab === "vip") {
+        out += this.vipHtml();
       } else if (tab === "pass") {
         const ps = passState(c), mon = (/* @__PURE__ */ new Date()).toLocaleString("de-DE", { month: "long" });
         out += `<div class="desc">\u{1F3AB} Saison-Pass ${mon} \u2013 kostenlos! Erfahrung gibt es f\xFCr Bauen, Ausbilden, Sammeln, K\xE4mpfe, Piratenschiffe, Handel, Sch\xE4tze und die Tagesbelohnung. Jeden Monat beginnt ein neuer Pass.</div>
@@ -5552,10 +6117,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     troopsHtml() {
       const tab = this.troopTab || "truppen";
-      const tabs = [["truppen", "\u2694\uFE0F", "Truppen"], ["reports", "\u{1F4DC}", "Berichte"], ["rank", "\u{1F3C6}", "Rangliste"]];
-      const bar = `<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="ttab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
+      const tabs = [["truppen", "\u2694\uFE0F", "Truppen"], ["caps", "\u{1F396}\uFE0F", "Kapit\xE4ne"], ["reports", "\u{1F4DC}", "Berichte"], ["rank", "\u{1F3C6}", "Rangliste"]];
+      const bar = `<div class="tabs" style="grid-template-columns:repeat(4,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="ttab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
       const strip = (x) => x.replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, "");
-      const body = tab === "reports" ? strip(this.reportsHtml()) : tab === "rank" ? strip(this.rankHtml()) : this.troopsTabHtml();
+      const body = tab === "reports" ? strip(this.reportsHtml()) : tab === "rank" ? strip(this.rankHtml()) : tab === "caps" ? this.captainsHtml() : this.troopsTabHtml();
       return this.head("Truppen") + bar + `<div class="tabbody">${body}</div>`;
     }
     freePlotQueue(t) {
@@ -5580,7 +6145,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (tab === "mine") body = this.cityOverviewHtml();
       else {
         const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
-        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]], ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]]];
+        const groups = [["Rohstoffe", [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]], ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]], ["Schutz vor der Flut", [T.DAMM]], ["Wissen & Seefahrt", [T.AKADEMIE, T.WERFT, T.WAHRZEICHEN]]];
         body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt. Der Platz wird automatisch gew\xE4hlt.</div>`;
         for (const [title, list] of groups) {
           body += `<div class="sub2">${title}</div>`;
@@ -5590,7 +6155,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
             const slots = LAYOUT.filter((x) => x === t).length, have = c.s.plots.filter((p) => p.type === t).length;
             let why = "";
             if (free < 0) {
-              if (c.activeBuilds >= 2) why = "Alle Bautrupps besch\xE4ftigt";
+              if (c.activeBuilds >= c.maxBuilds) why = "Alle Bautrupps besch\xE4ftigt";
               else if (!c.canAfford(costFor(t, 1))) why = "";
               else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? "Schon gebaut \u2013 Ausbau unter \u201EMeine Geb\xE4ude\u201C" : "Nicht m\xF6glich";
               else if (t === T.DAMM) why = c.s.plots[DAMM].type >= 0 ? "Schon gebaut \u2013 Ausbau unter \u201EMeine Geb\xE4ude\u201C" : "Nicht m\xF6glich";
@@ -5600,7 +6165,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
             }
             body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${have}/${slots} \xB7 ${d.short}</span></div>
             <div class="sm">${this.costStr(costFor(t, 1))} \xB7 ${fmtTime(buildTime(t, 1))}</div>${why ? `<div class="warn">${why}</div>` : ""}</div>
-            ${free < 0 && this.freePlotQueue(t) >= 0 && (c.s.bq || []).length < MAX_QUEUE ? `<button class="btn sm2 ghost" data-a="qbuild" data-v="${t}">\u{1F552} Sp\xE4ter</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? "disabled" : ""}>Bauen</button>`}</div>`;
+            ${free < 0 && this.freePlotQueue(t) >= 0 && (c.s.bq || []).length < c.queueMax ? `<button class="btn sm2 ghost" data-a="qbuild" data-v="${t}">\u{1F552} Sp\xE4ter</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? "disabled" : ""}>Bauen</button>`}</div>`;
           }
         }
       }
@@ -5614,7 +6179,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         ["Wohnen & Versorgung", [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]],
         ["Milit\xE4r", [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]],
         ["Verteidigung", [T.WACHTURM, T.MAUER, T.ABWEHR]],
-        ["Schutz vor der Flut", [T.DAMM]]
+        ["Schutz vor der Flut", [T.DAMM]],
+        ["Wissen & Seefahrt", [T.AKADEMIE, T.WERFT, T.WAHRZEICHEN]]
       ];
       let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> besch\xE4ftigt \xB7 Gel\xE4nde ${Math.round(c.areaRadius)} m \xB7 freie Bewohner ${c.freeVillagers}</div>`;
       for (const [title, types] of groups) {
@@ -5626,7 +6192,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           rows.push(`<div class="row"><div class="ri"><b>${B_IC[p.type]} ${DEFS[p.type].name}</b> <i class="lv">${p.level || "\u2013"}</i> ${state}
           ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? `<div class="sm">\u2192 ${p.level + 1}: ${this.costStr(costFor(p.type, p.level + 1))}</div>` : ""}</div>
           <button class="btn sm2 ghost" data-a="goto" data-i="${i}">Zeigen</button>
-          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn sm2 ghost" data-a="qup" data-i="${i}">\u{1F552}</button>` : `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? "disabled" : ""}>\u2B06</button>` : ""}</div>`);
+          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? QOK.includes(blk) && (c.s.bq || []).length < c.queueMax && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn sm2 ghost" data-a="qup" data-i="${i}">\u{1F552}</button>` : `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? "disabled" : ""}>\u2B06</button>` : ""}</div>`);
         });
         if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join("");
       }
@@ -5701,6 +6267,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     CODE_FORMAT: "Code: 4 bis 16 Buchstaben oder Zahlen, ohne Leerzeichen.",
     LEER: "Bitte eine Belohnung eintragen.",
     UNGUELTIG: "Ung\xFCltige Eingabe.",
+    KEINE_KRAKE: "Gerade ist keine Riesenkrake da.",
+    VIP4: "Eigene Fotos gibt es ab VIP 4.",
+    BILD: "Das Bild ist ung\xFCltig oder zu gro\xDF.",
     GESPERRT: "Dieses Konto wurde vom Spielleiter gesperrt.",
     HILFE_LIMIT: "H\xF6chstens 20.000 Rohstoffe Hilfe pro Stunde.",
     ZU_WENIG: "So viel hast du nicht.",
@@ -5804,7 +6373,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     snapshot() {
       const c = this.c, s = c.s;
-      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), vip: vipLevel(c), lm: c.levels(23), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
     }
     async sync(strict) {
       if (!this.token) return;
@@ -5831,6 +6400,30 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
         this.lh = r.lh || null;
         this.openRallies = r.rallies || 0;
+        this.ally = r.ally || {};
+        this.boss = r.boss || null;
+        if (d.vip) addVip(this.c, d.vip);
+        if (d.items) {
+          s.items = s.items || {};
+          for (const k in d.items) if (d.items[k] > 0) s.items[k] = (s.items[k] || 0) + d.items[k];
+        }
+        const av = r.avatar;
+        if (!av) this.avatar = null;
+        else if (av.status !== "ok") this.avatar = { status: av.status };
+        else if (!this.avatar || this.avatar.v !== av.v || !this.avatar.data) {
+          const cached = JSON.parse(localStorage.getItem("pf_av") || "null");
+          if (cached && cached.v === av.v) this.avatar = { status: "ok", v: av.v, data: cached.data };
+          else this.call("avatar_get", { p_token: this.token }).then((g) => {
+            if (g && g.data) {
+              this.avatar = { status: "ok", v: av.v, data: g.data };
+              try {
+                localStorage.setItem("pf_av", JSON.stringify(this.avatar));
+              } catch (e) {
+              }
+            }
+          }).catch(() => {
+          });
+        }
         this.events = r.events || [];
         this.title = r.title || null;
         if (r.news && r.news.id > (+localStorage.getItem("pf_news") || 0)) {
@@ -5883,6 +6476,51 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
       } catch (e) {
       }
+    }
+    // ---------- Riesenkrake, Allianz-Projekte, Profilbild ----------
+    async bossInfo() {
+      try {
+        this.bossI = await this.call("boss_info", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async bossAttack(u, boost) {
+      const r = await this.call("boss_attack", { p_token: this.token, p_u: u, p_boost: boost });
+      const s = this.c.s;
+      s.troops = s.troops.map((v, i) => Math.max(0, v - (r.lost[i] || 0)));
+      await this.sync();
+      await this.bossInfo();
+      return r;
+    }
+    async adminBoss() {
+      await this.call("admin_boss", { p_token: this.token });
+      await this.sync();
+    }
+    async allyProjects() {
+      try {
+        this.projects = await this.call("ally_projects", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async allyDonate(kind, res) {
+      await this.call("ally_donate", { p_token: this.token, p_kind: kind, p_res: res });
+      res.forEach((v, i) => this.c.s.res[i] = Math.max(0, this.c.s.res[i] - v));
+      await this.allyProjects();
+      await this.sync();
+    }
+    async avatarUpload(data) {
+      await this.call("avatar_upload", { p_token: this.token, p_data: data });
+      await this.sync();
+    }
+    async adminAvatars() {
+      try {
+        this.avQueue = await this.call("admin_avatars", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async adminAvatarSet(id, ok) {
+      await this.call("admin_avatar_set", { p_token: this.token, p_player: id, p_ok: ok });
+      await this.adminAvatars();
     }
     // ---------- Events, Hilfe, Spielleiter ----------
     eventLeft(kind) {
@@ -5955,8 +6593,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       } catch (e) {
       }
     }
-    async saveCode(code, res, u, days, max) {
-      await this.call("admin_code_save", { p_token: this.token, p_code: code, p_res: res, p_u: u, p_days: days, p_max: max });
+    async saveCode(code, res, u, days, max, vip) {
+      await this.call("admin_code_save", { p_token: this.token, p_code: code, p_res: res, p_u: u, p_days: days, p_max: max, p_vip: vip || 0 });
       await this.loadCodes();
     }
     async deleteCode(code) {
@@ -5970,14 +6608,16 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       } catch (e) {
       }
     }
-    async sendMarch(kind, target, u) {
+    async sendMarch(kind, target, u, boost, speed) {
       const s = this.c.s;
       const r = await this.call("send_march", () => ({
         p_token: this.token,
         p_kind: kind,
         p_target: kind === "terr" ? target : null,
         p_target_player: kind === "player" ? target : null,
-        p_u: u
+        p_u: u,
+        p_boost: boost || 1,
+        p_speed: speed || 1
       }));
       s.troops = s.troops.map((v, i) => v - (u[i] || 0));
       await this.sync();

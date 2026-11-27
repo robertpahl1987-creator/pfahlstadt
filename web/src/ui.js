@@ -4,6 +4,9 @@ import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
 import { ITEMS, SPEED_KEYS, botReward, botBlocker, sendToBot, botTravel, useSpeed, itemStr, speedCount } from './bots.js';
 import { season, passState, passReward, claimPass, PASS_TIERS, PASS_XP, collectTreasure } from './features.js';
+import { capAtk, capSpeed, fleetSpeed } from './progress.js';
+import { capSend } from './progress.js';
+import { vipLevel, VIP_PTS, VIP_PERKS, vipChestCan, vipChest, claimVipChest, TECH, TECH_MAX, techLv, techCost, techTime, techBlocker, startTech, CAPTAINS, capOf, capFree, capMul, hireCaptain, upCaptain, BOAT_COST, BOAT_CAP, maxBoats, boatBlocker, buildBoat, fleetFits, mods } from './progress.js';
 import { dailyState, dailyReward, claimDaily, DAILY, questsToday, claimQuest, ACH, achCount, TUT, tutStep, queueAdd, MAX_QUEUE, trade } from './features.js';
 const QOK = ['Alle Bautrupps beschäftigt', 'Zu wenig Rohstoffe'];
 import { TIERS } from './gfx.js';
@@ -14,7 +17,7 @@ const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) 
 const amount = (v) => (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e4 ? (v / 1e3).toFixed(1) + 'k' : String(Math.floor(v)));
 const rate = (v) => { const a = Math.abs(v); const s = a >= 1000 ? (a / 1000).toFixed(1) + 'k' : String(Math.round(a)); return (v < 0 ? '−' : '+') + s; };
 const RES_IC = ['🪵', '🦪', '💧', '⚙️'];
-const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹', '🌊', '🔱', '🛡️', '🗡️', '🪨', '🏃', '🩹'];
+const B_IC = ['🗼', '🪵', '🦪', '💧', '⚙️', '🏠', '🌿', '🐟', '🍲', '⚔️', '👁️', '📦', '🧱', '🏹', '🌊', '🔱', '🛡️', '🗡️', '🪨', '🏃', '🩹', '📚', '⚓', '🕰️'];
 const NODE_NAME = ['Treibholz', 'Muschelbank', 'Süßwassertümpel', 'Wrackteile'];
 const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
 const clock = (d) => { const m = Math.floor(d * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
@@ -36,6 +39,9 @@ export class UI {
       top.querySelector('.res').appendChild(card);
       return { v: card.querySelector('.rv'), r: card.querySelector('.rr') };
     });
+    this.avaEl = $('#ava'); this.avaEl.dataset.a = 'profile'; this.raidEl = $('#raid'); this.raidEl.dataset.a = 'troops';
+    this.aviEl = top.querySelector('.avi'); this.vipEl = top.querySelector('.vipb'); this.nameEl = top.querySelector('.pname'); this.clockEl = top.querySelector('.clock');
+    $('#avFile').addEventListener('change', (e) => this.avatarFile(e.target.files && e.target.files[0]));
     this.gw = top.querySelector('.gw'); this.gd = top.querySelector('.gd'); this.tl = top.querySelector('.tl'); this.st = top.querySelector('.st');
     this.acc = 1;
     this.toasts = $('#toasts');
@@ -96,6 +102,7 @@ export class UI {
       md = null;
       const r = mc.getBoundingClientRect();
       this.mapSel = this.sea.pick(e.clientX - r.left, e.clientY - r.top);
+      if (this.mapSel && this.mapSel.type === 'boss') this.o.bossInfo().then(() => (this.panelKey = null));
       this.form = zeroU(); this.showReports = false; this.panelKey = null; this.confirm = null;
     });
 
@@ -133,7 +140,7 @@ export class UI {
     this.select(-1); this.menu = false;
     this.mode = this.mode === m ? null : m; this.confirm = null; this.panelKey = null;
     this.o.wantChat = this.mode === 'ally';
-    if (this.mode === 'ally') { this.o.loadAlliances(); this.o.loadChat(); this.o.loadRallies(); }
+    if (this.mode === 'ally') { this.o.loadAlliances(); this.o.loadChat(); this.o.loadRallies(); this.o.allyProjects().then(() => (this.panelKey = null)); }
     if (this.mode === 'rank') this.o.loadRanking();
   }
 
@@ -165,7 +172,7 @@ export class UI {
     else if (a === 'rank') { this.troopTab = 'rank'; if (this.mode !== 'troops') this.openMode('troops'); this.o.loadRanking(); }
     else if (a === 'account') this.openMenu('settings');
     else if (a === 'menu') { if (this.menu) { this.menu = false; } else this.openMenu('settings'); }
-    else if (a === 'mtab') { this.menuTab = ds.t; this.codeMsg = null; if (ds.t === 'codes') this.o.loadCodes().then(() => (this.panelKey = null)); if (ds.t === 'admin') this.o.adminPlayers().then(() => (this.panelKey = null)); }
+    else if (a === 'mtab') { this.menuTab = ds.t; this.codeMsg = null; if (ds.t === 'codes') this.o.loadCodes().then(() => (this.panelKey = null)); if (ds.t === 'admin') { this.o.adminPlayers().then(() => (this.panelKey = null)); this.o.adminAvatars().then(() => (this.panelKey = null)); } }
     else if (a === 'redeem') {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       const code = val('codeIn'); if (!code) return;
@@ -179,9 +186,9 @@ export class UI {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       const num = (id) => Math.max(0, Math.floor(+val(id) || 0));
       const code = val('ncCode').toUpperCase(), res = [0, 1, 2, 3].map((i) => num('ncR' + i)), u = [0, 1, 2, 3, 4].map((i) => num('ncU' + i));
-      const days = val('ncDays') === '' ? 1 : num('ncDays'), max = num('ncMax');
+      const days = val('ncDays') === '' ? 1 : num('ncDays'), max = num('ncMax'), vp = num('ncVip');
       this.run(async () => {
-        try { await o.saveCode(code, res, u, days, max); this.codeMsg = { ok: true, text: `Code <b>${code}</b> gespeichert – gib ihn an deine Spieler weiter.` }; }
+        try { await o.saveCode(code, res, u, days, max, vp); this.codeMsg = { ok: true, text: `Code <b>${code}</b> gespeichert – gib ihn an deine Spieler weiter.` }; }
         catch (e) { this.codeMsg = { ok: false, text: e.message }; }
       });
     }
@@ -206,6 +213,32 @@ export class UI {
     else if (a === 'gtab') this.giftTab = ds.t;
     else if (a === 'claimDaily') { const r = claimDaily(c); if (r) c.msg(`🎁 Tagesbelohnung: ${this.rewardStr(r.res, r.u)}`); }
     else if (a === 'toggleDismiss') { this.showDismiss = !this.showDismiss; }
+    else if (a === 'openMode') { this.openMode(ds.m); }
+    else if (a === 'bossHit') {
+      const f = this.form.slice(), cap = this.capSel && capFree(c, this.capSel) ? this.capSel : null, boost = mods(c).atk * capAtk(c, cap, c.tideState(0));
+      this.run(async () => { try { const r = await o.bossAttack(f, boost); if (cap) capSend(c, cap, 30); this.form = zeroU(); this.capSel = null; c.msg(r.killed ? '🐙 Die Riesenkrake ist besiegt! Belohnungen kommen gleich.' : `🐙 Treffer! ${r.dmg.toLocaleString('de-DE')} Schaden · Verluste ${troopStr(r.lost)}`); } catch (e) { c.msg(e.message); } });
+    }
+    else if (a === 'admBoss') { this.run(async () => { try { await o.adminBoss(); this.codeMsg = { ok: true, text: '🐙 Die Riesenkrake ist aufgetaucht!' }; } catch (e) { this.codeMsg = { ok: false, text: e.message }; } }); }
+    else if (a === 'avOk' || a === 'avNo') { const id = ds.id; this.run(async () => { await o.adminAvatarSet(id, a === 'avOk'); }); }
+    else if (a === 'donPick') { this.donKind = ds.k; }
+    else if (a === 'donBack') { this.donKind = null; }
+    else if (a === 'donSend') {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      const res = [0, 1, 2, 3].map((k) => Math.max(0, Math.min(Math.floor(c.s.res[k]), Math.floor(+val('dn' + k) || 0))));
+      if (!res.some((v) => v > 0)) { c.msg('Bitte eine Menge eintragen.'); return; }
+      const k = this.donKind;
+      this.run(async () => { await o.allyDonate(k, res); this.donKind = null; c.msg('🏗️ Danke für deine Spende!'); });
+    }
+    else if (a === 'profile') { if (this.mode === 'profile') this.mode = null; else this.openMode('profile'); }
+    else if (a === 'avPreset') { c.s.avatar = ds.v; c.s.avatarPhoto = false; }
+    else if (a === 'avPhotoUse') { c.s.avatarPhoto = !c.s.avatarPhoto; }
+    else if (a === 'avUpload') { const f = $('#avFile'); if (f) { f.value = ''; f.click(); } }
+    else if (a === 'tech') { startTech(c, ds.id); }
+    else if (a === 'boat') { buildBoat(c); }
+    else if (a === 'hire') { const e = hireCaptain(c, ds.id); if (e) c.msg(e); }
+    else if (a === 'capUp') { const e = upCaptain(c, ds.id); if (e) c.msg(e); }
+    else if (a === 'capSel') { this.capSel = this.capSel === ds.id ? null : ds.id; }
+    else if (a === 'vipChest') { const r = claimVipChest(c); if (r) c.msg(`👑 VIP-Truhe: ${this.rewardStr(r.res)} · ${itemStr(r.items)} · 🎖️${r.medals}`); }
     else if (a === 'claimPass') { if (claimPass(c, +ds.t)) c.msg(`🎫 Pass-Belohnung Stufe ${ds.t} erhalten!`); }
     else if (a === 'dismiss') { c.dismiss(+ds.u, ds.n === 'all' ? c.s.troops[+ds.u] : +ds.n); }
     else if (a === 'claimQuest') { if (claimQuest(c, +ds.k)) c.msg('✅ Belohnung erhalten!'); }
@@ -231,10 +264,12 @@ export class UI {
     else if (a === 'send') {
       const sel = this.mapSel, f = this.form.slice();
       if (!sel) return;
-      if (this.sea.isOnline) this.run(async () => { await o.sendMarch(sel.type, sel.id, f); this.form = zeroU(); this.mapSel = null; c.msg(sel.type === 'player' ? 'Angriff gestartet!' : 'Trupp ist unterwegs.'); await o.loadWorld(); });
-      else if (c.sendTroops(sel.id, f)) { this.form = zeroU(); this.mapSel = null; }
+      const cap = this.capSel && capFree(c, this.capSel) ? this.capSel : null;
+      const boost = mods(c).atk * capAtk(c, cap, c.tideState(30)), speed = mods(c).travel * fleetSpeed(c, f) * capSpeed(c, cap);
+      if (this.sea.isOnline) this.run(async () => { await o.sendMarch(sel.type, sel.id, f, boost, speed); if (cap) capSend(c, cap, 60); this.capSel = null; this.form = zeroU(); this.mapSel = null; c.msg(sel.type === 'player' ? 'Angriff gestartet!' : 'Trupp ist unterwegs.'); await o.loadWorld(); });
+      else if (c.sendTroops(sel.id, f, this.capSel)) { this.form = zeroU(); this.mapSel = null; this.capSel = null; }
     }
-    else if (a === 'sendBot') { const sel = this.mapSel, f = this.form.slice(); if (sel && sendToBot(c, sel.id, f)) { this.form = zeroU(); this.mapSel = null; } }
+    else if (a === 'sendBot') { const sel = this.mapSel, f = this.form.slice(); if (sel && sendToBot(c, sel.id, f, this.capSel && capFree(c, this.capSel) ? this.capSel : null)) { this.form = zeroU(); this.mapSel = null; this.capSel = null; } }
     else if (a === 'speed') { const e = useSpeed(c, ds.k, ds.kind, +ds.t); if (e) c.msg(e); }
     else if (a === 'scout') {
       const sel = this.mapSel; if (!sel) return;
@@ -335,7 +370,16 @@ export class UI {
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
     const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? 'Ebbe' : c.rising ? 'Flut ↑' : 'Flut ↓';
     setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${' · ' + season().ic}${this.o.eventLeft('sturmflut') > 0 ? ` · <b style="color:#ff9a5a">Sturmflut-Event ${fmtTime(this.o.eventLeft('sturmflut'))}</b>` : ''}${this.o.eventLeft('doppelt') > 0 ? ' · <b style="color:#8ef0a0">🧺 2× Sammeln</b>' : ''}${this.o.lh && this.o.lh.bonus ? ' · 🗼+20 %' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
-    let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${uSum(s.troops)}</b> · ${clock(s.dayTime)}`;
+    let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${uSum(s.troops)}</b> · ${s.dayTime < 0.25 || s.dayTime > 0.75 ? '🌙' : '☀️'} ${clock(s.dayTime)}`;
+    // Profil: Bild, Name, VIP, Uhr (echte Zeit)
+    const vl = vipLevel(c);
+    setHTML(this.vipEl, 'VIP ' + vl); this.vipEl.className = 'vipb' + (vl ? '' : ' v0');
+    this.avaEl.classList.toggle('gold', vl >= 10);
+    setHTML(this.nameEl, (this.o.active && this.o.name ? this.o.name : s.playerName || 'Pfahlstädter').replace(/[&<>"]/g, ''));
+    setHTML(this.aviEl, this.avatarHtml());
+    if (c.raidIn !== null && this.view === 'city') { setHTML(this.raidEl, `<span class="ri2">🏴‍☠️</span><b>${fmtTime(c.raidIn)}</b><small>Piraten</small>`); this.raidEl.style.display = ''; this.raidEl.classList.toggle('alarm', c.raidIn < 30); }
+    else this.raidEl.style.display = 'none';
+    const d = new Date(); setHTML(this.clockEl, d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     if (this.o.active) st += this.o.incoming ? ` · <b style="color:#ff6060">⚠ Angriff!</b>` : this.o.status === 'online' ? ' <span style="color:#8ef0a0">●</span>' : ' <span style="color:#ffb070">●</span>';
     setHTML(this.st, st);
 
@@ -413,11 +457,14 @@ export class UI {
     const ae = document.activeElement;
     if (ae && ae.tagName === 'INPUT' && this.panel.contains(ae)) return;
     let html = '';
-    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.mapSel.type === 'bot' ? this.botHtml() : this.terrHtml()) : this.mapHtml();
+    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.mapSel.type === 'bot' ? this.botHtml() : this.mapSel.type === 'boss' ? this.bossHtml() : this.terrHtml()) : this.mapHtml();
     else if (this.mode === 'ally') html = this.allyHtml();
     else if (this.mode === 'build') html = this.buildingsHtml();
     else if (this.mode === 'troops') html = this.troopsHtml();
     else if (this.mode === 'gift') html = this.giftHtml();
+    else if (this.mode === 'research') html = this.researchHtml();
+    else if (this.mode === 'profile') html = this.profileHtml();
+    else if (this.mode === 'yard') html = this.yardHtml();
     else if (this.mode === 'trader') html = this.traderHtml();
     else if (this.mode === 'rank') html = this.rankHtml();
     else if (this.mode === 'account') html = this.accountHtml();
@@ -472,7 +519,6 @@ export class UI {
         out.push({ ic: m.kind === 'scout' ? '🔭' : back ? '↩️' : m.kind === 'attack' ? '⚔️' : '🛡️', t: `${m.kind === 'scout' ? 'Späher' : back ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärk.'} ${nm}`, left: m.left, pct: pct(m.left, m.total), a: 'data-a="gomap"' });
       }
     }
-    if (c.raidIn !== null && c.raidIn < 180) out.push({ ic: '🏴‍☠️', t: 'Piraten kommen', left: c.raidIn, pct: null, red: true, a: 'data-a="troops"' });
     // Sammler je Sammelstelle
     const by = {};
     for (const g of s.gath || []) by[g.node] = (by[g.node] || 0) + 1;
@@ -516,7 +562,7 @@ export class UI {
         rows += `<div class="row"><div class="ri"><div><b>${d.name}</b> <span class="sh">${d.short}</span></div>
           <div class="sm">${this.costStr(costFor(t, 1))} &nbsp;·&nbsp; ${fmtTime(buildTime(t, 1))}</div>
           ${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>
-          ${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qplot" data-v="${t}">🕒 Später</button>` : `<button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button>`}</div>`;
+          ${QOK.includes(blk) && (c.s.bq || []).length < c.queueMax && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qplot" data-v="${t}">🕒 Später</button>` : `<button class="btn" data-a="build" data-v="${t}" ${blk ? 'disabled' : ''}>Bauen</button>`}</div>`;
       }
       const zone = i === DAMM ? 'ganz außen' : i === WALL ? 'Festung' : i >= TOWERS ? 'auf der Mauer' : i >= RING3 ? 'Warft' : i >= INNER ? 'Ring 2' : 'Stadtkern';
       const title = `${B_IC[LAYOUT[i]]} Bauplatz · ${zone}`;
@@ -530,10 +576,12 @@ export class UI {
       out += `<div class="bline"><div class="ri" style="flex:1">🔨 ${L > 0 ? 'Ausbau auf ' + (L + 1) : 'Bau'} · noch <b style="color:#ffd27a">${fmtTime(p.buildLeft)}</b><div class="bar"><div style="width:${(100 * (1 - p.buildLeft / Math.max(0.01, p.buildTotal))).toFixed(0)}%"></div></div></div></div>` + this.speedBtns('plot', i);
     } else if (L < MAX_LEVEL) {
       const blk = c.upgradeBlocker(i);
-      out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>${QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>🕒 Später</b></button>` : `<button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button>`}</div>`;
+      out += `<div class="bline"><div class="ri" style="flex:1">→ Stufe ${L + 1}: ${this.costStr(costFor(p.type, L + 1))} · ⏱ ${fmtTime(buildTime(p.type, L + 1))}${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div>${QOK.includes(blk) && (c.s.bq || []).length < c.queueMax && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn ghost" data-a="qup" data-i="${i}"><b>🕒 Später</b></button>` : `<button class="btn" data-a="up" ${blk ? 'disabled' : ''}><b>Ausbauen</b></button>`}</div>`;
     } else out += '<div class="sm">Maximale Stufe erreicht.</div>';
     const extra = [];
-    if (L > 0 && (p.type === T.KASERNE || p.type >= T.HARPHOF)) extra.push('<button class="btn ghost" data-a="troops">⚔️ Truppen ausbilden</button>');
+    if (L > 0 && p.type === T.AKADEMIE) extra.push('<button class="btn" data-a="openMode" data-m="research">📚 Forschung</button>');
+    if (L > 0 && p.type === T.WERFT) extra.push('<button class="btn" data-a="openMode" data-m="yard">⚓ Werft</button>');
+    if (L > 0 && (p.type === T.KASERNE || (p.type >= T.HARPHOF && p.type <= T.LAZARETT))) extra.push('<button class="btn ghost" data-a="troops">⚔️ Truppen ausbilden</button>');
     if (i !== 0) extra.push(`<button class="btn ${this.confirm === 'demo' ? 'danger' : 'ghost'}" data-a="demo" style="padding:7px 10px;font-size:12px">${this.confirm === 'demo' ? '<b>Wirklich abreißen?</b>' : 'Abreißen'}</button>`);
     return out + (extra.length ? `<div class="btns" style="margin-top:8px">${extra.join('')}</div>` : '');
   }
@@ -584,6 +632,9 @@ export class UI {
       case T.RAUCH: return [`Muschelverbrauch −${Math.min(50, 8 * L)} %`, `Arbeiter: ${d.workers * L}`];
       case T.KUECHE: return [`Alle Produktion <b>+${Math.min(60, 6 * L)} %</b>`, `Arbeiter: ${d.workers * L}`];
       case T.KASERNE: return [`Ausbildung ${Math.round(25 * (L - 1))} % schneller · Schlange bis ${10 * L}`];
+      case T.AKADEMIE: return [`Forscht ${10 * (L - 1)} % schneller · Forschungsstufen bis ${Math.min(TECH_MAX, Math.floor((L + 1) / 2))}`, c.s.research ? `Forscht gerade: ${TECH.find((t) => t.id === c.s.research.id).name} (${fmtTime(c.s.research.left)})` : 'Gerade keine Forschung'];
+      case T.WERFT: return [`Flotte: <b>${c.s.boats || 0}/${maxBoats(c)}</b> Kutter · ${(c.s.boats || 0) * BOAT_CAP} Plätze`, 'Trupps, die ganz auf die Flotte passen: −25 % Fahrzeit, +25 % Beute'];
+      case T.WAHRZEICHEN: return [`Produktion <b>+${2 * L} %</b> für dich`, `Online: +${L} % für jedes Allianz-Mitglied`];
       case T.LAZARETT: return [`Rettet <b>${Math.round(lazSave(L) * 100)} %</b> der Gefallenen · ${lazBeds(L)} Betten`, `Verwundet: ${troopStr(c.s.wounded)} · Heilung ${L} alle 8 s`];
       case T.HARPHOF: case T.WACHSTUBE: case T.ENTERHALLE: case T.SCHLEUDER: case T.WATTHUETTE: {
         const k = UNITS.findIndex((u) => u.b === t), u = UNITS[k];
@@ -610,6 +661,9 @@ export class UI {
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="-5">−5</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="-1">−1</button>
         <button class="btn sm2" data-a="f" data-u="${k}" data-d="1">+1</button><button class="btn sm2" data-a="f" data-u="${k}" data-d="5">+5</button></div>`;
     });
+    const caps = CAPTAINS.filter((k) => capOf(this.c, k.id));
+    if (caps.length) out += `<div class="speeds"><span class="sm">🎖️ Kapitän:</span>${caps.map((k) => { const free = capFree(this.c, k.id); return `<button class="btn sm2 ${this.capSel === k.id ? '' : 'ghost'}" data-a="capSel" data-id="${k.id}" ${free ? '' : 'disabled'}>${k.ic} ${k.name.split(' ')[0]}${free ? '' : ' ⏳'}</button>`; }).join('')}</div>`;
+    if (fleetFits(this.c, f)) out += '<div class="sm">⚓ Passt auf deine Flotte: −25 % Fahrzeit, +25 % Beute</div>';
     if (!uSum(s.troops) && !uSum(f)) out += '<div class="sm">Keine Krieger zu Hause. Bilde sie unter ⚔️ Truppen aus.</div>';
     else if (uSum(f)) out += `<div class="sm">Trupp: ${troopStr(f)} · Beute bis ${carryOf(f)} · Tempo ${speedFactor(f) < 1 ? 'schnell 🏃' : speedFactor(f) > 1 ? 'langsam 🪨' : 'normal'}</div>`;
     if (extra) out += extra;
@@ -725,6 +779,35 @@ export class UI {
     return out;
   }
 
+  bossHtml() {
+    const c = this.c, o = this.o, b = o.boss, I = o.bossI || {}, f = this.form;
+    if (!b) return this.head('🐙 Riesenkrake') + '<div class="sm">Die Krake ist abgetaucht.</div>';
+    const left = (Date.parse(b.ends) - o.serverNow()) / 1000, cd = I.cooldown || 0;
+    let out = this.head(`🐙 Riesenkrake · Stufe ${b.level}`) + `<div class="desc">Alle Spieler kämpfen gemeinsam! Jeder Angriff macht Schaden; deine Krieger kehren sofort zurück, etwa 12 % fallen. Ist die Krake besiegt, bekommt jeder Teilnehmer Beute – die Besten und die stärkste Allianz extra viel.</div>
+      <div class="inf">❤️ ${b.hp.toLocaleString('de-DE')} / ${b.maxhp.toLocaleString('de-DE')} · taucht ab in ${fmtTime(Math.max(0, left))}</div><div class="bar big"><div style="width:${Math.round(100 * b.hp / b.maxhp)}%;background:#ff5a5a"></div></div>`;
+    if (I.mine) out += `<div class="sm">Dein Schaden: <b>${I.mine.toLocaleString('de-DE')}</b>${cd > 0 ? ` · nächster Angriff in ${fmtTime(cd)}` : ''}</div>`;
+    if ((I.players || []).length) out += '<div class="sm">🏆 ' + I.players.slice(0, 5).map((p, i) => `${i + 1}. ${p.name} ${p.dmg.toLocaleString('de-DE')}`).join(' · ') + '</div>';
+    if ((I.alliances || []).length) out += '<div class="sm">🤝 ' + I.alliances.map((a) => `[${a.tag}] ${a.dmg.toLocaleString('de-DE')}`).join(' · ') + '</div>';
+    out += '<div class="sub2">Angriffstrupp</div>' + this.troopForm('Angreifen!', true, cd > 0 ? 'Kurz warten – alle 5 Minuten ein Angriff' : null, `<div class="sm">Erwarteter Schaden: ~${Math.round(armyStr(f, null, true) * mods(c).atk).toLocaleString('de-DE')}</div>`, 'bossHit');
+    return out;
+  }
+
+  projectsHtml() {
+    const o = this.o, P = o.projects || [];
+    const NAMES = { deich: ['🌊 Allianz-Deich', '+0,5 m Dammschutz je Stufe für alle'], speicher: ['📦 Gemeinschaftsspeicher', '+10 % Lagerplatz je Stufe'], werkstatt: ['🛠️ Werkstatt', '+4 % Produktion je Stufe'] };
+    if (this.donKind) {
+      const n = (k) => `<input class="n" id="dn${k}" type="number" min="0" inputmode="numeric" placeholder="${RES_IC[k]} ${RES[k]}" style="flex:1 1 23%">`;
+      return `<div class="sub2">Spenden für ${NAMES[this.donKind][0]}</div><div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map(n).join('')}</div>
+        <div class="btns"><button class="btn" data-a="donSend" ${this.busy ? 'disabled' : ''}><b>Spenden</b></button><button class="btn ghost" data-a="donBack">Zurück</button></div>`;
+    }
+    return '<div class="sub2">🏗️ Allianz-Projekte</div><div class="sm">Alle Mitglieder spenden Rohstoffe – jede Stufe gilt für die ganze Allianz.</div>' + ['deich', 'speicher', 'werkstatt'].map((k) => {
+      const p = P.find((x) => x.kind === k) || { level: 0, progress: 0, goal: 4000 };
+      return `<div class="row"><div class="ri"><b>${NAMES[k][0]}</b> <span class="sh">Stufe ${p.level}/10 · ${NAMES[k][1]}</span>
+        ${p.level < 10 ? `<div class="bar"><div style="width:${Math.round(100 * p.progress / p.goal)}%"></div></div><div class="sm">${p.progress.toLocaleString('de-DE')} / ${p.goal.toLocaleString('de-DE')}</div>` : ''}</div>
+        ${p.level < 10 ? `<button class="btn sm2" data-a="donPick" data-k="${k}">Spenden</button>` : '<b>MAX</b>'}</div>`;
+    }).join('');
+  }
+
   /// Späher und Sammelangriff (Sammelangriff nur online in einer Allianz)
   extraActions(noRally) {
     const c = this.c, o = this.o, blk = c.scoutBlocker();
@@ -814,7 +897,7 @@ export class UI {
         ${r.status === 'open' ? `<button class="btn sm2" data-a="rallyPick" data-id="${r.id}">Mitmachen</button>` : ''}</div>`;
     }).join('');
     return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) +
-      (rl ? `<div class="sub2">⚔️ Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der 🗺️ Karte antippen, Trupp wählen, „Allianz-Sammelangriff“.</div>') +
+      (rl ? `<div class="sub2">⚔️ Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der 🗺️ Karte antippen, Trupp wählen, „Allianz-Sammelangriff“.</div>') + this.projectsHtml() +
       `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
        <div class="form"><input id="chatIn" maxlength="200" placeholder="Nachricht an die Allianz …"><button class="btn sm2" data-a="chat">Senden</button></div>
        <div class="sub2">Mitglieder (${(A.members || []).length}/20)</div>${members}
@@ -859,7 +942,10 @@ export class UI {
       <div class="sm">${sf > 0 ? `🌊 Sturmflut läuft noch ${fmtTime(sf)} · ` : ''}${dp > 0 ? `🧺 Sammel-Fest läuft noch ${fmtTime(dp)}` : ''}${!sf && !dp ? 'Gerade kein Event.' : ''}</div>
       <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="10">🌊 Sturmflut 10 Min.</button><button class="btn ghost" data-a="admEvent" data-k="sturmflut" data-m="30">🌊 30 Min.</button></div>
       <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="30">🧺 2× Sammeln 30 Min.</button><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="120">🧺 2 Std.</button></div>
-      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">⏹ Alle Events beenden</button></div>`;
+      <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">⏹ Alle Events beenden</button><button class="btn ghost" data-a="admBoss">🐙 Krake rufen</button></div>`;
+    const avq = o.avQueue || [];
+    out += `<div class="sub2">📷 Profilbilder prüfen (${avq.length})</div>` + (avq.length ? avq.map((a) => `<div class="row"><img src="${a.data}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-right:8px"><div class="ri"><b>${esc(a.name)}</b><div class="sm">Verstößt das Bild gegen Gesetze oder ist es anstößig? Dann ablehnen.</div></div>
+      <button class="btn sm2" data-a="avOk" data-id="${a.player}">✔</button><button class="btn sm2 danger" data-a="avNo" data-id="${a.player}">✖</button></div>`).join('') : '<div class="sm">Keine Bilder zu prüfen.</div>');
     out += '<div class="sub2">👥 Spieler</div>' + (o.players || []).map((p) => `<div class="row"><div class="ri"><b>${esc(p.name)}</b> <span class="sh">⚔ ${p.power}${p.admin ? ' · 👑' : ''}${p.banned ? ' · <span style="color:#ff6a6a">gesperrt</span>' : ''}</span>
       <div class="sm">zuletzt ${new Date(p.seen).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div></div>
       ${p.admin ? '' : p.banned ? `<button class="btn sm2 ghost" data-a="admBan" data-id="${p.id}" data-b="0">Entsperren</button>` : `<button class="btn sm2 ${this.confirm === 'ban' + p.id ? 'danger' : 'ghost'}" data-a="admBan" data-id="${p.id}" data-b="1">${this.confirm === 'ban' + p.id ? 'Sperren?' : 'Sperren'}</button>`}</div>`).join('');
@@ -882,7 +968,7 @@ export class UI {
         <div class="form" style="flex-wrap:wrap;gap:4px">${f('ncR0', '🪵 Holz', 23)}${f('ncR1', '🦪 Muscheln', 23)}${f('ncR2', '💧 Wasser', 23)}${f('ncR3', '⚙️ Metall', 23)}</div>
         <div class="sm">Krieger</div>
         <div class="form" style="flex-wrap:wrap;gap:4px">${UNITS.map((u, k) => f('ncU' + k, u.ic + ' ' + u.name.slice(0, 6), 18)).join('')}</div>
-        <div class="form" style="gap:4px">${f('ncDays', 'gültig Tage (1)', 48)}${f('ncMax', 'max. Spieler (∞)', 48)}</div>
+        <div class="form" style="gap:4px">${f('ncDays', 'gültig Tage (1)', 31)}${f('ncMax', 'max. Spieler (∞)', 31)}${f('ncVip', '👑 VIP-Punkte', 31)}</div>
         <div class="btns"><button class="btn" data-a="codeSave" ${this.busy ? 'disabled' : ''}><b>Code speichern</b></button></div>`;
       const list = o.codes || [];
       out += `<div class="sub2" style="margin-top:12px">Deine Codes</div>` + (list.length ? list.map((c) => `<div class="row"><div class="ri"><b style="letter-spacing:.05em">${c.code}</b> <span class="sh">${c.active ? '<span style="color:#8ef0a0">aktiv</span>' : 'abgelaufen'} · ${c.uses}${c.max ? '/' + c.max : ''}× eingelöst</span>
@@ -897,6 +983,100 @@ export class UI {
     if (this.troopTab === 'reports' && this.o.active) this.o.sync();
   }
 
+  avatarHtml() {
+    const s = this.c.s, o = this.o;
+    if (s.avatarPhoto && o.avatar && o.avatar.status === 'ok' && o.avatar.data) return `<img src="${o.avatar.data}" alt="">`;
+    return s.avatar || '🧑‍✈️';
+  }
+
+  profileHtml() {
+    const c = this.c, s = c.s, o = this.o, vl = vipLevel(c), av = o.avatar || {};
+    const PRE = ['🧑‍✈️', '👩‍✈️', '🧔', '👩', '👨‍🦰', '👩‍🦳', '🧓', '👦', '🦭', '🐙', '🦀', '⚓'];
+    let out = this.head('Profil') + `<div class="avprev">${this.avatarHtml()}</div>
+      <div class="inf" style="text-align:center"><b>${(o.active && o.name ? o.name : s.playerName || 'Pfahlstädter').replace(/[&<>"]/g, '')}</b> · 👑 VIP ${vl} · Macht ⚔ ${c.power}</div>
+      <div class="sub2">Profilbild wählen</div><div class="avgrid">${PRE.map((e) => `<button class="${!s.avatarPhoto && (s.avatar || '🧑‍✈️') === e ? 'on' : ''}" data-a="avPreset" data-v="${e}">${e}</button>`).join('')}</div>
+      <div class="sub2">📷 Eigenes Foto ${vl >= 4 ? '' : '(ab VIP 4)'}</div>`;
+    if (vl < 4) out += `<div class="sm">Ab VIP 4 kannst du ein eigenes Foto hochladen. Dir fehlen noch ${(VIP_PTS[4] - (s.vipPts || 0)).toLocaleString('de-DE')} VIP-Punkte.</div>`;
+    else if (!o.active) out += '<div class="sm">Eigene Fotos gibt es nur mit Online-Konto, weil sie vor der Freischaltung geprüft werden.</div>';
+    else {
+      out += `<div class="sm">Erlaubt sind nur Bilder, die nicht gegen deutsches Recht verstoßen: keine Nacktheit, Gewalt, verbotenen Symbole, Beleidigungen oder fremden Personen ohne deren Einverständnis. Jedes Foto wird vor der Freischaltung geprüft.</div>`;
+      if (av.status === 'pending') out += '<div class="inf">⏳ Dein Foto wird gerade geprüft.</div>';
+      else if (av.status === 'rejected') out += '<div class="warn">❌ Dein letztes Foto wurde abgelehnt. Bitte ein anderes wählen.</div>';
+      else if (av.status === 'ok') out += `<div class="btns"><button class="btn ${s.avatarPhoto ? '' : 'ghost'}" data-a="avPhotoUse">${s.avatarPhoto ? '✔ Foto wird angezeigt' : 'Freigegebenes Foto anzeigen'}</button></div>`;
+      if (this.avMsg) out += `<div class="${this.avMsg.ok ? 'inf' : 'warn'}">${this.avMsg.text}</div>`;
+      out += `<div class="btns"><button class="btn" data-a="avUpload" ${this.busy ? 'disabled' : ''}>📷 Foto hochladen</button></div>`;
+    }
+    return out;
+  }
+
+  /// Foto verkleinern (128×128, JPEG) und zur Prüfung schicken
+  avatarFile(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { this.avMsg = { ok: false, text: 'Das ist kein Bild.' }; this.panelKey = null; return; }
+    if (file.size > 15e6) { this.avMsg = { ok: false, text: 'Das Bild ist zu groß (max. 15 MB).' }; this.panelKey = null; return; }
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
+      const k = Math.min(img.width, img.height), sx = (img.width - k) / 2, sy = (img.height - k) / 2;
+      cv.getContext('2d').drawImage(img, sx, sy, k, k, 0, 0, S, S);
+      URL.revokeObjectURL(url);
+      const data = cv.toDataURL('image/jpeg', 0.75);
+      this.run(async () => {
+        try { await this.o.avatarUpload(data); this.avMsg = { ok: true, text: '📨 Foto hochgeladen – es wird jetzt geprüft und danach freigeschaltet.' }; }
+        catch (e) { this.avMsg = { ok: false, text: e.message }; }
+      });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); this.avMsg = { ok: false, text: 'Das Bild konnte nicht gelesen werden.' }; this.panelKey = null; };
+    img.src = url;
+  }
+
+  vipHtml() {
+    const c = this.c, L = vipLevel(c), pts = c.s.vipPts || 0;
+    let out = `<div class="inf">👑 <b>VIP ${L}</b> · ${pts.toLocaleString('de-DE')} VIP-Punkte${L < 10 ? ` · noch ${(VIP_PTS[L + 1] - pts).toLocaleString('de-DE')} bis VIP ${L + 1}` : ''}</div>
+      ${L < 10 ? `<div class="bar big"><div style="width:${Math.round(100 * (pts - VIP_PTS[L]) / (VIP_PTS[L + 1] - VIP_PTS[L]))}%"></div></div>` : ''}
+      <div class="sm">VIP-Punkte gibt es für die tägliche Anmeldung, Tagesaufgaben, Saison-Pass-Stufen, Piratenschiffe, Schätze und Geschenk-Codes.</div>`;
+    if (L >= 1) {
+      const r = vipChest(c);
+      out += `<div class="row meRow"><div class="ri"><b>👑 Tägliche VIP-Truhe</b><div class="sm">${this.rewardStr(r.res)} · ${itemStr(r.items)} · 🎖️${r.medals}</div></div><button class="btn sm2" data-a="vipChest" ${vipChestCan(c) ? '' : 'disabled'}>${vipChestCan(c) ? 'Öffnen' : 'Morgen'}</button></div>`;
+    } else out += '<div class="sm">Ab VIP 1 gibt es jeden Tag eine VIP-Truhe.</div>';
+    for (let k = 1; k <= 10; k++) out += `<div class="row ${k === L ? 'meRow' : ''}" style="${k > L ? 'opacity:.6' : ''}"><div class="ri"><b>${k <= L ? '✔' : '🔒'} VIP ${k}</b> <span class="sh">${VIP_PTS[k].toLocaleString('de-DE')} Punkte</span><div class="sm">${VIP_PERKS[k]}</div></div></div>`;
+    return out;
+  }
+
+  researchHtml() {
+    const c = this.c, r = c.s.research;
+    let out = this.head('📚 Seefahrer-Akademie') + `<div class="desc">Forschung gibt dauerhafte Boni. Es läuft immer nur eine Forschung; höhere Stufen brauchen eine höhere Akademie.</div>`;
+    if (r) { const t = TECH.find((x) => x.id === r.id); out += `<div class="inf">Forscht: <b>${t.ic} ${t.name} ${techLv(c, r.id) + 1}</b> · noch ${fmtTime(r.left)}</div><div class="bar big"><div style="width:${Math.round(100 * (1 - r.left / r.total))}%"></div></div>` + this.speedBtns('research', 0); }
+    for (const t of TECH) {
+      const lv = techLv(c, t.id), k = lv + 1, blk = techBlocker(c, t.id);
+      out += `<div class="row"><div class="ri"><b>${t.ic} ${t.name}</b> <span class="sh">${lv}/${TECH_MAX} · ${t.text} je Stufe</span>
+        ${k <= TECH_MAX ? `<div class="sm">${this.costStr(techCost(t, k))} · ⏱ ${fmtTime(techTime(c, k))}</div>${blk && !['Zu wenig Rohstoffe', 'Es wird schon geforscht'].includes(blk) ? `<div class="warn">${blk}</div>` : ''}` : ''}</div>
+        ${k <= TECH_MAX ? `<button class="btn sm2" data-a="tech" data-id="${t.id}" ${blk ? 'disabled' : ''}>Forschen</button>` : '<b>✔</b>'}</div>`;
+    }
+    return out;
+  }
+
+  yardHtml() {
+    const c = this.c, s = c.s, blk = boatBlocker(c);
+    let out = this.head('⚓ Werft') + `<div class="desc">Kutter bringen deine Trupps übers Meer. Passt ein Trupp ganz auf die Flotte (${BOAT_CAP} Krieger je Kutter), ist er 25 % schneller und bringt 25 % mehr Beute.</div>
+      <div class="inf">Flotte: <b>${s.boats || 0}/${maxBoats(c)}</b> Kutter · ${(s.boats || 0) * BOAT_CAP} Plätze</div>`;
+    if (s.boatQ) out += `<div class="sm">Im Bau: Kutter · noch ${fmtTime(s.boatQ.left)}</div><div class="bar"><div style="width:${Math.round(100 * (1 - s.boatQ.left / s.boatQ.total))}%"></div></div>`;
+    out += `<div class="row"><div class="ri"><b>⛵ Kutter bauen</b><div class="sm">${this.costStr(BOAT_COST)}</div>${blk && blk !== 'Zu wenig Rohstoffe' ? `<div class="warn">${blk}</div>` : ''}</div><button class="btn sm2" data-a="boat" ${blk ? 'disabled' : ''}>Bauen</button></div>`;
+    return out;
+  }
+
+  captainsHtml() {
+    const c = this.c, s = c.s;
+    let out = `<div class="inf">🎖️ Kapitänsabzeichen: <b>${s.medals || 0}</b></div><div class="sm">Abzeichen gibt es von Piratenschiffen, Saison-Pass und VIP-Truhe. Wähle beim Losschicken einen Kapitän für den Trupp – er ist dann bis zur Rückkehr unterwegs.</div>`;
+    for (const k of CAPTAINS) {
+      const cp = capOf(c, k.id), m = cp ? capMul(cp.lvl) : 1;
+      out += `<div class="row"><div class="ri"><b>${k.ic} ${k.name}</b> ${cp ? `<span class="sh">Stufe ${cp.lvl}/10${cp.busy > Date.now() ? ' · unterwegs' : ''}</span>` : ''}
+        <div class="sm">${k.text}${cp && cp.lvl > 1 ? ` (×${m.toFixed(1)})` : ''}</div></div>
+        ${cp ? (cp.lvl < 10 ? `<button class="btn sm2" data-a="capUp" data-id="${k.id}" ${(s.medals || 0) >= cp.lvl * 2 ? '' : 'disabled'}>⬆ ${cp.lvl * 2}🎖️</button>` : '<b>MAX</b>') : `<button class="btn sm2" data-a="hire" data-id="${k.id}" ${(s.medals || 0) >= k.cost ? '' : 'disabled'}>Anheuern ${k.cost}🎖️</button>`}</div>`;
+    }
+    return out;
+  }
+
   passReady() { const ps = passState(this.c); for (let t = 1; t <= ps.tier; t++) if (!ps.got.includes(t)) return true; return false; }
 
   rewardStr(res, u) {
@@ -909,8 +1089,8 @@ export class UI {
   giftHtml() {
     const c = this.c, tab = this.giftTab || 'daily';
     const ds = dailyState(c), qs = questsToday(c);
-    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['pass', '🎫', 'Pass' + (this.passReady() ? ' •' : '')], ['items', '⚡', `Items ${speedCount(c)}`], ['ach', '🏅', `${achCount(c)}/${ACH.length}`]];
-    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(5,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
+    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['pass', '🎫', 'Pass' + (this.passReady() ? ' •' : '')], ['vip', '👑', 'VIP ' + vipLevel(c) + (vipChestCan(c) ? ' •' : '')], ['items', '⚡', `${speedCount(c)}`], ['ach', '🏅', `${achCount(c)}/${ACH.length}`]];
+    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(6,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
     if (tab === 'daily') {
       out += '<div class="desc">Schau jeden Tag vorbei! Wer einen Tag auslässt, fängt wieder bei Tag 1 an. Tag 7 ist der große Schatz.</div><div class="daily">';
       for (let d = 0; d < 7; d++) {
@@ -925,6 +1105,8 @@ export class UI {
           <div class="bar"><div style="width:${Math.round(100 * Math.min(1, q.have / q.n))}%"></div></div></div>
           <button class="btn sm2" data-a="claimQuest" data-k="${k}" ${q.done || q.have < q.n ? 'disabled' : ''}>${q.done ? 'Erledigt' : 'Abholen'}</button></div>`;
       });
+    } else if (tab === 'vip') {
+      out += this.vipHtml();
     } else if (tab === 'pass') {
       const ps = passState(c), mon = new Date().toLocaleString('de-DE', { month: 'long' });
       out += `<div class="desc">🎫 Saison-Pass ${mon} – kostenlos! Erfahrung gibt es für Bauen, Ausbilden, Sammeln, Kämpfe, Piratenschiffe, Handel, Schätze und die Tagesbelohnung. Jeden Monat beginnt ein neuer Pass.</div>
@@ -958,10 +1140,10 @@ export class UI {
 
   troopsHtml() {
     const tab = this.troopTab || 'truppen';
-    const tabs = [['truppen', '⚔️', 'Truppen'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rangliste']];
-    const bar = `<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="ttab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
+    const tabs = [['truppen', '⚔️', 'Truppen'], ['caps', '🎖️', 'Kapitäne'], ['reports', '📜', 'Berichte'], ['rank', '🏆', 'Rangliste']];
+    const bar = `<div class="tabs" style="grid-template-columns:repeat(4,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="ttab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div>`;
     const strip = (x) => x.replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, '');
-    const body = tab === 'reports' ? strip(this.reportsHtml()) : tab === 'rank' ? strip(this.rankHtml()) : this.troopsTabHtml();
+    const body = tab === 'reports' ? strip(this.reportsHtml()) : tab === 'rank' ? strip(this.rankHtml()) : tab === 'caps' ? this.captainsHtml() : this.troopsTabHtml();
     return this.head('Truppen') + bar + `<div class="tabbody">${body}</div>`;
   }
 
@@ -986,7 +1168,7 @@ export class UI {
     if (tab === 'mine') body = this.cityOverviewHtml();
     else {
       const types = [...CITY_TYPES, T.MAUER, T.ABWEHR, T.DAMM];
-      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Militär', [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]], ['Verteidigung', [T.WACHTURM, T.MAUER, T.ABWEHR]], ['Schutz vor der Flut', [T.DAMM]]];
+      const groups = [['Rohstoffe', [T.TREIBHOLZ, T.MUSCHEL, T.REGEN, T.TAUCHER]], ['Wohnen & Versorgung', [T.HAUS, T.HEILER, T.RAUCH, T.KUECHE, T.LAGER]], ['Militär', [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]], ['Verteidigung', [T.WACHTURM, T.MAUER, T.ABWEHR]], ['Schutz vor der Flut', [T.DAMM]], ['Wissen & Seefahrt', [T.AKADEMIE, T.WERFT, T.WAHRZEICHEN]]];
       body = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt. Der Platz wird automatisch gewählt.</div>`;
       for (const [title, list] of groups) {
         body += `<div class="sub2">${title}</div>`;
@@ -996,7 +1178,7 @@ export class UI {
           const slots = LAYOUT.filter((x) => x === t).length, have = c.s.plots.filter((p) => p.type === t).length;
           let why = '';
           if (free < 0) {
-            if (c.activeBuilds >= 2) why = 'Alle Bautrupps beschäftigt';
+            if (c.activeBuilds >= c.maxBuilds) why = 'Alle Bautrupps beschäftigt';
             else if (!c.canAfford(costFor(t, 1))) why = '';
             else if (t === T.MAUER) why = c.levels(T.MAUER) > 0 || c.s.plots[WALL].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
             else if (t === T.DAMM) why = c.s.plots[DAMM].type >= 0 ? 'Schon gebaut – Ausbau unter „Meine Gebäude“' : 'Nicht möglich';
@@ -1006,7 +1188,7 @@ export class UI {
           }
           body += `<div class="row"><div class="ri"><div><b>${B_IC[t]} ${d.name}</b> <span class="sh">${have}/${slots} · ${d.short}</span></div>
             <div class="sm">${this.costStr(costFor(t, 1))} · ${fmtTime(buildTime(t, 1))}</div>${why ? `<div class="warn">${why}</div>` : ''}</div>
-            ${free < 0 && this.freePlotQueue(t) >= 0 && (c.s.bq || []).length < MAX_QUEUE ? `<button class="btn sm2 ghost" data-a="qbuild" data-v="${t}">🕒 Später</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? 'disabled' : ''}>Bauen</button>`}</div>`;
+            ${free < 0 && this.freePlotQueue(t) >= 0 && (c.s.bq || []).length < c.queueMax ? `<button class="btn sm2 ghost" data-a="qbuild" data-v="${t}">🕒 Später</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${t}" ${free < 0 ? 'disabled' : ''}>Bauen</button>`}</div>`;
         }
       }
     }
@@ -1022,6 +1204,7 @@ export class UI {
       ['Militär', [T.KASERNE, T.HARPHOF, T.WACHSTUBE, T.ENTERHALLE, T.SCHLEUDER, T.WATTHUETTE, T.LAZARETT]],
       ['Verteidigung', [T.WACHTURM, T.MAUER, T.ABWEHR]],
       ['Schutz vor der Flut', [T.DAMM]],
+      ['Wissen & Seefahrt', [T.AKADEMIE, T.WERFT, T.WAHRZEICHEN]],
     ];
     let out = `<div class="sm">Bautrupps: <b>${c.activeBuilds}/2</b> beschäftigt · Gelände ${Math.round(c.areaRadius)} m · freie Bewohner ${c.freeVillagers}</div>`;
     for (const [title, types] of groups) {
@@ -1033,7 +1216,7 @@ export class UI {
         rows.push(`<div class="row"><div class="ri"><b>${B_IC[p.type]} ${DEFS[p.type].name}</b> <i class="lv">${p.level || '–'}</i> ${state}
           ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? `<div class="sm">→ ${p.level + 1}: ${this.costStr(costFor(p.type, p.level + 1))}</div>` : ''}</div>
           <button class="btn sm2 ghost" data-a="goto" data-i="${i}">Zeigen</button>
-          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? (QOK.includes(blk) && (c.s.bq || []).length < MAX_QUEUE && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn sm2 ghost" data-a="qup" data-i="${i}">🕒</button>` : `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? 'disabled' : ''}>⬆</button>`) : ''}</div>`);
+          ${p.buildLeft <= 0 && p.level < MAX_LEVEL ? (QOK.includes(blk) && (c.s.bq || []).length < c.queueMax && !(c.s.bq || []).some((q) => q.plot === i) ? `<button class="btn sm2 ghost" data-a="qup" data-i="${i}">🕒</button>` : `<button class="btn sm2" data-a="upq" data-i="${i}" ${blk ? 'disabled' : ''}>⬆</button>`) : ''}</div>`);
       });
       if (rows.length) out += `<div class="sub2">${title}</div>` + rows.join('');
     }

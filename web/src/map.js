@@ -49,8 +49,9 @@ export class SeaMap {
 
   /// Alles Anklickbare: { type: 'terr'|'player', id, x, y }
   items() {
+    const ex = this.isOnline && this.o.boss ? [{ type: 'boss', id: 1, x: 3.5, y: -3.5 }] : [];
     const bots = (this.c.s.bots || []).map((b) => ({ type: 'bot', id: b.id, x: this.home[0] + b.dx, y: this.home[1] + b.dy }));
-    return this.items0().concat(bots);
+    return this.items0().concat(bots, ex);
   }
   items0() {
     if (this.isOnline) {
@@ -88,6 +89,17 @@ export class SeaMap {
     }
     if (this.isOnline) this.drawOnline(sel); else this.drawOffline(sel);
     this.drawBots(sel);
+    if (this.isOnline && this.o.boss) this.drawBoss(sel);
+  }
+
+  drawBoss(sel) {
+    const ctx = this.ctx, u = this.u, b = this.o.boss, [x, y] = this.pos(3.5, -3.5), t = this.t;
+    if (sel && sel.type === 'boss') { ctx.fillStyle = 'rgba(255,90,90,0.25)'; ctx.beginPath(); ctx.arc(x, y, u * 0.7, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = 'rgba(160,40,120,0.5)'; ctx.lineWidth = 3;
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 + Math.sin(t + k) * 0.3; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a) * u * 0.35, y + Math.sin(a) * u * 0.35 + Math.sin(t * 2 + k) * 6, x + Math.cos(a + 0.4) * u * 0.6, y + Math.sin(a + 0.4) * u * 0.6); ctx.stroke(); }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(u * 0.6)}px system-ui`; ctx.fillText('🐙', x, y + Math.sin(t * 1.3) * 3);
+    const w = u * 0.9; ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x - w / 2, y + u * 0.38, w, 7); ctx.fillStyle = '#ff5a5a'; ctx.fillRect(x - w / 2, y + u * 0.38, w * b.hp / b.maxhp, 7);
+    this.label(x, y + u * 0.45, `Riesenkrake Stufe ${b.level}`, '#ffb0e0');
   }
 
   /// Piratenschiffe (Bots) und Trupps dorthin

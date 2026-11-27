@@ -1,5 +1,7 @@
 // Belohnungen, Tagesaufgaben, Erfolge, Einführung, Bauwarteschlange, Händlerschiff
 import { T, DEFS, UNITS, RES, uSum, costFor } from './game.js';
+import { addVip } from './progress.js';
+const addVipX = (c, n) => addVip(c, n);
 
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 const yesterday = () => { const d = new Date(Date.now() - 864e5); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
@@ -28,6 +30,7 @@ export function claimDaily(c) {
   c.s.troops = c.s.troops.map((v, i) => v + (r.u[i] || 0));
   c.s.daily = { last: today(), streak: st.day + 1 };
   questEvent(c, 'daily', 1);
+  addVipX(c, 50 + 10 * Math.min(7, c.s.daily.streak));
   return r;
 }
 
@@ -69,6 +72,7 @@ export function claimQuest(c, k) {
   if (!q || q.done || q.have < q.n) return false;
   q.rw.forEach((v, i) => v && c.addRes(i, v));
   c.s.quests.list[k].done = true;
+  addVipX(c, 15);
   return true;
 }
 
@@ -123,7 +127,7 @@ export function tutStep(c) {
 export const MAX_QUEUE = 3;
 export function queueAdd(c, plot, type) {
   const s = c.s; s.bq = s.bq || [];
-  if (s.bq.length >= MAX_QUEUE) return 'Warteschlange voll (max. 3)';
+  if (s.bq.length >= c.queueMax) return `Warteschlange voll (max. ${c.queueMax})`;
   if (s.bq.some((q) => q.plot === plot)) return 'Steht schon in der Warteschlange';
   s.bq.push({ plot, type });
   c.msg(`In Warteschlange: ${DEFS[type !== null && type !== undefined ? type : s.plots[plot].type].name}`);
@@ -222,6 +226,8 @@ export function claimPass(c, t) {
   for (const k in r.items) c.s.items[k] = (c.s.items[k] || 0) + r.items[k];
   c.s.troops = c.s.troops.map((v, i) => v + (r.u[i] || 0));
   c.s.pass.got.push(t);
+  addVipX(c, 20);
+  if (t % 5 === 0) c.s.medals = (c.s.medals || 0) + 2;
   return true;
 }
 function addXp(c, id, n) {
@@ -257,4 +263,5 @@ export function collectTreasure(c, id) {
   else { const v = Math.round((40 + Math.random() * 120) * f); c.addRes(3, v); txt = `${v} Altmetall`; }
   c.msg(`✨ Schatz im Watt gefunden: ${txt}`);
   questEvent(c, 'treasure', 1);
+  addVipX(c, 3);
 }

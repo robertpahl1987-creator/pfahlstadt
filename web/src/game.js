@@ -1,11 +1,12 @@
 import { questEvent, traderTick, queueTick, checkAch, season, treasureTick } from './features.js';
 import { botTick, ensureBots } from './bots.js';
+import { mods, researchTick, boatTick, capAtk, capSend, capSpeed, fleetSpeed } from './progress.js';
 // Spiellogik: Gezeiten, Rohstoffe, Bauen, Bevölkerung, Speichern, Offline-Fortschritt.
 export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
 export const RES_COL = ['#E2B477', '#F2A08C', '#7FD3F0', '#C7CCD6'];
 export const HOLZ = 0, MUSCHELN = 1, WASSER = 2, METALL = 3;
 
-export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19, LAZARETT: 20 };
+export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19, LAZARETT: 20, AKADEMIE: 21, WERFT: 22, WAHRZEICHEN: 23 };
 
 export const DEFS = [
   { name: 'Gezeitenturm', short: 'Herz der Stadt', desc: 'Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt höher über das Wasser.', cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
@@ -29,6 +30,9 @@ export const DEFS = [
   { name: 'Schleuderplatz', short: 'bildet Schleuderer aus', desc: 'Offener Platz mit Wurfschleuder. Schaltet Schleuderer frei; jede Stufe bildet sie 10 % schneller aus.', cost: [180, 40, 0, 50], prod: -1, rate: 0, workers: 1, build: 9 },
   { name: 'Wattläuferhütte', short: 'bildet Wattläufer aus', desc: 'Hütte mit Wattstiefeln und Laufstegen. Schaltet Wattläufer frei; jede Stufe bildet sie 10 % schneller aus.', cost: [120, 50, 20, 0], prod: -1, rate: 0, workers: 1, build: 8 },
   { name: 'Lazarett', short: 'rettet verwundete Krieger', desc: 'Ein Teil der gefallenen Krieger kommt verwundet zurück statt zu sterben und wird hier wieder gesund (kostet etwas Muscheln und Wasser). Jede Stufe: mehr Betten, mehr Gerettete, schnellere Heilung.', cost: [140, 60, 80, 10], prod: -1, rate: 0, workers: 2, build: 8 },
+  { name: 'Seefahrer-Akademie', short: 'Forschung mit Dauerboni', desc: 'Hier erforschen Gelehrte Verbesserungen: höhere Pfähle, schärfere Harpunen, schnelleres Bauen … Jede Akademie-Stufe forscht schneller und schaltet höhere Forschungsstufen frei.', cost: [300, 120, 80, 60], prod: -1, rate: 0, workers: 2, build: 12 },
+  { name: 'Werft', short: 'baut Kutter für die Flotte', desc: 'Baut Kutter. Passt ein Trupp komplett auf deine Flotte (25 Krieger je Kutter), segelt er 25 % schneller und bringt 25 % mehr Beute heim. Jede Stufe: 2 Kutter mehr.', cost: [350, 40, 0, 90], prod: -1, rate: 0, workers: 2, build: 12 },
+  { name: 'Gezeitenuhr (Wahrzeichen)', short: 'Wahrzeichen mit Bonus', desc: 'Das riesige Wahrzeichen deiner Stadt. Jede Stufe: +2 % auf alle Produktion für dich – und online +1 % für jedes Mitglied deiner Allianz.', cost: [500, 200, 200, 150], prod: -1, rate: 0, workers: 0, build: 20 },
 ];
 export const lazSave = (L) => (L > 0 ? Math.min(0.6, 0.25 + 0.02 * L) : 0);
 export const lazBeds = (L) => 25 * L;
@@ -37,7 +41,7 @@ export const TIDE_MUL = { '-1': [1, 1, 0.85, 1, 1.35], '0': [1, 1, 1, 1, 1], '1'
 export const TIDE_NAME = { '-1': 'Ebbe', '0': 'Wechsel', '1': 'Flut' };
 export const tideStateOf = (v) => (v > 0.35 ? 1 : v < -0.35 ? -1 : 0);
 export const damTopFor = (lvl) => (lvl > 0 ? 3.0 + 0.25 * lvl : -99);
-export const CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20];
+export const CITY_TYPES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21, 22, 23];
 
 // ---------- Militär ----------
 export const UNITS = [
@@ -109,11 +113,11 @@ export const DAMM = 52;
 const _T = { L: 11, H: 5, K: 8, HE: 6, KA: 9, W: 10, R: 7, TH: 1, MU: 2, RE: 3, TA: 4, HP: 15, WS: 16, EN: 17, SL: 18, WL: 19 };
 export const LAYOUT = [0,
   // Ring 1 (Stadtkern, Plätze 1–12, im Uhrzeigersinn ab Norden; 7 = Torseite)
-  _T.L, _T.TH, _T.MU, _T.RE, _T.H, _T.HP, _T.KA, _T.WS, _T.H, _T.TA, _T.K, _T.H,
+  23, _T.TH, _T.MU, _T.RE, _T.H, _T.HP, _T.KA, _T.WS, _T.H, _T.TA, _T.K, _T.H,
   // Ring 2 (ab Gezeitenturm 3)
   _T.TH, _T.MU, _T.RE, _T.H, _T.R, _T.EN, _T.W, _T.SL, _T.TA, _T.L, 20, _T.HE,
   // Ring 3 (Warft, wächst mit)
-  _T.TH, _T.MU, _T.RE, _T.TA, _T.H, _T.L, _T.H, _T.W, _T.WL, _T.W, _T.H, _T.TA, _T.RE, _T.MU, _T.TH, _T.H, _T.TH, _T.MU,
+  _T.TH, _T.MU, _T.RE, _T.TA, _T.H, _T.L, _T.H, _T.W, _T.WL, _T.W, 22, _T.TA, _T.RE, _T.MU, _T.TH, _T.H, _T.L, 21,
   12, 13, 13, 13, 13, 13, 13, 13, 13, 14];
 export const PLOTS = 53, INNER = 13, RING3 = 25, WALL = 43, TOWERS = 44, OUTER_LEVEL = 3, MAX_BUILDS = 2, DAY = 240, STORM_LEN = 90, EXP_TIME = 40, EXP_FOOD = 30, EBB = 1.0;
 const KEY = 'pfahlstadt_save_v1';
@@ -145,7 +149,9 @@ export class Colony {
   get builtCount() { let n = 0; this.s.plots.forEach((p, i) => { if (i > 0 && i < WALL && p.type >= 0 && p.level > 0) n++; }); return n; }
   get areaRadius() { return Math.min(66, 40 + 1.4 * this.builtCount); }
   ring3Needed(i) { return 8 + (i - RING3); }
-  get storage() { return 1500 + 2500 * this.levels(T.LAGER); }
+  get storage() { return Math.round((1500 + 2500 * this.levels(T.LAGER)) * mods(this).store); }
+  get maxBuilds() { return mods(this).builds; }
+  get queueMax() { return mods(this).queue; }
   get troopsAway() {
     let a = zeroU(); for (const m of this.s.botMarches || []) a = uAdd(a, m.u);
     if (this.online && this.online.active) return uAdd(a, this.online.troopsAway());
@@ -179,15 +185,15 @@ export class Colony {
 
   get troopTotal() { return uSum(this.s.troops) + uSum(this.troopsAway); }
   get defense() {
-    const base = armyStr(this.s.troops, null, false) + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
+    const base = armyStr(this.s.troops, null, false) * mods(this).def + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
     return Math.round(base * (1 + 0.12 * this.levels(T.WACHTURM) + 0.15 * this.levels(T.MAUER)));
   }
   get power() {
     let b = 0; for (const p of this.s.plots) if (p.type >= 0) b += p.level * 10;
     return b + this.troopTotal * 2 + this.defense;
   }
-  get deck() { return deckFor(this.towerLevel); }
-  get damTop() { return damTopFor(this.levels(T.DAMM)); }
+  get deck() { return deckFor(this.towerLevel) + mods(this).deck; }
+  get damTop() { const L = this.levels(T.DAMM); return L > 0 ? damTopFor(L) + mods(this).dam : -99; }
   /// Wasser innerhalb des Damms: hält der Damm, bleibt die Stadt trocken
   get damHolds() { return this.water > this.deck && this.water <= this.damTop; }
   get inWater() { return this.damHolds ? this.deck - 0.35 : this.water; }
@@ -229,6 +235,8 @@ export class Colony {
     treasureTick(this, dt);
     this.summerTick(dt);
     botTick(this, dt);
+    researchTick(this, dt);
+    boatTick(this, dt);
     this.healTick(dt);
     if (this.eventStorm && this.freeboard < 0) { for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60; this.floodWarnT = (this.floodWarnT || 0) - dt; if (this.floodWarnT <= 0) { this.floodWarnT = 30; this.msg('🌊 Die Sturmflut spült Vorräte weg! Damm oder Gezeitenturm ausbauen!'); } }
     queueTick(this);
@@ -297,7 +305,8 @@ export class Colony {
     const owned = this.online && this.online.active ? this.online.owned : s.terr.filter((t) => t.owner === 1);
     for (const t of owned) terrBonus[t.res] += t.pct / 100;
     const lh = this.online && this.online.active && this.online.lh && this.online.lh.bonus ? 1.2 : 1;
-    for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh;
+    const pm = mods(this).prod;
+    for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh * pm;
     r[MUSCHELN] -= this.upkeep / 60;
     r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
     r[WASSER] -= s.survivors * 0.03;
@@ -377,7 +386,7 @@ export class Colony {
     if (plot >= TOWERS && plot < DAMM && this.levels(T.MAUER) <= 0) return 'Erst die Festungsmauer bauen';
     if (plot >= INNER && plot < RING3 && this.towerLevel < OUTER_LEVEL) return `Äußerer Ring ab Gezeitenturm Stufe ${OUTER_LEVEL}`;
     if (plot >= RING3 && plot < WALL && this.builtCount < this.ring3Needed(plot)) return `Gelände zu klein: noch ${this.ring3Needed(plot) - this.builtCount} Gebäude bauen`;
-    if (this.activeBuilds >= MAX_BUILDS) return 'Alle Bautrupps beschäftigt';
+    if (this.activeBuilds >= this.maxBuilds) return 'Alle Bautrupps beschäftigt';
     if (!this.canAfford(costFor(t, 1))) return 'Zu wenig Rohstoffe';
     return null;
   }
@@ -385,7 +394,8 @@ export class Colony {
   startBuild(plot, t) {
     if (this.buildBlocker(plot, t)) return false;
     this.pay(costFor(t, 1));
-    this.s.plots[plot] = { type: t, level: 0, buildLeft: buildTime(t, 1), buildTotal: buildTime(t, 1) };
+    const bt = buildTime(t, 1) * mods(this).build;
+    this.s.plots[plot] = { type: t, level: 0, buildLeft: bt, buildTotal: bt };
     this.msg(`Bau von ${DEFS[t].name} begonnen.`);
     questEvent(this, 'build', 1);
     return true;
@@ -397,7 +407,7 @@ export class Colony {
     if (p.buildLeft > 0) return 'Wird gerade gebaut';
     if (p.level >= MAX_LEVEL) return 'Maximale Stufe';
     if (plot !== 0 && p.level + 1 > this.towerLevel) return `Erst Gezeitenturm auf Stufe ${p.level + 1}`;
-    if (this.activeBuilds >= MAX_BUILDS) return 'Alle Bautrupps beschäftigt';
+    if (this.activeBuilds >= this.maxBuilds) return 'Alle Bautrupps beschäftigt';
     if (!this.canAfford(costFor(p.type, p.level + 1))) return 'Zu wenig Rohstoffe';
     return null;
   }
@@ -406,7 +416,7 @@ export class Colony {
     if (this.upgradeBlocker(plot)) return false;
     const p = this.s.plots[plot];
     this.pay(costFor(p.type, p.level + 1));
-    p.buildTotal = p.buildLeft = buildTime(p.type, p.level + 1);
+    p.buildTotal = p.buildLeft = buildTime(p.type, p.level + 1) * mods(this).build;
     this.msg(`Ausbau: ${DEFS[p.type].name} → Stufe ${p.level + 1}`);
     questEvent(this, 'build', 1);
     return true;
@@ -479,7 +489,7 @@ export class Colony {
   startTrain(u, n) {
     if (this.trainBlocker(u, n)) return false;
     this.pay(unitCost(u, n));
-    const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1)) / (1 + 0.1 * (this.levels(UNITS[u].b) - 1));
+    const per = UNITS[u].time / (1 + 0.25 * (this.levels(T.KASERNE) - 1)) / (1 + 0.1 * (this.levels(UNITS[u].b) - 1)) * mods(this).train;
     this.s.train.push({ u, n, per, left: per });
     this.msg(`${n}× ${UNITS[u].name} in Ausbildung.`);
     return true;
@@ -502,7 +512,7 @@ export class Colony {
   // ---------- Lazarett ----------
   addWounded(u) {
     const L = this.levels(T.LAZARETT); if (L <= 0 || !u) return;
-    const s = this.s, f = lazSave(L), cap = lazBeds(L);
+    const s = this.s, f = Math.min(0.8, lazSave(L) + mods(this).save), cap = lazBeds(L);
     let w = uScale(u, f), room = cap - uSum(s.wounded);
     if (room <= 0) return;
     if (uSum(w) > room) w = uScale(w, room / uSum(w));
@@ -531,11 +541,12 @@ export class Colony {
     if (this.s.marches.some((m) => m.target === id && m.phase === 'out' && m.kind !== 'scout')) return 'Dorthin ist schon ein Trupp unterwegs';
     return null;
   }
-  sendTroops(id, u) {
+  sendTroops(id, u, cap) {
     if (this.attackBlocker(id, u)) return false;
-    const t = this.s.terr[id], tt = travelTime(t) * speedFactor(u);
+    const t = this.s.terr[id], tt = travelTime(t) * speedFactor(u) * mods(this).travel * fleetSpeed(this, u) * capSpeed(this, cap);
+    if (cap) capSend(this, cap, tt);
     this.s.troops = uSub(this.s.troops, u);
-    this.s.marches.push({ target: id, u: u.slice(), left: tt, total: tt, phase: 'out', kind: t.owner === 1 ? 'reinforce' : 'attack' });
+    this.s.marches.push({ target: id, u: u.slice(), left: tt, total: tt, phase: 'out', kind: t.owner === 1 ? 'reinforce' : 'attack', cap: cap || null });
     this.msg(t.owner === 1 ? `Verstärkung nach ${t.name} unterwegs.` : `Angriff auf ${t.name} gestartet!`);
     return true;
   }
@@ -551,7 +562,7 @@ export class Colony {
 
   battle(m, t) {
     const tide = this.tideState(0);
-    const att = armyStr(m.u, null, true, tide) * (0.85 + Math.random() * 0.3);
+    const att = armyStr(m.u, null, true, tide) * mods(this).atk * capAtk(this, m.cap, tide) * (0.85 + Math.random() * 0.3);
     if (att > t.pirates) {
       const loss = Math.min(0.9, Math.pow(t.pirates / att, 1.3) * 0.6);
       const lost = uScale(m.u, loss);
@@ -679,7 +690,7 @@ export class Colony {
     if (s.raidTimer === undefined) s.raidTimer = 480;
     if (s.counterTimer === undefined) s.counterTimer = 420;
     while (s.plots.length < PLOTS) s.plots.push({ type: -1, level: 0, buildLeft: 0, buildTotal: 0 });
-    if ((s.layoutV || 0) < 3) { this.relayout(); s.layoutV = 3; }
+    if ((s.layoutV || 0) < 4) { this.relayout(); s.layoutV = 4; }
     if (!s.nodes.length && !s.gath.length) { for (let k = 0; k < 4; k++) { this.spawnNodeAt(k); } }
   }
 
@@ -687,7 +698,7 @@ export class Colony {
   // ---------- Sammeln mit Bewohnern ----------
   get gatherers() { return this.s.gath ? this.s.gath.length : 0; }
   get freeVillagers() { return Math.max(0, this.healthy - this.gatherers); }
-  get carry() { return (18 + 3 * this.towerLevel) * (this.online && this.online.eventLeft('doppelt') > 0 ? 2 : 1); }
+  get carry() { return (18 + 3 * this.towerLevel) * (this.online && this.online.eventLeft('doppelt') > 0 ? 2 : 1) * mods(this).gather; }
   nodeById(id) { return this.s.nodes.find((n) => n.id === id); }
   nodeFlooded(n) { return this.water > n.h + 0.25; }
   assigned(id) { return this.s.gath.filter((g) => g.node === id).length; }
@@ -811,7 +822,7 @@ export class Colony {
     plots[4] = { type: T.REGEN, level: 1, buildLeft: 0, buildTotal: 0 };
     plots[5] = { type: T.HAUS, level: 1, buildLeft: 0, buildTotal: 0 };
     this.s = {
-      res: [250, 160, 120, 30], survivors: 6, sick: 0, beaconOn: true, plots, layoutV: 3,
+      res: [250, 160, 120, 30], survivors: 6, sick: 0, beaconOn: true, plots, layoutV: 4,
       lastSave: Date.now(), dayTime: 0.3, days: 1, stormTimer: 360, stormLeft: 0,
       expLeft: 0, expSurprised: false, sickProg: 0, deathProg: 0, healProg: 0, arriveProg: 0,
     };

@@ -1,6 +1,7 @@
 // Piratenschiffe (Bots) auf der Seekarte: Stufe für Stufe etwas stärker, Beute sind Beschleuniger, Rohstoffe und Krieger
 import { UNITS, RES, armyStr, uSum, uScale, uSub, uAdd, zeroU, troopStr, speedFactor } from './game.js';
 import { questEvent } from './features.js';
+import { mods, capAtk, capLoot, capSpeed, capSend, fleetSpeed, fleetLoot, addVip } from './progress.js';
 
 export const ITEMS = {
   sp1: { ic: '⚡', name: 'Beschleuniger 1 Min.', sec: 60 },
@@ -64,7 +65,7 @@ function makeBots(c) {
   }
   s.bots = out;
 }
-export const botTravel = (b, u) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u);
+export const botTravel = (b, u, c, cap) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u) * (c ? mods(c).travel * fleetSpeed(c, u) * capSpeed(c, cap) : 1);
 
 export function botBlocker(c, id, u) {
   const b = c.s.bots.find((x) => x.id === id);
@@ -74,11 +75,12 @@ export function botBlocker(c, id, u) {
   if (c.s.botMarches.some((m) => m.bot.id === id && m.phase === 'out')) return 'Dorthin ist schon ein Trupp unterwegs';
   return null;
 }
-export function sendToBot(c, id, u) {
+export function sendToBot(c, id, u, cap) {
   if (botBlocker(c, id, u)) return false;
-  const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u);
+  const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u, c, cap);
+  if (cap) capSend(c, cap, tt);
   c.s.troops = uSub(c.s.troops, u);
-  c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: 'out' });
+  c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: 'out', cap: cap || null, loot: capLoot(c, cap) * fleetLoot(c, u) });
   c.msg(`⚔️ Angriff auf das Piratenschiff „${b.name}“ (Stufe ${b.level})!`);
   return true;
 }
@@ -97,21 +99,24 @@ export function botTick(c, dt) {
 
 function fight(c, m) {
   const s = c.s, b = m.bot, tide = c.tideState(0);
-  const att = armyStr(m.u, b.u, true, tide) * (0.85 + Math.random() * 0.3);
+  const att = armyStr(m.u, b.u, true, tide) * mods(c).atk * capAtk(c, m.cap, tide) * (0.85 + Math.random() * 0.3);
   const def = Math.max(1, armyStr(b.u, m.u, false, tide));
   let lost;
   if (att > def) {
     lost = uScale(m.u, Math.min(0.85, Math.pow(def / att, 1.3) * 0.5));
     const r = botReward(b.level);
     for (const k in r.items) s.items[k] = (s.items[k] || 0) + r.items[k];
+    r.res = r.res.map((v) => Math.round(v * (m.loot || 1)));
     r.res.forEach((v, i) => v && c.addRes(i, v));
     s.troops = uAdd(s.troops, r.u);
+    s.medals = (s.medals || 0) + (r.big ? 3 : 1);
+    addVip(c, 2 * b.level);
     if (b.level >= s.botLevel) { s.botLevel = b.level + 1; }
     s.bots = s.bots.filter((x) => x.id !== b.id);
     if (s.bots.length < 3 || b.level >= s.botLevel - 1) makeBots(c);
     questEvent(c, 'bot', 1);
     questEvent(c, 'win', 1);
-    c.report(`🏴‍☠️ „${b.name}“ (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)}${r.res.some((v) => v) ? ' · ' + r.res.map((v, i) => (v ? `${v} ${RES[i]}` : '')).filter(Boolean).join(', ') : ''}${uSum(r.u) ? ' · Überläufer: ' + troopStr(r.u) : ''}. Verluste: ${troopStr(lost)}.`, true);
+    c.report(`🏴‍☠️ „${b.name}“ (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)} · 🎖️${r.big ? 3 : 1}${r.res.some((v) => v) ? ' · ' + r.res.map((v, i) => (v ? `${v} ${RES[i]}` : '')).filter(Boolean).join(', ') : ''}${uSum(r.u) ? ' · Überläufer: ' + troopStr(r.u) : ''}. Verluste: ${troopStr(lost)}.`, true);
   } else {
     lost = uScale(m.u, 0.55);
     c.report(`🏴‍☠️ Angriff auf „${b.name}“ (Stufe ${b.level}) gescheitert. Verluste: ${troopStr(lost)}. Tipp: Krieger wählen, die gegen die Mannschaft stark sind.`, false);
@@ -143,6 +148,9 @@ export function useSpeed(c, key, kind, target) {
   } else if (kind === 'exp') {
     if (!(s.expLeft > 0)) return 'Keine Wattwanderung unterwegs';
     s.expLeft = Math.max(0.01, s.expLeft - sec);
+  } else if (kind === 'research') {
+    if (!s.research) return 'Keine Forschung läuft';
+    s.research.left = Math.max(0.01, s.research.left - sec);
   } else if (kind === 'bot') {
     const m = s.botMarches[target]; if (!m) return 'Kein Trupp';
     m.left = Math.max(0.01, m.left - sec);

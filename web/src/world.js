@@ -643,6 +643,11 @@ export class World {
       const y = this.groundAt(tr.x, tr.z), p = 0.6 + 0.4 * Math.sin(this.time * 5 + tr.id);
       draws.push({ mesh: this.chestMesh, model: trs([tr.x, y + 0.1, tr.z], [0, this.time * 40 + tr.id * 50, 0], [1.4, 1.4, 1.4]), emis: p, noShadow: true });
     }
+    // eigene Kutter am Steg vor dem Tor
+    for (let k = 0; k < Math.min(6, c2.s.boats || 0); k++) {
+      const x = (k % 2 ? 1 : -1) * (5 + Math.floor(k / 2) * 4.5), z = -(wallRadius() + 7);
+      draws.push({ mesh: this.shipMesh, model: trs([x, wyNow(c2) + Math.sin(this.time + k) * 0.08, z], [Math.sin(this.time * 0.8 + k) * 1.5, 90, 0], [0.45, 0.45, 0.45]) });
+    }
     if (c2.s.trader && c2.s.trader.left > 0) {
       const zr = -(damRadius() + 12), arrive = Math.min(1, (150 - c2.s.trader.left) / 8), leave = Math.min(1, c2.s.trader.left / 8);
       const off = (1 - Math.min(arrive, leave)) * 40;
