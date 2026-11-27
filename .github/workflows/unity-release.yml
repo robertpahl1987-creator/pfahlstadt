@@ -35,7 +35,9 @@ jobs:
           if [ -z "$AUTH" ] || [ -z "$UNITY_ORG" ] || [ "$UNITY_ORG" = "__ORG__" ]; then
             echo "Noch nicht eingerichtet (Secret UNITY_AUTH oder Org/Projekt fehlt)."; exit 0
           fi
-          case "$AUTH" in Basic\ *) H="$AUTH" ;; *) H="Basic $AUTH" ;; esac
+          # Erlaubt: "Basic xyz", "Authorization: Basic xyz" oder nur "xyz"
+          A=$(printf '%s' "$AUTH" | tr -d '\r\n' | sed -E 's/^[[:space:]]*[Aa]uthorization:[[:space:]]*//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+          case "$A" in Basic\ *) H="$A" ;; *) H="Basic $A" ;; esac
           base="$API/orgs/$UNITY_ORG/projects/$UNITY_PROJECT"
 
           curl -sS -H "Authorization: $H" "$base/buildtargets" -o targets.json
