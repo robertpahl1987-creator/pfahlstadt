@@ -72,13 +72,13 @@ jobs:
           curl -sSL -H "Authorization: $H" "$url" -o "$f"
           size=$(stat -c %s "$f")
           if [ "$size" -lt 1000000 ]; then
-            echo "Antwort ist keine APK ($size Bytes):"; head -c 600 "$f"; echo
+            echo "Antwort ist ein Verweis ($size Bytes), hole die eigentliche Datei."
             # zweiter Versuch: Link zeigt auf JSON mit der eigentlichen Adresse
-            real=$(jq -r '.. | .href? // .url? // empty | select(test("^https?://"))' "$f" 2>/dev/null | head -1)
+            real=$(jq -r 'if type=="string" then . else ([.. | .href? // .url? // empty | strings | select(test("^https?://"))][0] // empty) end' "$f" 2>/dev/null | head -1)
             if [ -n "$real" ]; then curl -sSL "$real" -o "$f"; size=$(stat -c %s "$f"); fi
           fi
           ls -l "$f"
-          if [ "$size" -lt 1000000 ]; then echo "Download fehlgeschlagen."; head -c 600 "$f"; echo; exit 1; fi
+          if [ "$size" -lt 1000000 ]; then echo "Download fehlgeschlagen ($size Bytes)."; exit 1; fi
           gh release create "$tag" "$f" --prerelease --latest=false \
             --title "$APP_NAME Unity – Build $num" \
             --notes "Unity-Fassung, Build $num aus Unity Build Automation. Die Unity-App aktualisiert sich damit von selbst."
