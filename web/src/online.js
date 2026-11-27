@@ -2,6 +2,8 @@
 import { RES, uAdd, zeroU, uSum } from './game.js';
 import { questEvent } from './features.js';
 import { vipLevel, addVip } from './progress.js';
+import { formOf, gcapOf, helpTargets, applyHelp } from './social.js';
+import { fmtTime } from './game.js';
 
 export const SERVER = 'https://qoatkmjobrlnqadsfmhs.supabase.co';
 const KEY = 'sb_publishable_J84AUIbZnb_CZuak5SiKRg_f5nLkn1w';
@@ -35,6 +37,15 @@ const ERR = {
   GESPERRT: 'Dieses Konto wurde vom Spielleiter gesperrt.',
   HILFE_LIMIT: 'Höchstens 20.000 Rohstoffe Hilfe pro Stunde.',
   ZU_WENIG: 'So viel hast du nicht.',
+  KEINE_KAEMPFE: 'Für heute sind alle Arena-Kämpfe verbraucht. Morgen geht es weiter!',
+  SCHON_ABGEHOLT: 'Heute schon abgeholt.',
+  NUR_ANFUEHRER: 'Nur der Anführer kann einen Krieg erklären.',
+  SCHON_IM_KRIEG: 'Eine der beiden Allianzen ist schon im Krieg.',
+  PAUSE: 'Nach einem Krieg ist 12 Stunden Pause.',
+  BURG_VOLL: 'Die Allianzburg ist voll.',
+  NICHT_VERBUENDET: 'Nur an Mitglieder deiner Allianz.',
+  ZU_FRUEH: 'Du hast gerade erst um Verstärkung gebeten (alle 10 Minuten möglich).',
+  SCHON_UNTERWEGS: 'Zu diesem Feld ist schon ein Trupp von dir unterwegs.',
   NUR_WOCHENENDE: 'Um den Großen Leuchtturm wird nur am Wochenende gekämpft (Samstag 0 Uhr bis Sonntag 20 Uhr).',
 };
 
@@ -108,7 +119,7 @@ export class Online {
 
   snapshot() {
     const c = this.c, s = c.s;
-    return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), vip: vipLevel(c), lm: c.levels(23), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+    return { form: formOf(c), gcap: gcapOf(c), power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), vip: vipLevel(c), lm: c.levels(23), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
   }
 
   async sync(strict) {
@@ -132,7 +143,20 @@ export class Online {
       this.lh = r.lh || null; this.openRallies = r.rallies || 0;
       this.ally = r.ally || {}; this.boss = r.boss || null;
       if (d.vip) addVip(this.c, d.vip);
-      if (d.items) { s.items = s.items || {}; for (const k in d.items) if (d.items[k] > 0) s.items[k] = (s.items[k] || 0) + d.items[k]; }
+      if (d.items) {
+        s.items = s.items || {};
+        for (const k in d.items) {
+          if (!(d.items[k] > 0)) continue;
+          if (k === 'medals') s.medals = (s.medals || 0) + d.items[k];
+          else if (k === 'ore') s.ore = (s.ore || 0) + d.items[k];
+          else s.items[k] = (s.items[k] || 0) + d.items[k];
+        }
+      }
+      this.helpOpen = r.help_open || 0; this.garrison = r.garrison || 0; this.gcap = r.gcap || 0; this.troopReq = r.troop_req || 0;
+      this.war = r.war || null; this.trophies = r.trophies || 0;
+      if (r.me) this.me.leader = !!r.me.leader;
+      this.applyHelps(r.helps || []);
+      this.askHelps();
       const av = r.avatar;
       if (!av) this.avatar = null;
       else if (av.status !== 'ok') this.avatar = { status: av.status };
@@ -213,12 +237,12 @@ export class Online {
 
   // ---------- Späher & Sammelangriffe ----------
   async scout(kind, target) {
-    await this.call('scout', { p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null });
+    await this.call('scout', { p_token: this.token, p_kind: kind, p_target: kind === 'terr' || kind === 'gather' ? target : null, p_target_player: kind === 'player' ? target : null });
     await this.sync();
   }
   async rallyCreate(kind, target, u, wait) {
     const s = this.c.s;
-    await this.call('rally_create', { p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u, p_wait: wait });
+    await this.call('rally_create', { p_token: this.token, p_kind: kind, p_target: kind === 'terr' || kind === 'gather' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u, p_wait: wait });
     s.troops = s.troops.map((v, i) => v - (u[i] || 0));
     await this.sync(); await this.loadRallies();
   }
@@ -252,7 +276,7 @@ export class Online {
   async sendMarch(kind, target, u, boost, speed) {
     const s = this.c.s;
     const r = await this.call('send_march', () => ({
-      p_token: this.token, p_kind: kind, p_target: kind === 'terr' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u, p_boost: boost || 1, p_speed: speed || 1,
+      p_token: this.token, p_kind: kind, p_target: kind === 'terr' || kind === 'gather' ? target : null, p_target_player: kind === 'player' ? target : null, p_u: u, p_boost: boost || 1, p_speed: speed || 1,
     }));
     s.troops = s.troops.map((v, i) => v - (u[i] || 0));
     await this.sync();
@@ -265,6 +289,54 @@ export class Online {
   async leaveAlliance() { await this.call('alliance_leave', { p_token: this.token }); this.chat = []; this.chatAfter = 0; await this.sync(); await this.loadAlliances(); }
   async kick(id) { await this.call('alliance_kick', { p_token: this.token, p_player: id }); await this.loadAlliances(); }
   async sendChat(text) { await this.call('chat_send', { p_token: this.token, p_text: text }); await this.loadChat(); }
+
+  // ---------- Allianz-Hilfe ----------
+  applyHelps(list) {
+    const s = this.c.s; s.helpGot = s.helpGot || {};
+    const keep = {};
+    let n = 0, sec = 0;
+    for (const h of list) {
+      keep[h.key] = Math.max(h.got, s.helpGot[h.key] || 0);
+      const prev = s.helpGot[h.key] || 0;
+      if (h.got > prev) { sec += applyHelp(this.c, h.key, h.got - prev); n += h.got - prev; }
+    }
+    s.helpGot = keep;
+    if (n > 0 && sec > 0) this.c.msg(`🤝 ${n}× Allianz-Hilfe: −${fmtTime(sec)}`);
+  }
+  askHelps() {
+    if (!this.me || !this.me.alliance_id) return;
+    const s = this.c.s, req = s.helpReq || {}, now = {};
+    for (const t of helpTargets(this.c)) {
+      now[t.key] = 1;
+      if (!req[t.key]) this.call('help_ask', { p_token: this.token, p_key: t.key, p_label: t.label }).catch(() => { delete s.helpReq[t.key]; });
+    }
+    s.helpReq = now;
+  }
+  async helpList() { try { this.helps = await this.call('help_list', { p_token: this.token }); } catch (e) { /* */ } }
+  async helpGive(id) { const r = await this.call('help_give', { p_token: this.token, p_id: id || null }); this.helpOpen = Math.max(0, this.helpOpen - r.n); await this.helpList(); await this.sync(); return r; }
+
+  // ---------- Allianzburg (Truppen spenden) ----------
+  async garrisonInfo() { try { this.garr = await this.call('garrison_info', { p_token: this.token }); } catch (e) { /* */ } }
+  async troopRequest() { await this.call('troop_request', { p_token: this.token }); await this.loadChat(); }
+  async troopDonate(to, u) {
+    await this.call('troop_donate', { p_token: this.token, p_to: to, p_u: u });
+    const s = this.c.s; s.troops = s.troops.map((v, i) => Math.max(0, v - (u[i] || 0)));
+    await this.sync(); await this.garrisonInfo();
+  }
+  async garrisonBack(other) { await this.call('garrison_back', { p_token: this.token, p_other: other || null }); await this.sync(); await this.garrisonInfo(); }
+
+  // ---------- Arena ----------
+  async arenaList() { try { this.arena = await this.call('arena_list', { p_token: this.token }); } catch (e) { this.arenaErr = e.message; } }
+  async arenaFight(target, bot, boost) { const r = await this.call('arena_fight', { p_token: this.token, p_target: target || null, p_bot: bot || null, p_boost: boost || 1 }); await this.arenaList(); return r; }
+  async arenaClaim() { const r = await this.call('arena_claim', { p_token: this.token }); await this.sync(); await this.arenaList(); return r; }
+
+  // ---------- Allianz-Krieg ----------
+  async warInfo() { try { this.warI = await this.call('war_info', { p_token: this.token }); } catch (e) { /* */ } }
+  async warDeclare(id) { await this.call('war_declare', { p_token: this.token, p_alliance: id }); await this.sync(); await this.warInfo(); }
+
+  // ---------- Rohstofffelder, Wiederholungen ----------
+  async gatherRecall(id) { await this.call('gather_recall', { p_token: this.token, p_march: id }); await this.sync(); await this.loadWorld(); }
+  async replay(id) { return this.call('report_replay', { p_token: this.token, p_id: id }); }
 
   /// eigene Gebiete (für Produktionsbonus)
   ownedBonus() { return this.owned; }

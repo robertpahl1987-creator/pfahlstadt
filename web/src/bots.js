@@ -121,13 +121,14 @@ function fight(c, m) {
     r.res.forEach((v, i) => v && c.addRes(i, v));
     s.troops = uAdd(s.troops, r.u);
     s.medals = (s.medals || 0) + (r.big ? 3 : 1);
+    const ore = 1 + Math.floor(b.level / 4) + (r.big ? 2 : 0); s.ore = (s.ore || 0) + ore;
     addVip(c, 2 * b.level);
     if (b.level >= s.botLevel) { s.botLevel = b.level + 1; }
     s.bots = s.bots.filter((x) => x.id !== b.id);
     if (s.bots.length < 3 || b.level >= s.botLevel - 1) makeBots(c);
     questEvent(c, 'bot', 1);
     questEvent(c, 'win', 1);
-    c.report(`🏴‍☠️ „${b.name}“ (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)} · 🎖️${r.big ? 3 : 1}${r.res.some((v) => v) ? ' · ' + r.res.map((v, i) => (v ? `${v} ${RES[i]}` : '')).filter(Boolean).join(', ') : ''}${uSum(r.u) ? ' · Überläufer: ' + troopStr(r.u) : ''}. Verluste: ${troopStr(lost)}.`, true);
+    c.report(`🏴‍☠️ „${b.name}“ (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)} · 🎖️${r.big ? 3 : 1} · 🔩${ore}${r.res.some((v) => v) ? ' · ' + r.res.map((v, i) => (v ? `${v} ${RES[i]}` : '')).filter(Boolean).join(', ') : ''}${uSum(r.u) ? ' · Überläufer: ' + troopStr(r.u) : ''}. Verluste: ${troopStr(lost)}.`, true);
   } else {
     lost = uScale(m.u, 0.55);
     c.report(`🏴‍☠️ Angriff auf „${b.name}“ (Stufe ${b.level}) gescheitert. Verluste: ${troopStr(lost)}. Tipp: Krieger wählen, die gegen die Mannschaft stark sind.`, false);

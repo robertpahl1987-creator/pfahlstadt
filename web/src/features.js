@@ -261,6 +261,7 @@ export function collectTreasure(c, id) {
   else if (roll < 0.5) { s.items.sp5 = (s.items.sp5 || 0) + 1; txt = '⚡ Beschleuniger 5 Min.'; }
   else if (roll < 0.53) { s.items.sp15 = (s.items.sp15 || 0) + 1; txt = '⚡ Beschleuniger 15 Min.!'; }
   else { const v = Math.round((40 + Math.random() * 120) * f); c.addRes(3, v); txt = `${v} Altmetall`; }
+  if (Math.random() < 0.3) { s.ore = (s.ore || 0) + 1; txt += ' · 🔩 1 Schmiedeeisen'; }
   c.msg(`✨ Schatz im Watt gefunden: ${txt}`);
   questEvent(c, 'treasure', 1);
   addVipX(c, 3);

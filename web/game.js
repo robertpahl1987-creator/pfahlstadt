@@ -940,17 +940,48 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     c.msg(`\u{1F396}\uFE0F ${CAPTAINS.find((x) => x.id === id).name} ist jetzt Stufe ${k.lvl}.`);
     return null;
   }
+  var GEAR = [
+    { id: "hut", ic: "\u{1F3A9}", name: "Kapit\xE4nshut", text: "+1,5 % Kampfkraft je Stufe" },
+    { id: "saebel", ic: "\u{1F5E1}\uFE0F", name: "Enters\xE4bel", text: "+1,5 % Kampfkraft je Stufe" },
+    { id: "mantel", ic: "\u{1F9E5}", name: "\xD6lzeugmantel", text: "+2 % Beute je Stufe" },
+    { id: "kompass", ic: "\u{1F9ED}", name: "Messingkompass", text: "\u22121 % Fahrzeit je Stufe" }
+  ];
+  var GEAR_MAX = 10;
+  var gearLv = (c, cap, slot) => ((c.s.gear || {})[cap] || {})[slot] || 0;
+  var gearCost = (k) => ({ ore: 2 + 2 * k, metal: 50 * k });
+  function gearBlocker(c, cap, slot) {
+    if (!capOf(c, cap)) return "Kapit\xE4n erst anheuern";
+    const k = gearLv(c, cap, slot) + 1, g = gearCost(k);
+    if (k > GEAR_MAX) return "H\xF6chste Stufe";
+    if (k > capOf(c, cap).lvl + 2) return `Braucht Kapit\xE4n Stufe ${k - 2}`;
+    if ((c.s.ore || 0) < g.ore) return `Braucht ${g.ore} \u{1F529}`;
+    if (c.s.res[3] < g.metal) return "Zu wenig Altmetall";
+    return null;
+  }
+  function forgeGear(c, cap, slot) {
+    const e = gearBlocker(c, cap, slot);
+    if (e) return e;
+    const k = gearLv(c, cap, slot) + 1, g = gearCost(k), s = c.s;
+    s.ore -= g.ore;
+    s.res[3] -= g.metal;
+    s.gear = s.gear || {};
+    s.gear[cap] = s.gear[cap] || {};
+    s.gear[cap][slot] = k;
+    c.msg(`\u2692\uFE0F ${GEAR.find((x) => x.id === slot).name} f\xFCr ${CAPTAINS.find((x) => x.id === cap).name.split(" ")[0]} ist jetzt Stufe ${k}.`);
+    return null;
+  }
+  var gAtk = (c, id) => 1 + 0.015 * (gearLv(c, id, "hut") + gearLv(c, id, "saebel"));
   function capAtk(c, id, tide) {
     const k = capOf(c, id);
     if (!k) return 1;
-    const m = capMul(k.lvl);
-    if (id === "hanne") return tide === -1 ? 1 + 0.2 * m : 1;
-    if (id === "okko") return tide === 1 ? 1 + 0.2 * m : 1;
-    if (id === "gesa") return 1 + 0.12 * m;
-    return 1;
+    const m = capMul(k.lvl), g = gAtk(c, id);
+    if (id === "hanne") return (tide === -1 ? 1 + 0.2 * m : 1) * g;
+    if (id === "okko") return (tide === 1 ? 1 + 0.2 * m : 1) * g;
+    if (id === "gesa") return (1 + 0.12 * m) * g;
+    return g;
   }
-  var capLoot = (c, id) => id === "fiete" && capOf(c, id) ? 1 + 0.3 * capMul(capOf(c, id).lvl) : 1;
-  var capSpeed = (c, id) => id === "wiebke" && capOf(c, id) ? Math.max(0.5, 1 - 0.25 * capMul(capOf(c, id).lvl) * 0.8) : 1;
+  var capLoot = (c, id) => capOf(c, id) ? (id === "fiete" ? 1 + 0.3 * capMul(capOf(c, id).lvl) : 1) * (1 + 0.02 * gearLv(c, id, "mantel")) : 1;
+  var capSpeed = (c, id) => capOf(c, id) ? (id === "wiebke" ? Math.max(0.5, 1 - 0.25 * capMul(capOf(c, id).lvl) * 0.8) : 1) * (1 - 0.01 * gearLv(c, id, "kompass")) : 1;
   function capSend(c, id, travel) {
     const k = capOf(c, id);
     if (k) {
@@ -995,15 +1026,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const ally = o && o.active && o.ally ? o.ally : {};
     return {
       prod: (1 + [0, 0.02, 0.02, 0.02, 0.05, 0.05, 0.05, 0.08, 0.08, 0.08, 0.12][v]) * (1 + 0.05 * techLv(c, "prod")) * (1 + 0.02 * L) * (1 + (ally.landmark || 0) + (ally.workshop || 0)),
-      build: 1 / (1 + [0, 0, 0.05, 0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15][v]) * Math.max(0.5, 1 - 0.06 * techLv(c, "build")),
+      build: 1 / (1 + [0, 0, 0.05, 0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15][v]) * Math.max(0.5, 1 - 0.06 * techLv(c, "build")) * (1 - (ally.build || 0)),
       train: 1 / (1 + (v >= 9 ? 0.2 : v >= 5 ? 0.1 : 0)) * Math.max(0.5, 1 - 0.08 * techLv(c, "drill")),
       builds: 2 + (v >= 3 ? 1 : 0) + (v >= 7 ? 1 : 0),
       queue: 3 + (v >= 5 ? 1 : 0),
-      gather: 1 + (v >= 4 ? 0.1 : 0) + 0.1 * techLv(c, "gath"),
-      atk: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, "atk")),
-      def: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, "def")),
+      gather: 1 + (v >= 4 ? 0.1 : 0) + 0.1 * techLv(c, "gath") + (ally.gather || 0),
+      atk: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, "atk")) * (1 + (ally.atk || 0)),
+      def: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, "def")) * (1 + (ally.def || 0)),
       save: (v >= 8 ? 0.1 : 0) + 0.05 * techLv(c, "med"),
-      travel: (v >= 9 ? 0.9 : 1) * Math.max(0.6, 1 - 0.06 * techLv(c, "navi")),
+      travel: (v >= 9 ? 0.9 : 1) * Math.max(0.6, 1 - 0.06 * techLv(c, "navi")) * (1 - (ally.march || 0)),
       store: (1 + 0.1 * techLv(c, "store")) * (1 + (ally.storage || 0)),
       deck: 0.3 * techLv(c, "pile"),
       dam: ally.dike || 0
@@ -1326,10 +1357,152 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       c.addRes(3, v);
       txt = `${v} Altmetall`;
     }
+    if (Math.random() < 0.3) {
+      s.ore = (s.ore || 0) + 1;
+      txt += " \xB7 \u{1F529} 1 Schmiedeeisen";
+    }
     c.msg(`\u2728 Schatz im Watt gefunden: ${txt}`);
     questEvent(c, "treasure", 1);
     addVipX(c, 3);
   }
+
+  // src/social.js
+  var ROWS = ["Vorne", "Mitte", "Hinten"];
+  var ROW_IC = ["\u{1F6E1}\uFE0F", "\u2694\uFE0F", "\u{1F3F9}"];
+  var formOf = (c) => Array.isArray(c.s.formation) && c.s.formation.length === 5 ? c.s.formation : [0, 0, 0, 0, 0];
+  function formMul(f) {
+    return 1 + (f[1] === 0 ? 0.06 : 0) + (f[0] === 2 ? 0.04 : 0) + (f[3] === 2 ? 0.04 : 0) + (f[2] === 1 ? 0.03 : 0) - (f[0] === 0 ? 0.04 : 0) - (f[3] === 0 ? 0.04 : 0);
+  }
+  var FORM_TIPS = [
+    "Schildwachen vorne fangen die Angreifer ab (+6 %).",
+    "Harpuniere und Schleuderer hinten schie\xDFen gesch\xFCtzt (je +4 %, vorne \u22124 %).",
+    "Enterer in der Mitte springen dorthin, wo es brennt (+3 %)."
+  ];
+  var FORM_PRESETS = [
+    { name: "Igel", ic: "\u{1F994}", f: [2, 0, 1, 2, 1], text: "Ausgewogen, st\xE4rkste Verteidigung" },
+    { name: "Mauer", ic: "\u{1F9F1}", f: [1, 0, 0, 2, 0], text: "Alle Nahk\xE4mpfer vorne" },
+    { name: "Sturm", ic: "\u{1F30A}", f: [0, 0, 0, 0, 0], text: "Alle in einer Reihe (schwach)" }
+  ];
+  function setRow(c, u, row) {
+    const f = formOf(c).slice();
+    f[u] = Math.max(0, Math.min(2, row));
+    c.s.formation = f;
+  }
+  var OBST = [
+    { name: "Treibgut-Haufen", ic: "\u{1FAB5}", cost: [0, 0, 0, 0], time: 20 },
+    { name: "Schiffswrack", ic: "\u2693", cost: [60, 0, 0, 0], time: 60 },
+    { name: "Tangberg", ic: "\u{1F33F}", cost: [0, 40, 0, 0], time: 40 },
+    { name: "Felsbrocken", ic: "\u{1FAA8}", cost: [100, 0, 0, 20], time: 90 }
+  ];
+  var OBST_MAX = 5;
+  function obstTick(c, dt) {
+    const s = c.s;
+    if (!s.obst) s.obst = [];
+    s.obstT = (s.obstT === void 0 ? 45 : s.obstT) - dt;
+    if (s.obstT <= 0) {
+      s.obstT = 240 + Math.random() * 240;
+      if (s.obst.length < OBST_MAX) {
+        let x = 0, z = 0;
+        for (let k = 0; k < 12; k++) {
+          const a = Math.random() * Math.PI * 2, r2 = c.areaRadius + 8 + Math.random() * 8;
+          x = Math.sin(a) * r2;
+          z = Math.cos(a) * r2;
+          if (z > -(c.areaRadius + 2) || Math.abs(x) > 14) {
+            if (!s.obst.some((o) => Math.hypot(o.x - x, o.z - z) < 6)) break;
+          }
+        }
+        s.obstSeq = (s.obstSeq || 0) + 1;
+        const r = Math.random(), kind = r < 0.4 ? 0 : r < 0.65 ? 2 : r < 0.85 ? 1 : 3;
+        s.obst.push({ id: s.obstSeq, kind, x, z, rot: Math.random() * 360 });
+      }
+    }
+    const cl = s.clearing;
+    if (cl) {
+      cl.left -= dt;
+      if (cl.left <= 0) {
+        s.clearing = null;
+        finishObst(c, cl.id);
+      }
+    }
+  }
+  function obstBlocker(c, id) {
+    const o = (c.s.obst || []).find((x) => x.id === id);
+    if (!o) return "Schon wegger\xE4umt";
+    if (c.s.clearing) return c.s.clearing.id === id ? "Wird gerade ger\xE4umt" : "Es wird schon ein Hindernis ger\xE4umt";
+    if (!c.canAfford(OBST[o.kind].cost)) return "Zu wenig Rohstoffe";
+    return null;
+  }
+  function startObst(c, id) {
+    if (obstBlocker(c, id)) return false;
+    const o = c.s.obst.find((x) => x.id === id), d = OBST[o.kind];
+    c.pay(d.cost);
+    c.s.clearing = { id, left: d.time, total: d.time };
+    c.msg(`\u{1F9F9} ${d.name} wird wegger\xE4umt (${fmtTime(d.time)}).`);
+    return true;
+  }
+  function finishObst(c, id) {
+    const s = c.s, k = (s.obst || []).findIndex((x) => x.id === id);
+    if (k < 0) return;
+    const o = s.obst[k];
+    s.obst.splice(k, 1);
+    const f = 1 + 0.3 * (c.towerLevel - 1), rnd = (a, b) => Math.round((a + Math.random() * (b - a)) * f);
+    const got = [];
+    const res = (i, v, ic) => {
+      c.addRes(i, v);
+      got.push(`${ic} ${v}`);
+    };
+    if (o.kind === 0) res(0, rnd(80, 200), "\u{1FAB5}");
+    else if (o.kind === 1) {
+      res(3, rnd(40, 120), "\u2699\uFE0F");
+      s.ore = (s.ore || 0) + 1 + Math.floor(Math.random() * 2);
+      got.push("\u{1F529} Schmiedeeisen");
+    } else if (o.kind === 2) {
+      res(1, rnd(60, 160), "\u{1F9AA}");
+      res(2, rnd(40, 100), "\u{1F4A7}");
+    } else {
+      s.ore = (s.ore || 0) + 2 + Math.floor(Math.random() * 2);
+      got.push("\u{1F529} Schmiedeeisen");
+      res(3, rnd(30, 80), "\u2699\uFE0F");
+    }
+    if (Math.random() < 0.25) {
+      s.items = s.items || {};
+      s.items.sp5 = (s.items.sp5 || 0) + 1;
+      got.push("\u26A1 5 Min.");
+    }
+    s.vipPts = (s.vipPts || 0) + 2;
+    s.obstCleared = (s.obstCleared || 0) + 1;
+    c.msg(`\u{1F9F9} ${OBST[o.kind].name} ger\xE4umt: ${got.join(" \xB7 ")}`);
+  }
+  function helpTargets(c) {
+    const s = c.s, out = [];
+    s.plots.forEach((p, i) => {
+      if (p.type >= 0 && p.buildLeft > 1) out.push({ key: `b:${i}:${p.level + 1}`, label: `\u{1F528} Bau Stufe ${p.level + 1}`, kind: "b", i });
+    });
+    if (s.research && s.research.left > 1) out.push({ key: `r:${s.research.id}:${((s.tech || {})[s.research.id] || 0) + 1}`, label: "\u{1F4DA} Forschung", kind: "r" });
+    return out;
+  }
+  var helpStep = (total) => Math.max(30, total * 0.015);
+  function applyHelp(c, key, n) {
+    const s = c.s, [kind, a, lv] = key.split(":");
+    if (kind === "b") {
+      const p = s.plots[+a];
+      if (!p || p.buildLeft <= 0 || p.level + 1 !== +lv) return 0;
+      const red = Math.min(p.buildLeft - 0.5, helpStep(p.buildTotal) * n);
+      if (red <= 0) return 0;
+      p.buildLeft -= red;
+      return red;
+    }
+    if (kind === "r") {
+      const r = s.research;
+      if (!r || r.id !== a || ((s.tech || {})[a] || 0) + 1 !== +lv) return 0;
+      const red = Math.min(r.left - 0.5, helpStep(r.total) * n);
+      if (red <= 0) return 0;
+      r.left -= red;
+      return red;
+    }
+    return 0;
+  }
+  var gcapOf = (c) => 15 + 10 * c.towerLevel;
 
   // src/bots.js
   var ITEMS = {
@@ -1474,6 +1647,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       r.res.forEach((v, i) => v && c.addRes(i, v));
       s.troops = uAdd(s.troops, r.u);
       s.medals = (s.medals || 0) + (r.big ? 3 : 1);
+      const ore = 1 + Math.floor(b.level / 4) + (r.big ? 2 : 0);
+      s.ore = (s.ore || 0) + ore;
       addVip(c, 2 * b.level);
       if (b.level >= s.botLevel) {
         s.botLevel = b.level + 1;
@@ -1482,7 +1657,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.bots.length < 3 || b.level >= s.botLevel - 1) makeBots(c);
       questEvent(c, "bot", 1);
       questEvent(c, "win", 1);
-      c.report(`\u{1F3F4}\u200D\u2620\uFE0F \u201E${b.name}\u201C (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)} \xB7 \u{1F396}\uFE0F${r.big ? 3 : 1}${r.res.some((v) => v) ? " \xB7 " + r.res.map((v, i) => v ? `${v} ${RES[i]}` : "").filter(Boolean).join(", ") : ""}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer: " + troopStr(r.u) : ""}. Verluste: ${troopStr(lost)}.`, true);
+      c.report(`\u{1F3F4}\u200D\u2620\uFE0F \u201E${b.name}\u201C (Stufe ${b.level}) versenkt! Beute: ${itemStr(r.items)} \xB7 \u{1F396}\uFE0F${r.big ? 3 : 1} \xB7 \u{1F529}${ore}${r.res.some((v) => v) ? " \xB7 " + r.res.map((v, i) => v ? `${v} ${RES[i]}` : "").filter(Boolean).join(", ") : ""}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer: " + troopStr(r.u) : ""}. Verluste: ${troopStr(lost)}.`, true);
     } else {
       lost = uScale(m.u, 0.55);
       c.report(`\u{1F3F4}\u200D\u2620\uFE0F Angriff auf \u201E${b.name}\u201C (Stufe ${b.level}) gescheitert. Verluste: ${troopStr(lost)}. Tipp: Krieger w\xE4hlen, die gegen die Mannschaft stark sind.`, false);
@@ -1925,6 +2100,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.gathering(dt, false);
       traderTick(this, dt);
       treasureTick(this, dt);
+      obstTick(this, dt);
       this.summerTick(dt);
       botTick(this, dt);
       researchTick(this, dt);
@@ -2193,9 +2369,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
     }
     // ---------- Militär: Ausbildung, Märsche, Kämpfe, Überfälle ----------
-    report(text, win) {
+    report(text, win, rp) {
       const s = this.s;
-      s.reports.unshift({ text, win, day: s.days, time: s.dayTime });
+      s.reports.unshift({ text, win, day: s.days, time: s.dayTime, ...rp ? { rp } : {} });
       if (s.reports.length > 25) s.reports.length = 25;
       this.msg(text);
     }
@@ -2381,19 +2557,22 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (s.raidTimer <= 0) {
           s.raidTimer = 420 + Math.random() * 300;
           const str = (25 + 18 * (s.days - 1) + 10 * this.towerLevel) * (0.8 + Math.random() * 0.4);
-          const def = this.defense * (0.85 + Math.random() * 0.3);
+          const fm = formMul(formOf(this)), troopPart = armyStr(s.troops, null, false) * mods(this).def;
+          const def = (this.defense + troopPart * (fm - 1)) * (0.85 + Math.random() * 0.3);
+          const n = Math.max(4, Math.round(str / 8)), pu = [Math.round(n * 0.3), Math.round(n * 0.1), Math.round(n * 0.35), Math.round(n * 0.1), Math.round(n * 0.15)];
+          const rp = (win, al, dl) => ({ a: { n: "Piraten", u: pu, l: al }, d: { n: s.playerName || "Pfahlstadt", u: s.troops.slice(0, 5), l: dl, def: Math.round(this.defense), f: formOf(this) }, win: !win, tide: this.tideState(0), raid: true });
           if (def > str) {
             const loss = Math.min(0.8, Math.pow(str / def, 1.3) * 0.5);
-            const lost = uScale(s.troops, loss);
+            const lost = uScale(s.troops, loss), r = rp(true, pu, lost);
             s.troops = uSub(s.troops, lost);
             this.addWounded(lost);
-            this.report(`Piraten\xFCberfall abgewehrt! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${troopStr(lost)}.`, true);
+            this.report(`Piraten\xFCberfall abgewehrt! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${troopStr(lost)}.`, true, r);
           } else {
-            const lost = s.res.map((v) => Math.round(v * 0.2));
+            const lost = s.res.map((v) => Math.round(v * 0.2)), r = rp(false, uScale(pu, 0.3), uSub(s.troops, uScale(s.troops, 0.4)));
             lost.forEach((v, i) => s.res[i] -= v);
             this.addWounded(uSub(s.troops, uScale(s.troops, 0.4)));
             s.troops = uScale(s.troops, 0.4);
-            this.report(`Piraten haben die Stadt gepl\xFCndert! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + " " + RES[i]).join(", ")}.`, false);
+            this.report(`Piraten haben die Stadt gepl\xFCndert! (St\xE4rke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + " " + RES[i]).join(", ")}.`, false, r);
           }
         }
       }
@@ -3505,6 +3684,30 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       B = new Builder();
       traderShip(B);
       this.shipMesh = r.upload(B);
+      this.obstMeshes = [
+        (() => {
+          const b = new Builder();
+          for (let k = 0; k < 5; k++) b.add("cylinder", [(k - 2) * 0.55, 0.25 + k % 2 * 0.35, (k % 3 - 1) * 0.4], [0.28, 2.6 - k % 3 * 0.5, 0.28], [0.5 - k * 0.03, 0.36, 0.22], { rot: [0, k * 37, 90] });
+          return r.upload(b);
+        })(),
+        (() => {
+          const b = new Builder();
+          traderShip(b);
+          return r.upload(b);
+        })(),
+        (() => {
+          const b = new Builder();
+          for (let k = 0; k < 6; k++) b.add("sphere", [Math.cos(k) * 0.9, 0.35 + k % 3 * 0.25, Math.sin(k * 1.3) * 0.8], [0.9, 0.7, 0.9], [0.22 + k * 0.02, 0.42 + k % 2 * 0.08, 0.18]);
+          return r.upload(b);
+        })(),
+        (() => {
+          const b = new Builder();
+          b.add("sphere", [0, 0.6, 0], [2.2, 1.5, 1.8], [0.48, 0.47, 0.45]);
+          b.add("sphere", [1.1, 0.4, 0.6], [1.2, 0.9, 1.1], [0.42, 0.41, 0.4]);
+          b.add("sphere", [-0.9, 0.3, -0.5], [1, 0.7, 0.9], [0.52, 0.5, 0.47]);
+          return r.upload(b);
+        })()
+      ];
       B = new Builder();
       B.add("cube", [0, 0.25, 0], [0.9, 0.5, 0.6], [0.45, 0.3, 0.15]);
       B.add("cylinder", [0, 0.5, 0], [0.9, 0.3, 0.6], [0.5, 0.33, 0.16], { rot: [0, 0, 90] });
@@ -3974,6 +4177,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (hr < 9.8) return 0;
       {
         const s0 = (0.3 - a[1]) / dir[1], gx = a[0] + dir[0] * s0, gz = a[2] + dir[2] * s0;
+        for (const t of this.c.s.obst || []) if (Math.hypot(gx - t.x, gz - t.z) < 3.5) return -4e3 - t.id;
         for (const t of this.c.s.treasures || []) if (Math.hypot(gx - t.x, gz - t.z) < 4) return -3e3 - t.id;
         for (const n of this.c.s.nodes) if (Math.hypot(gx - n.x, gz - n.z) < 4.5) return -1e3 - n.id;
       }
@@ -4060,6 +4264,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       for (const tr of c2.s.treasures || []) {
         const y = this.groundAt(tr.x, tr.z), p = 0.6 + 0.4 * Math.sin(this.time * 5 + tr.id);
         draws.push({ mesh: this.chestMesh, model: trs([tr.x, y + 0.1, tr.z], [0, this.time * 40 + tr.id * 50, 0], [1.4, 1.4, 1.4]), emis: p, noShadow: true });
+      }
+      for (const ob of c2.s.obst || []) {
+        const y = this.groundAt(ob.x, ob.z), cl = c2.s.clearing && c2.s.clearing.id === ob.id ? c2.s.clearing : null;
+        const k = cl ? 0.35 + 0.65 * Math.max(0, cl.left / cl.total) : 1, sel = this.selected === -4e3 - ob.id;
+        const sc = ob.kind === 1 ? [0.5 * k, 0.5 * k, 0.5 * k] : [k, k, k];
+        draws.push({ mesh: this.obstMeshes[ob.kind], model: trs([ob.x, y - (ob.kind === 1 ? 0.5 : 0) + (cl ? Math.sin(this.time * 20) * 0.03 : 0), ob.z], ob.kind === 1 ? [0, ob.rot, 28] : [0, ob.rot, 0], sc) });
+        if (sel || cl) draws.push({ mesh: this.ringMesh, model: trs([ob.x, y + 0.08, ob.z], null, [4.5, 1, 4.5]), emis: 0.6 + 0.4 * Math.sin(this.time * 4), noShadow: true });
       }
       for (let k = 0; k < Math.min(6, c2.s.boats || 0); k++) {
         const x = (k % 2 ? 1 : -1) * (5 + Math.floor(k / 2) * 4.5), z = -(wallRadius() + 7);
@@ -4294,7 +4505,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     items0() {
       if (this.isOnline) {
         const w = this.o.world;
-        return [...w.territories.map((t) => ({ ...t, type: "terr" })), ...w.players.filter((p) => p.id !== this.o.me.id).map((p) => ({ ...p, type: "player" }))];
+        return [...w.territories.map((t) => ({ ...t, type: "terr" })), ...w.players.filter((p) => p.id !== this.o.me.id).map((p) => ({ ...p, type: "player" })), ...(w.fields || []).map((f) => ({ ...f, type: "field" }))];
       }
       return this.c.s.terr.map((t) => ({ ...t, type: "terr" }));
     }
@@ -4459,6 +4670,40 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       ctx.arc(bx, by, 6, 0, Math.PI * 2);
       ctx.fill();
     }
+    /// Rohstofffeld (online): Holz, Muscheln, Wasser, Altmetall – Stufe 1–5
+    field(f, x, y, selected, myAlly) {
+      const ctx = this.ctx, u = this.u, r = u * (0.13 + 0.02 * f.level);
+      const col = ["#b98a52", "#e9d6b8", "#6fc3ef", "#9aa3ad"][f.kind - 1], ic = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"][f.kind - 1];
+      if (selected) {
+        ctx.fillStyle = "rgba(120,220,255,0.25)";
+        ctx.beginPath();
+        ctx.arc(x, y, r * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "rgba(0,20,30,0.35)";
+      ctx.beginPath();
+      ctx.ellipse(x, y + r * 0.5, r * 1.3, r * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      const occ = f.occ, mine = f.mine, ally = !mine && occ && myAlly && f.occ_ally === myAlly;
+      ctx.strokeStyle = mine ? "#56e39a" : ally ? "#6fb6ff" : occ ? "#ff9a5a" : "rgba(255,255,255,0.6)";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      const p = f.amount / Math.max(1, f.total);
+      ctx.strokeStyle = "#ffe08a";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `${Math.round(r * 1.2)}px system-ui`;
+      ctx.fillText(ic, x, y);
+      if (u > 50 || selected) this.label(x, y + r + 4, `Stufe ${f.level}`, mine ? "#8ef0b0" : occ ? "#ffc29a" : "#fff", occ ? "\u26CF " + occ : null);
+    }
     city(x, y, name, color, mine, sub2, selected, shield) {
       const ctx = this.ctx, u = this.u;
       if (selected) {
@@ -4519,7 +4764,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const [mx, my] = this.pos(me.x, me.y);
       for (const m of o.marches) {
         let tx, ty;
-        if (m.target_player) {
+        if (m.field_id) {
+          const f = (wld.fields || []).find((q) => q.id === m.field_id);
+          if (!f) continue;
+          [tx, ty] = this.pos(f.x, f.y);
+          if (m.status === "gather") {
+            this.march(mx, my, tx, ty, 1, "rgba(140,240,160,0.7)");
+            continue;
+          }
+        } else if (m.target_player) {
           const p = wld.players.find((q) => q.id === m.target_player);
           if (!p) continue;
           [tx, ty] = this.pos(p.x, p.y);
@@ -4537,6 +4790,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           frac = 1 - Math.min(1, Math.max(0, (now - a) / Math.max(1, b - a)));
         }
         this.march(mx, my, tx, ty, frac, m.status === "out" ? m.kind === "player" ? "rgba(255,90,90,0.85)" : "rgba(255,170,90,0.8)" : "rgba(200,220,255,0.7)");
+      }
+      for (const f of wld.fields || []) {
+        const [x, y] = this.pos(f.x, f.y);
+        if (x < -60 || y < -60 || x > this.w + 60 || y > this.h + 60) continue;
+        this.field(f, x, y, sel && sel.type === "field" && sel.id === f.id, myAlly);
       }
       for (const t of wld.territories) {
         const [x, y] = this.pos(t.x, t.y);
@@ -4560,6 +4818,465 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
   };
 
+  // src/ui2.js
+  var RES_IC = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
+  var esc = (t) => String(t == null ? "" : t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+  var LEAGUES = [["\u{1F949}", "Bronze", 0], ["\u{1F948}", "Silber", 400], ["\u{1F947}", "Gold", 800], ["\u{1F48E}", "Kristall", 1200], ["\u{1F451}", "Meister", 1800], ["\u{1F3C6}", "Champion", 2600]];
+  var ALLY_RES = {
+    f_atk: ["\u2694\uFE0F Kriegskunst", "+2 % Angriff je Stufe"],
+    f_def: ["\u{1F6E1}\uFE0F Bollwerk", "+2 % Verteidigung je Stufe"],
+    f_gather: ["\u{1F9FA} Sammlergilde", "+5 % Sammeln je Stufe"],
+    f_build: ["\u{1F528} Bauh\xFCtte", "\u22123 % Bauzeit je Stufe"],
+    f_march: ["\u{1F9ED} Seewege", "\u22123 % Fahrzeit je Stufe"]
+  };
+  function installUI2(UI2) {
+    const P = UI2.prototype;
+    P.troopsHtml = function() {
+      const tab = this.troopTab || "truppen";
+      const tabs = [["truppen", "\u2694\uFE0F", "Truppen"], ["form", "\u{1F9F1}", "Aufstellung"], ["caps", "\u{1F396}\uFE0F", "Kapit\xE4ne"], ["arena", "\u{1F3DF}\uFE0F", "Arena"], ["reports", "\u{1F4DC}", "Berichte"], ["rank", "\u{1F3C6}", "Rang"]];
+      const bar = `<div class="tabs" style="grid-template-columns:repeat(6,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="ttab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
+      const strip = (x) => x.replace(/^<div class="ph">[\s\S]*?<\/button><\/div>/, "");
+      const body = tab === "reports" ? strip(this.reportsHtml()) : tab === "rank" ? strip(this.rankHtml()) : tab === "caps" ? this.captainsHtml() + this.forgeHtml() : tab === "arena" ? this.arenaHtml() : tab === "form" ? this.formHtml() : this.troopsTabHtml();
+      return this.head("Truppen") + bar + `<div class="tabbody">${body}</div>`;
+    };
+    const ttab0 = P.ttabLoad;
+    P.ttabLoad = function() {
+      ttab0.call(this);
+      if (this.troopTab === "arena" && this.o.active) this.o.arenaList().then(() => this.panelKey = null);
+    };
+    P.formHtml = function() {
+      const c = this.c, f = formOf(c), m = formMul(f), s = c.s;
+      let out = `<div class="desc">Lege fest, wo deine Verteidiger stehen, wenn Piraten oder andere Spieler angreifen. Die Aufstellung gilt auch in der \u{1F3DF}\uFE0F Arena.</div>
+      <div class="inf">Aufstellungs-Bonus: <b style="color:${m >= 1.1 ? "#8ef0a0" : m >= 1 ? "#ffd27a" : "#ff7a7a"}">${m >= 1 ? "+" : "\u2212"}${Math.round(Math.abs(m - 1) * 100)} %</b> auf die Kampfkraft deiner Verteidiger</div>`;
+      out += '<div class="formgrid">' + [2, 1, 0].map((r) => `<div class="frow"><span class="fl">${ROW_IC[r]} ${ROWS[r]}</span>${UNITS.map((u, k) => f[k] === r ? `<span class="fu">${u.ic}<small>${s.troops[k]}</small></span>` : "").join("") || '<span class="sm">leer</span>'}</div>`).join("") + '<div class="frow gate">\u{1F3F0} Stadttor</div></div>';
+      UNITS.forEach((u, k) => {
+        out += `<div class="row"><div class="ri"><b>${u.ic} ${u.name}</b></div>${[0, 1, 2].map((r) => `<button class="btn sm2 ${f[k] === r ? "" : "ghost"}" data-a="formSet" data-u="${k}" data-r="${r}">${ROWS[r]}</button>`).join("")}</div>`;
+      });
+      out += '<div class="sub2">Schnellwahl</div><div class="btns">' + FORM_PRESETS.map((p, k) => `<button class="btn ghost" data-a="formPreset" data-k="${k}">${p.ic} ${p.name}</button>`).join("") + "</div>";
+      out += `<div class="sm">${FORM_TIPS.join("<br>")}</div>`;
+      return out;
+    };
+    P.forgeHtml = function() {
+      const c = this.c, s = c.s, hired = CAPTAINS.filter((k) => capOf(c, k.id));
+      let out = `<div class="sub2">\u2692\uFE0F Schmiede</div><div class="inf">\u{1F529} Schmiedeeisen: <b>${s.ore || 0}</b> \xB7 \u2699\uFE0F Altmetall: <b>${Math.floor(s.res[3])}</b></div>
+      <div class="sm">Schmiedeeisen gibt es von \u{1F3F4}\u200D\u2620\uFE0F Piratenschiffen, Sch\xE4tzen im Watt, ger\xE4umten Wracks und Felsen sowie aus der Arena. Ausr\xFCstung wirkt nur, wenn der Kapit\xE4n den Trupp anf\xFChrt.</div>`;
+      if (!hired.length) return out + '<div class="sm">Heuere zuerst einen Kapit\xE4n an.</div>';
+      const sel = hired.find((k) => k.id === this.gearCap) || hired[0];
+      out += `<div class="speeds">${hired.map((k) => `<button class="btn sm2 ${k.id === sel.id ? "" : "ghost"}" data-a="gearCap" data-id="${k.id}">${k.ic} ${k.name.split(" ")[0]}</button>`).join("")}</div>`;
+      for (const g of GEAR) {
+        const L = gearLv(c, sel.id, g.id), cost = gearCost(L + 1), blk = gearBlocker(c, sel.id, g.id);
+        out += `<div class="row"><div class="ri"><b>${g.ic} ${g.name}</b> <span class="sh">Stufe ${L}/${GEAR_MAX}</span><div class="sm">${g.text}</div>
+        ${L < GEAR_MAX ? `<div class="sm">N\xE4chste Stufe: \u{1F529} ${cost.ore} \xB7 \u2699\uFE0F ${cost.metal}${blk && !/^Braucht \d+ 🔩|Zu wenig/.test(blk) ? ` \xB7 <span class="warn">${blk}</span>` : ""}</div>` : ""}</div>
+        ${L < GEAR_MAX ? `<button class="btn sm2" data-a="forge" data-cap="${sel.id}" data-g="${g.id}" ${blk ? "disabled" : ""}>${L ? "Verbessern" : "Schmieden"}</button>` : "<b>MAX</b>"}</div>`;
+      }
+      return out;
+    };
+    P.arenaHtml = function() {
+      const o = this.o, c = this.c;
+      if (!o.active) return '<div class="desc">\u{1F3DF}\uFE0F Die Arena gibt es im Online-Spiel: K\xE4mpfe gegen die Aufstellungen anderer Spieler, sammle Pokale und steige von Bronze bis Champion auf.</div><div class="btns"><button class="btn" data-a="goOnline">Online gehen</button></div>';
+      const A = o.arena;
+      if (!A) return `<div class="inf">Lade Arena \u2026</div>${o.arenaErr ? `<div class="warn">${esc(o.arenaErr)}</div>` : ""}`;
+      const lg = LEAGUES[A.league], nx = LEAGUES[A.league + 1];
+      const att = Math.round(armyStr(c.s.troops, null, true) * mods(c).atk);
+      let out = `<div class="arenahd"><span class="big">${lg[0]}</span><div><b>${lg[1]}-Liga</b><div class="sm">\u{1F3C6} ${A.tr} Pokale${nx ? ` \xB7 ${nx[0]} ${nx[1]} ab ${nx[2]}` : ""}</div></div></div>
+      <div class="desc">Trainingsk\xE4mpfe: Deine Krieger zu Hause k\xE4mpfen gegen die Verteidiger anderer \u2013 <b>niemand verliert dabei Krieger</b>. Sieg bringt Pokale, Niederlage kostet welche. Jeden Tag gibt es je nach Liga Abzeichen, Rohstoffe und Schmiedeeisen.</div>
+      <div class="inf">\u2694\uFE0F K\xE4mpfe heute: <b>${A.left}/${A.max}</b> \xB7 Deine Angriffskraft: <b>${att.toLocaleString("de-DE")}</b></div>
+      <div class="btns"><button class="btn" data-a="arenaClaim" ${A.claim && !this.busy ? "" : "disabled"}>${A.claim ? `\u{1F381} Liga-Belohnung (${lg[1]})` : "\u2714 Belohnung abgeholt"}</button></div>
+      <div class="sub2">Gegner</div>`;
+      out += (A.opps || []).map((p) => `<div class="row"><div class="ri"><b>${p.bot ? "\u{1F47B} " : "\u{1F3F0} "}${esc(p.name)}</b> <span class="sh">\u{1F3C6} ${p.tr} \xB7 \u2694 ${p.power}</span>${p.bot ? '<div class="sm">Geisterkapit\xE4n</div>' : ""}</div>
+      <button class="btn sm2 danger" data-a="arenaFight" ${p.id ? `data-id="${p.id}"` : `data-bot="${p.bot}"`} ${A.left > 0 && uSum(c.s.troops) > 0 && !this.busy ? "" : "disabled"}>K\xE4mpfen</button></div>`).join("");
+      if (!uSum(c.s.troops)) out += '<div class="warn">Keine Krieger zu Hause.</div>';
+      if ((A.log || []).length) {
+        out += '<div class="sub2">Letzte K\xE4mpfe</div>' + A.log.map((l, k) => `<div class="row rep ${l.win ? "win" : "loss"}"><div class="ri">${l.att ? "\u2694\uFE0F gegen" : "\u{1F6E1}\uFE0F von"} <b>${esc(l.name)}</b> \xB7 ${l.win ? "Sieg" : "Niederlage"} <b>${l.dt > 0 ? "+" : ""}${l.dt} \u{1F3C6}</b></div>${l.replay ? `<button class="btn sm2 ghost" data-a="replayArena" data-k="${k}">\u25B6</button>` : ""}</div>`).join("");
+      }
+      return out;
+    };
+    P.obstHtml = function() {
+      const c = this.c, id = -4e3 - this.selected, o = (c.s.obst || []).find((x) => x.id === id);
+      if (!o) return this.head("Hindernis") + '<div class="sm">Schon wegger\xE4umt.</div>';
+      const d = OBST[o.kind], cl = c.s.clearing, mine = cl && cl.id === id, blk = obstBlocker(c, id);
+      let out = this.head(`${d.ic} ${d.name}`) + '<div class="desc">Angesp\xFClt vom letzten Hochwasser. R\xE4um es weg \u2013 darunter steckt oft etwas Brauchbares (Rohstoffe, \u{1F529} Schmiedeeisen, manchmal ein Beschleuniger).</div>';
+      if (mine) return out + `<div class="inf">\u{1F9F9} Wird ger\xE4umt \u2026 noch ${fmtTime(cl.left)}</div><div class="bar"><div style="width:${Math.round(100 * (1 - cl.left / cl.total))}%"></div></div>`;
+      out += `<div class="inf">Kosten: ${this.costStr(d.cost)} \xB7 Dauer ${fmtTime(d.time)}</div>`;
+      if (blk && blk !== "Zu wenig Rohstoffe") out += `<div class="warn">${blk}</div>`;
+      return out + `<div class="btns"><button class="btn" data-a="obstClear" ${blk ? "disabled" : ""}><b>\u{1F9F9} Wegr\xE4umen</b></button></div>`;
+    };
+    P.fieldHtml = function() {
+      const c = this.c, o = this.o, f0 = this.form, fl = ((o.world || {}).fields || []).find((x) => x.id === this.mapSel.id);
+      if (!fl) return this.head("Rohstofffeld") + '<div class="sm">Das Feld ist ersch\xF6pft.</div>';
+      const me = o.me, dist = Math.hypot(fl.x - me.x, fl.y - me.y), tt = (20 + dist * 22) * speedFactor(f0);
+      const nm = ["Treibholz-Feld", "Muschelbank", "S\xFC\xDFwasserquelle", "Schrottberg"][fl.kind - 1];
+      let out = this.head(`${RES_IC[fl.kind - 1]} ${nm} \xB7 Stufe ${fl.level}`) + `<div class="desc">Schicke einen Trupp zum Sammeln. Je h\xF6her die Stufe, desto schneller wird gesammelt. Feinde k\xF6nnen deinen Trupp angreifen und vertreiben!</div>
+      <div class="inf">Vorrat: <b>${fl.amount.toLocaleString("de-DE")}</b> / ${fl.total.toLocaleString("de-DE")} ${RES[fl.kind - 1]} \xB7 Fahrt ${fmtTime(tt)}</div><div class="bar"><div style="width:${Math.round(100 * fl.amount / Math.max(1, fl.total))}%"></div></div>`;
+      const mm = (o.marches || []).find((m) => m.field_id === fl.id);
+      if (mm) {
+        if (mm.status === "gather") return out + `<div class="inf">\u26CF Dein Trupp sammelt (${troopStr(mm.u)}) \xB7 fertig in ${fmtTime(Math.max(0, (Date.parse(mm.gather_end) - o.serverNow()) / 1e3))}</div><div class="btns"><button class="btn ghost" data-a="gatherRecall" data-id="${mm.id}" ${this.busy ? "disabled" : ""}>Zur\xFCckrufen (bringt das bisher Gesammelte mit)</button></div>`;
+        return out + '<div class="inf">\u26F5 Dein Trupp ist unterwegs.</div>';
+      }
+      if (fl.occ) out += `<div class="inf">\u26CF Hier sammelt gerade <b>${esc(fl.occ)}</b>${fl.occ_ally && fl.occ_ally === me.alliance_id ? " (Verb\xFCndeter)" : " \u2013 greif an, um das Feld zu \xFCbernehmen!"}</div>`;
+      const carry = Math.round(carryOf(f0)), rate2 = Math.max(1, carry) / 1800 * (1 + 0.15 * fl.level), amt = Math.min(carry, fl.amount);
+      const extra = uSum(f0) ? `<div class="sm">Traglast ${carry.toLocaleString("de-DE")} \u2192 etwa ${fmtTime(amt / rate2)} Sammelzeit</div>` : '<div class="sm">Tipp: \u{1F3C3} Wattl\xE4ufer tragen am meisten.</div>';
+      const ally = fl.occ && fl.occ_ally && fl.occ_ally === me.alliance_id;
+      return out + '<div class="sub2">Sammeltrupp</div>' + this.troopForm(fl.occ && !ally ? "Angreifen & sammeln!" : "Sammeln!", !!fl.occ && !ally, ally ? "Ein Verb\xFCndeter sammelt hier" : null, extra, "sendGather");
+    };
+    const ally0 = P.allyHtml;
+    P.allyHtml = function() {
+      const o = this.o;
+      if (!o.active || !o.alliances || !o.me || !o.me.alliance_id || this.helpTo || this.rallySel) return ally0.call(this);
+      const tab = this.allyTab || "main";
+      const tabs = [["main", "\u{1F4AC}", "Allianz"], ["help", "\u{1F91D}", "Hilfe" + (o.helpOpen ? ` ${o.helpOpen}` : "")], ["garr", "\u{1F6E1}\uFE0F", "Burg"], ["res", "\u{1F52C}", "Forschung"], ["war", "\u2694\uFE0F", "Krieg" + (o.war ? " \u2022" : "")]];
+      const bar = `<div class="tabs" style="grid-template-columns:repeat(5,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-a="atab" data-t="${k}"><span>${ic}</span>${l}</button>`).join("")}</div>`;
+      const full = ally0.call(this), m = full.match(/^<div class="ph">[\s\S]*?<\/button><\/div>/), head = m ? m[0] : this.head("Allianz");
+      const body = tab === "help" ? this.allyHelpHtml() : tab === "garr" ? this.garrHtml() : tab === "res" ? this.allyResHtml() : tab === "war" ? this.warHtml() : full.slice(head.length);
+      return head + bar + `<div class="tabbody">${body}</div>`;
+    };
+    P.allyHelpHtml = function() {
+      const o = this.o, L = o.helps;
+      let out = `<div class="desc">Jeder Bau und jede Forschung bittet deine Allianz automatisch um Hilfe. Jeder Tipp eines Verb\xFCndeten verk\xFCrzt die Restzeit (mindestens 30 Sek., bei langen Auftr\xE4gen 1,5 %). F\xFCrs Helfen gibt es \u2699\uFE0F 15 Altmetall und 1 VIP-Punkt (bis 30\xD7 am Tag).</div>`;
+      if (!L) return out + '<div class="inf">Lade \u2026</div>';
+      out += `<div class="btns"><button class="btn" data-a="helpAll" ${L.length && !this.busy ? "" : "disabled"}><b>\u{1F91D} Allen helfen (${L.length})</b></button></div>`;
+      out += L.map((h2) => `<div class="row"><div class="ri"><b>${esc(h2.name)}</b> <span class="sh">${esc(h2.label)}</span><div class="bar"><div style="width:${Math.round(100 * h2.got / h2.max)}%"></div></div><div class="sm">${h2.got}/${h2.max} Hilfen</div></div>
+      <button class="btn sm2" data-a="helpOne" data-id="${h2.id}" ${this.busy ? "disabled" : ""}>Helfen</button></div>`).join("") || '<div class="sm">Gerade braucht niemand Hilfe. \u{1F44D}</div>';
+      const own = Object.entries(this.c.s.helpGot || {}).filter(([, n]) => n > 0);
+      if (own.length) out += `<div class="sm" style="margin-top:8px">Deine Auftr\xE4ge haben heute ${own.reduce((a, [, n]) => a + n, 0)}\xD7 Hilfe bekommen.</div>`;
+      return out;
+    };
+    P.garrHtml = function() {
+      const o = this.o, c = this.c, G = o.garr;
+      const cap = gcapOf(c);
+      if (this.donTo) {
+        return `<div class="sub2">\u{1F6E1}\uFE0F Verst\xE4rkung f\xFCr ${esc(this.donTo.name)} (${this.donTo.free} Pl\xE4tze frei)</div><div class="desc">Deine Krieger verteidigen seine Stadt mit, bis er sie zur\xFCckschickt oder du sie zur\xFCckholst. Fallen sie im Kampf, sind sie verloren. Pro 5 Krieger gibt es 1 VIP-Punkt.</div>` + this.troopForm("Schicken", false, uSum(this.form) > this.donTo.free ? "Zu viele f\xFCr die freien Pl\xE4tze" : null, "", "donateTroops") + '<div class="btns"><button class="btn ghost" data-a="donToBack">Zur\xFCck</button></div>';
+      }
+      let out = `<div class="desc">In deiner <b>Allianzburg</b> k\xF6nnen Verb\xFCndete Krieger stationieren, die deine Stadt mitverteidigen \u2013 gegen Spieler-Angriffe. Platz: 15 + 10 je Gezeitenturm-Stufe.</div>`;
+      if (!G) return out + '<div class="inf">Lade \u2026</div>';
+      out += `<div class="inf">\u{1F3F0} Deine Burg: <b>${G.total}/${cap}</b> Krieger${G.total ? " \xB7 " + troopStr(G.u) : ""}</div><div class="bar"><div style="width:${Math.round(100 * G.total / Math.max(1, cap))}%"></div></div>
+      <div class="btns"><button class="btn" data-a="troopReq" ${G.total >= cap || this.busy ? "disabled" : ""}>\u{1F4E3} Um Verst\xE4rkung bitten</button></div>`;
+      out += (G.rows || []).map((r) => `<div class="row"><div class="ri"><b>${esc(r.name)}</b><div class="sm">${troopStr(r.u)}</div></div><button class="btn sm2 ghost" data-a="garrBack" data-id="${r.donor}">Zur\xFCckschicken</button></div>`).join("");
+      out += '<div class="sub2">Verb\xFCndete bitten um Verst\xE4rkung</div>' + ((G.req || []).map((r) => `<div class="row"><div class="ri"><b>${esc(r.name)}</b> <span class="sh">${r.free} Pl\xE4tze frei</span></div><button class="btn sm2" data-a="donTo" data-id="${r.id}" data-n="${esc(r.name)}" data-f="${r.free}">Krieger schicken</button></div>`).join("") || '<div class="sm">Gerade keine Anfragen.</div>');
+      if ((G.mine || []).length) out += '<div class="sub2">Deine Krieger bei anderen</div>' + G.mine.map((r) => `<div class="row"><div class="ri"><b>${esc(r.name)}</b><div class="sm">${troopStr(r.u)}</div></div><button class="btn sm2 ghost" data-a="garrRecall" data-id="${r.host}">Zur\xFCckholen</button></div>`).join("");
+      return out;
+    };
+    P.allyResHtml = function() {
+      const o = this.o, Pj = o.projects || [];
+      if (this.donKind && ALLY_RES[this.donKind]) {
+        const n = (k) => `<input class="n" id="dn${k}" type="number" min="0" inputmode="numeric" placeholder="${RES_IC[k]} ${RES[k]}" style="flex:1 1 23%">`;
+        return `<div class="sub2">Spenden f\xFCr ${ALLY_RES[this.donKind][0]}</div><div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map(n).join("")}</div>
+        <div class="btns"><button class="btn" data-a="donSend" ${this.busy ? "disabled" : ""}><b>Spenden</b></button><button class="btn ghost" data-a="donBack">Zur\xFCck</button></div>`;
+      }
+      return '<div class="desc">\u{1F52C} Allianz-Forschung: Alle spenden Rohstoffe, jede Stufe wirkt f\xFCr <b>jedes Mitglied</b>. Pro 500 gespendete Rohstoffe gibt es 1 VIP-Punkt.</div>' + Object.keys(ALLY_RES).map((k) => {
+        const p = Pj.find((x) => x.kind === k) || { level: 0, progress: 0, goal: 4e3 };
+        return `<div class="row"><div class="ri"><b>${ALLY_RES[k][0]}</b> <span class="sh">Stufe ${p.level}/10 \xB7 ${ALLY_RES[k][1]}</span>
+        ${p.level < 10 ? `<div class="bar"><div style="width:${Math.round(100 * p.progress / p.goal)}%"></div></div><div class="sm">${p.progress.toLocaleString("de-DE")} / ${p.goal.toLocaleString("de-DE")}</div>` : ""}</div>
+        ${p.level < 10 ? `<button class="btn sm2" data-a="donPick" data-k="${k}">Spenden</button>` : "<b>MAX</b>"}</div>`;
+      }).join("");
+    };
+    P.warHtml = function() {
+      const o = this.o, W = o.warI;
+      let out = '<div class="desc">\u2694\uFE0F <b>Allianz-Krieg</b>: 48 Stunden, jedes Mitglied hat <b>2 Kriegsangriffe</b> auf St\xE4dte der gegnerischen Allianz. Ein Sieg bringt 1\u20133 \u2B50 (je klarer, desto mehr), eine eroberte Insel 3 \u2B50. Gez\xE4hlt werden die besten Sterne je Gegner. Die Gewinner bekommen 12 Abzeichen, Rohstoffe und einen 60-Min-Beschleuniger.</div>';
+      if (!W) return out + '<div class="inf">Lade \u2026</div>';
+      const w = W.war;
+      if (!w) {
+        if (!W.leader) return out + '<div class="inf">Gerade herrscht Frieden. Nur euer Anf\xFChrer kann einen Krieg erkl\xE4ren.</div>';
+        return out + '<div class="sub2">Gegner w\xE4hlen</div>' + ((W.targets || []).map((t) => `<div class="row"><div class="ri"><b>[${esc(t.tag)}] ${esc(t.name)}</b> <span class="sh">${t.n} Mitglieder \xB7 \u2694 ${t.power}</span></div>
+        <button class="btn sm2 ${this.confirm === "war" + t.id ? "danger" : ""}" data-a="warDeclare" data-id="${t.id}" ${this.busy ? "disabled" : ""}>${this.confirm === "war" + t.id ? "<b>Wirklich?</b>" : "Krieg erkl\xE4ren"}</button></div>`).join("") || '<div class="sm">Keine anderen Allianzen.</div>');
+      }
+      const left = (Date.parse(w.ends) - o.serverNow()) / 1e3, done = w.status !== "active";
+      out = `<div class="warhd"><div><b>[${esc(w.us.tag)}]</b><div class="big">${w.us.score} \u2B50</div></div><div class="vs">${done ? w.winner === "us" ? "\u{1F3C6} Sieg!" : w.winner === "them" ? "Niederlage" : "Unentschieden" : '\u2694\uFE0F<div class="sm">' + fmtTime(Math.max(0, left)) + "</div>"}</div><div><b>[${esc(w.them.tag)}]</b><div class="big">${w.them.score} \u2B50</div></div></div>`;
+      if (!done) out += `<div class="inf">Deine Kriegsangriffe \xFCbrig: <b>${w.hits_left}/2</b></div>`;
+      out += '<div class="sub2">Gegner</div>' + w.enemies.map((e) => `<div class="row"><div class="ri"><b>${esc(e.name)}</b> <span class="sh">\u2694 ${e.power} \xB7 \u{1F5FC}${e.tower}${e.shield ? " \xB7 \u{1F6E1} Schutz" : ""}</span><div class="stars">${"\u2B50".repeat(e.stars)}${"\u2606".repeat(3 - e.stars)}</div></div>
+      ${!done ? `<button class="btn sm2 danger" data-a="warGo" data-id="${e.id}" ${e.shield || w.hits_left <= 0 ? "disabled" : ""}>Angreifen</button>` : ""}</div>`).join("");
+      out += '<div class="sub2">Unsere Seite</div>' + w.ours.map((e) => `<div class="row"><div class="ri"><b>${esc(e.name)}</b> <span class="sh">\u2694 ${e.power} \xB7 Angriffe ${e.used}/2</span><div class="stars">Verloren: ${"\u2B50".repeat(e.stars)}${"\u2606".repeat(3 - e.stars)}</div></div></div>`).join("");
+      return out;
+    };
+    P.showReplay = function(rp) {
+      if (!rp || !rp.a || !rp.d) {
+        this.c.msg("Keine Wiederholung vorhanden.");
+        return;
+      }
+      this.closeReplay();
+      const box = document.createElement("div");
+      box.id = "replay";
+      const title = rp.arena ? "\u{1F3DF}\uFE0F Arena" : rp.raid ? "\u{1F3F4}\u200D\u2620\uFE0F Piraten\xFCberfall" : "\u2694\uFE0F Angriff";
+      box.innerHTML = `<div class="rpin"><div class="ph"><div class="pt">${title}: ${esc(rp.a.n)} gegen ${esc(rp.d.n)}</div><button class="x" data-a="replayClose">\u2715</button></div>
+      <canvas id="rpc"></canvas><div class="rpres" id="rpres"></div>
+      <div class="btns"><button class="btn ghost" data-a="replayAgain">\u25B6 Nochmal</button><button class="btn" data-a="replayClose">Schlie\xDFen</button></div></div>`;
+      document.body.appendChild(box);
+      this.rp = { data: rp, t: 0, last: performance.now() };
+      const loop = (now) => {
+        if (!this.rp || !document.getElementById("replay")) return;
+        const st = this.rp;
+        st.t += Math.min(0.05, (now - st.last) / 1e3);
+        st.last = now;
+        drawReplay(document.getElementById("rpc"), st.data, st.t);
+        const res = document.getElementById("rpres");
+        if (res && st.t > 6.2 && !res.textContent) {
+          const d = st.data, al = uSum(d.a.l || zeroU()), dl = uSum(d.d.l || zeroU());
+          res.innerHTML = `<b style="color:${d.win ? "#ffb070" : "#8ef0a0"}">${d.win ? `${esc(d.a.n)} gewinnt` : `${esc(d.d.n)} h\xE4lt stand`}</b> \xB7 Verluste: Angreifer ${al}, Verteidiger ${dl}${d.d.f ? ` \xB7 Aufstellung ${Math.round((formMul(d.d.f) - 1) * 100)} %` : ""}`;
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    };
+    P.closeReplay = function() {
+      const e = document.getElementById("replay");
+      if (e) e.remove();
+      this.rp = null;
+    };
+    P.action2 = function(a, ds) {
+      const c = this.c, o = this.o;
+      switch (a) {
+        case "formSet":
+          setRow(c, +ds.u, +ds.r);
+          if (o.active) o.t.sync = 99;
+          return true;
+        case "formPreset":
+          c.s.formation = FORM_PRESETS[+ds.k].f.slice();
+          if (o.active) o.t.sync = 99;
+          c.msg(`\u{1F9F1} Aufstellung \u201E${FORM_PRESETS[+ds.k].name}\u201C gew\xE4hlt.`);
+          return true;
+        case "gearCap":
+          this.gearCap = ds.id;
+          return true;
+        case "forge": {
+          const e = forgeGear(c, ds.cap, ds.g);
+          if (e) c.msg(e);
+          return true;
+        }
+        case "arenaFight": {
+          const boost = mods(c).atk;
+          this.run(async () => {
+            const r = await o.arenaFight(ds.id || null, ds.bot ? +ds.bot : null, boost);
+            c.msg(r.win ? `\u{1F3DF}\uFE0F Sieg! +${r.dt} Pokale` : `\u{1F3DF}\uFE0F Niederlage. ${r.dt} Pokale`);
+            this.showReplay(r.replay);
+          });
+          return true;
+        }
+        case "arenaClaim":
+          this.run(async () => {
+            const r = await o.arenaClaim();
+            c.msg(`\u{1F3DF}\uFE0F Liga-Belohnung: \u{1F396}\uFE0F ${r.medals} \xB7 \u{1F529} ${r.ore || 0} \xB7 je ${Math.round(r.res)} Rohstoffe`);
+          });
+          return true;
+        case "replayArena": {
+          const l = ((o.arena || {}).log || [])[+ds.k];
+          if (l) this.showReplay(l.replay);
+          return true;
+        }
+        case "replay": {
+          if (ds.id) this.run(async () => {
+            this.showReplay(await o.replay(+ds.id));
+          });
+          else {
+            const r = c.s.reports[+ds.k];
+            if (r) this.showReplay(r.rp);
+          }
+          return true;
+        }
+        case "replayAgain":
+          if (this.rp) {
+            this.rp.t = 0;
+            const r = document.getElementById("rpres");
+            if (r) r.textContent = "";
+          }
+          return true;
+        case "replayClose":
+          this.closeReplay();
+          return true;
+        case "obstClear": {
+          const id = -4e3 - this.selected;
+          if (startObst(c, id)) {
+          }
+          return true;
+        }
+        case "sendGather": {
+          const sel = this.mapSel, f = this.form.slice();
+          if (!sel) return true;
+          const cap = this.capSel && capFree(c, this.capSel) ? this.capSel : null;
+          const boost = mods(c).atk * capAtk(c, cap, c.tideState(30)), speed = mods(c).travel * fleetSpeed(c, f) * capSpeed(c, cap);
+          this.run(async () => {
+            await o.sendMarch("gather", sel.id, f, boost, speed);
+            this.capSel = null;
+            this.form = zeroU();
+            this.mapSel = null;
+            c.msg("\u26CF Sammeltrupp ist unterwegs.");
+            await o.loadWorld();
+          });
+          return true;
+        }
+        case "gatherRecall":
+          this.run(async () => {
+            await o.gatherRecall(+ds.id);
+            c.msg("Trupp kehrt mit der Ladung heim.");
+          });
+          return true;
+        case "atab":
+          this.allyTab = ds.t;
+          this.donKind = null;
+          this.donTo = null;
+          this.form = zeroU();
+          if (ds.t === "help") o.helpList().then(() => this.panelKey = null);
+          if (ds.t === "garr") o.garrisonInfo().then(() => this.panelKey = null);
+          if (ds.t === "war") o.warInfo().then(() => this.panelKey = null);
+          if (ds.t === "res") o.allyProjects().then(() => this.panelKey = null);
+          return true;
+        case "helpAll":
+        case "helpOne":
+          this.run(async () => {
+            const r = await o.helpGive(a === "helpOne" ? +ds.id : null);
+            c.msg(r.n ? `\u{1F91D} ${r.n}\xD7 geholfen${r.reward ? ` \xB7 +${r.reward * 15} \u2699\uFE0F` : ""}` : "Gerade gibt es nichts zu helfen.");
+          });
+          return true;
+        case "troopReq":
+          this.run(async () => {
+            await o.troopRequest();
+            c.msg("\u{1F4E3} Deine Allianz wurde um Verst\xE4rkung gebeten.");
+          });
+          return true;
+        case "donTo":
+          this.donTo = { id: ds.id, name: ds.n, free: +ds.f };
+          this.form = zeroU();
+          return true;
+        case "donToBack":
+          this.donTo = null;
+          return true;
+        case "donateTroops": {
+          const to = this.donTo, f = this.form.slice();
+          this.run(async () => {
+            await o.troopDonate(to.id, f);
+            this.donTo = null;
+            this.form = zeroU();
+            c.msg(`\u{1F6E1}\uFE0F ${uSum(f)} Krieger zu ${to.name} geschickt.`);
+          });
+          return true;
+        }
+        case "garrBack":
+          this.run(async () => {
+            await o.garrisonBack(ds.id);
+          });
+          return true;
+        case "garrRecall":
+          this.run(async () => {
+            await o.call("garrison_back", { p_token: o.token, p_other: ds.id });
+            await o.sync();
+            await o.garrisonInfo();
+            c.msg("Deine Krieger kehren heim.");
+          });
+          return true;
+        case "warDeclare":
+          if (this.confirm !== "war" + ds.id) {
+            this.confirm = "war" + ds.id;
+            return true;
+          }
+          this.confirm = null;
+          this.run(async () => {
+            await o.warDeclare(ds.id);
+            c.msg("\u2694\uFE0F Der Krieg ist erkl\xE4rt!");
+          });
+          return true;
+        case "warGo": {
+          this.setView("map");
+          this.mapSel = { type: "player", id: ds.id };
+          this.form = zeroU();
+          return true;
+        }
+        default:
+          return false;
+      }
+    };
+  }
+  function drawReplay(cv, d, t) {
+    if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), W = cv.clientWidth || 320, H = cv.clientHeight || 220;
+    if (cv.width !== Math.round(W * dpr)) {
+      cv.width = Math.round(W * dpr);
+      cv.height = Math.round(H * dpr);
+    }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#1a5f86");
+    g.addColorStop(1, "#0b3352");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#7a6448";
+    ctx.fillRect(W * 0.62, 0, W * 0.38, H);
+    ctx.fillStyle = "#5c4a35";
+    for (let k = 0; k < 9; k++) ctx.fillRect(W * 0.62, k * H / 9 + 2, W * 0.38, 2);
+    ctx.fillStyle = "#4a3a28";
+    ctx.fillRect(W * 0.62 - 4, 0, 6, H);
+    const P = Math.min(1, Math.max(0, (t - 0.6) / 4.5));
+    const march = Math.min(1, t / 1.6);
+    const au = d.a.u || zeroU(), al = d.a.l || zeroU(), du = d.d.u || zeroU(), dl = d.d.l || zeroU(), f = d.d.f || [0, 0, 0, 0, 0];
+    const cnt = (u, l, i) => Math.max(0, Math.round(u[i] - l[i] * P));
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const ax0 = W * 0.08 + march * W * 0.22;
+    UNITS.forEach((u, i) => {
+      if (!au[i]) return;
+      const n = cnt(au, al, i), y = H * (0.14 + i * 0.18), shake = P > 0 && P < 1 ? Math.sin(t * 20 + i) * 2 : 0;
+      ctx.globalAlpha = n > 0 ? 1 : 0.25;
+      ctx.font = "22px system-ui";
+      ctx.fillText(u.ic, ax0 + shake, y);
+      ctx.font = "bold 11px system-ui";
+      ctx.fillStyle = "#ffd9b0";
+      ctx.fillText(n, ax0 + shake, y + 15);
+      ctx.fillStyle = "#fff";
+    });
+    const rowX = [W * 0.68, W * 0.79, W * 0.9];
+    const perRow = [0, 0, 0];
+    UNITS.forEach((u, i) => {
+      if (!du[i]) return;
+      const r = f[i] || 0, k = perRow[r]++, y = H * (0.16 + k * 0.2), n = cnt(du, dl, i);
+      ctx.globalAlpha = n > 0 ? 1 : 0.25;
+      ctx.font = "22px system-ui";
+      ctx.fillText(u.ic, rowX[r], y);
+      ctx.font = "bold 11px system-ui";
+      ctx.fillStyle = "#b8f0c8";
+      ctx.fillText(n, rowX[r], y + 15);
+      ctx.fillStyle = "#fff";
+    });
+    ctx.globalAlpha = 1;
+    if (d.d.def) {
+      ctx.font = "11px system-ui";
+      ctx.fillStyle = "#ffe9a8";
+      ctx.fillText(`\u{1F3F0} Verteidigung ${d.d.def}`, W * 0.81, H - 10);
+      ctx.fillStyle = "#fff";
+    }
+    if (P > 0 && P < 1) {
+      for (let k = 0; k < 7; k++) {
+        const ph = (t * 1.3 + k * 0.37) % 1, fromA = k % 2 === 0;
+        const x0 = fromA ? ax0 + 14 : rowX[2] - 10, x1 = fromA ? W * 0.66 : ax0 + 20;
+        const y0 = H * (0.15 + k % 5 * 0.18), y1 = H * (0.2 + k * 3 % 5 * 0.16);
+        const x = x0 + (x1 - x0) * ph, y = y0 + (y1 - y0) * ph - Math.sin(ph * Math.PI) * 30;
+        ctx.fillStyle = fromA ? "#ffcf7a" : "#bfe8ff";
+        ctx.beginPath();
+        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const mx = (ax0 + W * 0.66) / 2;
+      for (let k = 0; k < 4; k++) {
+        const a = t * 9 + k * 1.7;
+        ctx.fillStyle = `rgba(255,${180 + k * 15},90,${0.5 + 0.5 * Math.sin(a)})`;
+        ctx.beginPath();
+        ctx.arc(mx + Math.cos(a) * 18, H / 2 + Math.sin(a * 1.3) * 40, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (t > 5.4) {
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(0, H / 2 - 22, W, 44);
+      ctx.font = "bold 20px system-ui";
+      ctx.fillStyle = d.win ? "#ffb070" : "#8ef0a0";
+      ctx.fillText(d.win ? "\u2694\uFE0F Angriff erfolgreich" : "\u{1F6E1}\uFE0F Verteidigung h\xE4lt", W / 2, H / 2);
+    }
+    if (d.tide) {
+      ctx.font = "11px system-ui";
+      ctx.fillStyle = "#cfe6ea";
+      ctx.textAlign = "left";
+      ctx.fillText(d.tide === -1 ? "\u{1F30A} Ebbe" : "\u{1F30A} Flut", 6, H - 10);
+    }
+  }
+
   // src/ui.js
   var QOK = ["Alle Bautrupps besch\xE4ftigt", "Zu wenig Rohstoffe"];
   var $ = (sel) => document.querySelector(sel);
@@ -4575,7 +5292,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const s = a >= 1e3 ? (a / 1e3).toFixed(1) + "k" : String(Math.round(a));
     return (v < 0 ? "\u2212" : "+") + s;
   };
-  var RES_IC = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
+  var RES_IC2 = ["\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F"];
   var B_IC = ["\u{1F5FC}", "\u{1FAB5}", "\u{1F9AA}", "\u{1F4A7}", "\u2699\uFE0F", "\u{1F3E0}", "\u{1F33F}", "\u{1F41F}", "\u{1F372}", "\u2694\uFE0F", "\u{1F441}\uFE0F", "\u{1F4E6}", "\u{1F9F1}", "\u{1F3F9}", "\u{1F30A}", "\u{1F531}", "\u{1F6E1}\uFE0F", "\u{1F5E1}\uFE0F", "\u{1FAA8}", "\u{1F3C3}", "\u{1FA79}", "\u{1F4DA}", "\u2693", "\u{1F570}\uFE0F"];
   var NODE_NAME = ["Treibholz", "Muschelbank", "S\xFC\xDFwassert\xFCmpel", "Wrackteile"];
   var setHTML = (el, html) => {
@@ -4611,7 +5328,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     build() {
       const top = $("#top");
       this.cards = RES.map((name, i) => {
-        const card = h("div", "card", `<span class="ic" title="${name}">${RES_IC[i]}</span><div class="cv"><b class="rv">0</b><span class="rr">+0</span></div>`);
+        const card = h("div", "card", `<span class="ic" title="${name}">${RES_IC2[i]}</span><div class="cv"><b class="rv">0</b><span class="rr">+0</span></div>`);
         top.querySelector(".res").appendChild(card);
         return { v: card.querySelector(".rv"), r: card.querySelector(".rr") };
       });
@@ -4732,7 +5449,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     select(i, keepMenu) {
       if (this.view === "map" && i !== -1) return;
-      if (i <= -3e3) {
+      if (i <= -3e3 && i > -4e3) {
         collectTreasure(this.c, -3e3 - i);
         return;
       }
@@ -4746,12 +5463,32 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         this.o.wantChat = false;
       }
     }
+    /// Altersbestätigung (ab 10 Jahren) – einmal pro Gerät
+    ageOk() {
+      if (localStorage.getItem("pf_age10") === "1") return true;
+      const cb = $("#age10");
+      if (cb && cb.checked) {
+        localStorage.setItem("pf_age10", "1");
+        return true;
+      }
+      const e = $("#loginErr");
+      if (e) e.textContent = "Bitte best\xE4tige zuerst mit dem H\xE4kchen, dass du mindestens 10 Jahre alt bist.";
+      const b = document.querySelector("#login .agebox");
+      if (b) {
+        b.classList.remove("shake");
+        void b.offsetWidth;
+        b.classList.add("shake");
+      }
+      return false;
+    }
     showLogin(on, codeMode) {
       this.login.style.display = on ? "flex" : "none";
       if (on) {
         $("#loginCodeBox").style.display = codeMode ? "" : "none";
         $("#loginNameBox").style.display = codeMode ? "none" : "";
         $("#loginErr").textContent = "";
+        const ab = document.querySelector("#login .agebox");
+        if (ab) ab.style.display = localStorage.getItem("pf_age10") === "1" ? "none" : "";
       }
     }
     openMenu(tab) {
@@ -4815,6 +5552,10 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.panelKey = null;
     }
     action(a, ds) {
+      if (this.action2 && this.action2(a, ds)) {
+        this.panelKey = null;
+        return;
+      }
       const c = this.c, o = this.o, v = +(ds.v || 0);
       const val = (id) => {
         const e = $("#" + id);
@@ -5231,6 +5972,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       } else if (a === "reports") {
         this.showReports = !this.showReports;
         this.mapSel = null;
+      } else if ((a === "register" || a === "restore" || a === "offline") && !this.ageOk()) {
+        return;
       } else if (a === "register") {
         const name = val("loginName");
         this.run(async () => {
@@ -5372,7 +6115,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.view === "map") btn(this.bMap, "\u{1F3D8}\uFE0F", "Stadt", "");
       else btn(this.bMap, "\u{1F5FA}\uFE0F", "Karte", nm ? nm + " unterw." : "");
       const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
-      btn(this.bAlly, "\u{1F91D}", "Allianz", !this.o.active ? "offline" : al ? "[" + al.tag + "]" : "");
+      btn(this.bAlly, "\u{1F91D}", "Allianz", !this.o.active ? "offline" : this.o.helpOpen ? `<i style="color:#8ef0a0">\u{1F91D} ${this.o.helpOpen}</i>` : this.o.war ? '<i style="color:#ff9a5a">\u2694\uFE0F Krieg</i>' : al ? "[" + al.tag + "]" : "");
       btn(this.bMenu, "\u2630", "Men\xFC", "");
       const tq = c.queued ? c.queued() : 0;
       btn(this.bTroops, "\u2694\uFE0F", "Truppen", this.o.active && this.o.incoming ? '<i style="color:#ff6060">Angriff!</i>' : tq ? `\u{1F393} ${tq}` : "");
@@ -5441,7 +6184,20 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const ae = document.activeElement;
       if (ae && ae.tagName === "INPUT" && this.panel.contains(ae)) return;
       let html = "";
-      if (this.view === "map") html = this.showReports ? this.reportsHtml() : this.mapSel ? this.mapSel.type === "player" ? this.playerHtml() : this.mapSel.type === "bot" ? this.botHtml() : this.mapSel.type === "boss" ? this.bossHtml() : this.terrHtml() : this.mapHtml();
+      try {
+        html = this.panelBody();
+      } catch (e) {
+        console.error(e);
+        html = this.head("Hinweis") + '<div class="sm">Lade \u2026</div>';
+      }
+      if (html === this.panelKey || this.holding) return;
+      this.panelKey = html;
+      this.showPanel(html);
+    }
+    panelBody() {
+      let html = "";
+      if (this.view === "map" && this.mapSel && (this.mapSel.type === "player" || this.mapSel.type === "field") && !(this.o.world && this.o.me)) return this.head("Seekarte") + '<div class="sm">Lade Weltkarte \u2026</div>';
+      if (this.view === "map") html = this.showReports ? this.reportsHtml() : this.mapSel ? this.mapSel.type === "player" ? this.playerHtml() : this.mapSel.type === "bot" ? this.botHtml() : this.mapSel.type === "boss" ? this.bossHtml() : this.mapSel.type === "field" ? this.fieldHtml() : this.terrHtml() : this.mapHtml();
       else if (this.mode === "ally") html = this.allyHtml();
       else if (this.mode === "build") html = this.buildingsHtml();
       else if (this.mode === "troops") html = this.troopsHtml();
@@ -5454,9 +6210,11 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       else if (this.mode === "account") html = this.accountHtml();
       else if (this.menu) html = this.menuHtml();
       else if (this.selected >= 0) html = this.plotHtml();
+      else if (this.selected <= -4e3) html = this.obstHtml();
       else if (this.selected <= -1e3) html = this.nodeHtml();
-      if (html === this.panelKey || this.holding) return;
-      this.panelKey = html;
+      return html;
+    }
+    showPanel(html) {
       const keep = {};
       this.panel.querySelectorAll("input[id], textarea[id]").forEach((e) => {
         if (e.value) keep[e.id] = e.value;
@@ -5495,15 +6253,28 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       for (const m of s.botMarches || []) out.push({ ic: m.phase === "back" ? "\u21A9\uFE0F" : "\u{1F3F4}\u200D\u2620\uFE0F", t: `${m.phase === "back" ? "Heimweg" : "Entern"} ${m.bot.name}`, left: m.left, pct: 100 * (1 - m.left / m.total), a: 'data-a="gomap"' });
       if (s.trader && s.trader.left > 0) out.push({ ic: "\u26F5", t: "H\xE4ndler am Steg", left: s.trader.left, pct: null, a: 'data-a="trader"' });
       if (s.expLeft > 0) out.push({ ic: "\u{1F9ED}", t: "Wattwanderung", left: s.expLeft, pct: pct(s.expLeft, EXP_TIME), a: "" });
+      if (s.clearing) {
+        const ob = (s.obst || []).find((x) => x.id === s.clearing.id);
+        out.push({ ic: "\u{1F9F9}", t: `R\xE4umen: ${ob ? OBST[ob.kind].name : "Hindernis"}`, left: s.clearing.left, pct: pct(s.clearing.left, s.clearing.total), a: "" });
+      }
       if (o.active) {
         const now = o.serverNow(), W = o.world || { players: [], territories: [] };
         for (const m of o.marches || []) {
           const back = m.status === "back";
+          if (m.status === "gather") {
+            out.push({ ic: "\u26CF", t: "Sammelt am Feld", left: Math.max(0, (Date.parse(m.gather_end) - now) / 1e3), pct: null, a: 'data-a="gomap"' });
+            continue;
+          }
           const left = Math.max(0, ((back ? Date.parse(m.back_at) : Date.parse(m.arrive)) - now) / 1e3);
+          if (m.field_id) {
+            out.push({ ic: back ? "\u21A9\uFE0F" : "\u26CF", t: back ? "Heimweg mit Ladung" : "Zum Rohstofffeld", left, pct: null, a: 'data-a="gomap"' });
+            continue;
+          }
           const nm = m.target_player ? (W.players.find((p) => p.id === m.target_player) || {}).name || "Stadt" : (W.territories.find((t) => t.id === m.target_terr) || {}).name || "Gebiet";
           out.push({ ic: m.kind === "scout" ? "\u{1F52D}" : back ? "\u21A9\uFE0F" : m.kind === "player" ? "\u2694\uFE0F" : "\u26F5", t: `${m.kind === "scout" ? "Sp\xE4her" : back ? "Heimweg" : m.rally_id ? "Sammelangr." : "Angriff"} ${nm}`, left, pct: null, a: 'data-a="gomap"' });
         }
         if (o.incoming) out.push({ ic: "\u26A0\uFE0F", t: "Feind greift an!", left: null, red: true, a: 'data-a="gomap"' });
+        if (o.helpOpen > 0) out.unshift({ ic: "\u{1F91D}", t: `${o.helpOpen}\xD7 Hilfe gesucht \u2013 tippen`, left: null, pct: null, a: 'data-a="helpAll"' });
       } else {
         for (const m of s.marches || []) {
           const back = m.phase === "back", nm = (s.terr[m.target] || {}).name || "Gebiet";
@@ -5520,7 +6291,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
         const L = c.gatherPath(n).L, trip = 2 * L / 2.3 + 5;
         const left = n.amount / Math.max(0.01, by[id] * c.carry / trip);
-        out.push({ ic: RES_IC[n.type], t: `${by[id]}\xD7 ${NODE_NAME[n.type]}`, left, pct: 100 * (1 - n.amount / Math.max(1, n.max)), a: `data-a="gonode" data-i="${n.id}"` });
+        out.push({ ic: RES_IC2[n.type], t: `${by[id]}\xD7 ${NODE_NAME[n.type]}`, left, pct: 100 * (1 - n.amount / Math.max(1, n.max)), a: `data-a="gonode" data-i="${n.id}"` });
       }
       return out;
     }
@@ -5589,7 +6360,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (!n) return this.head("Sammelstelle") + '<div class="desc">Hier ist nichts mehr zu holen.</div>';
       const as = c.assigned(id), flooded = c.nodeFlooded(n);
       const path = c.gatherPath(n), trip = path.L * 2 / 2.3 + 5;
-      return this.head(`${RES_IC[n.type]} ${NODE_NAME[n.type]}`) + `<div class="desc">Schicke Bewohner los: Sie laufen durchs Tor hinaus, sammeln und tragen bis zu <b>${c.carry}</b> ${RES[n.type]} pro Gang zur\xFCck.</div>
+      return this.head(`${RES_IC2[n.type]} ${NODE_NAME[n.type]}`) + `<div class="desc">Schicke Bewohner los: Sie laufen durchs Tor hinaus, sammeln und tragen bis zu <b>${c.carry}</b> ${RES[n.type]} pro Gang zur\xFCck.</div>
        <div class="inf">Vorrat: <b>${Math.round(n.amount)}</b> ${RES[n.type]} \xB7 ein Gang \u2248 ${fmtTime(trip)}</div>
        <div class="inf">${flooded ? '<b style="color:#7fd3f0">\u{1F30A} \xDCberflutet</b> \u2013 erst bei Ebbe wieder erreichbar' : '<b style="color:#8ef0a0">\u2713 Erreichbar</b>' + (n.h < 0.3 ? " (liegt im Watt: nur bei Ebbe)" : " (auf einer Sandbank)")}</div>
        <div class="row"><div class="ri"><b>Sammler: ${as}</b><div class="sm">freie Bewohner: ${c.freeVillagers} \xB7 Sammler fehlen in den Geb\xE4uden</div></div>
@@ -5717,8 +6488,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       let rows = [];
       if (this.sea.isOnline) {
         const now = o.serverNow();
-        const tname = (mm) => mm.target_player ? (o.world.players.find((p) => p.id === mm.target_player) || {}).name || "Stadt" : (o.world.territories.find((t) => t.id === mm.target_terr) || {}).name || "Gebiet";
-        rows = o.marches.map((mm) => `${mm.kind === "scout" ? "\u{1F52D}" : mm.status === "back" ? "\u21A9\uFE0F" : "\u26F5"} ${tname(mm)} \xB7 ${fmtTime(Math.max(0, ((mm.status === "out" ? Date.parse(mm.arrive) : Date.parse(mm.back_at)) - now) / 1e3))}`);
+        const tname = (mm) => mm.field_id ? "Rohstofffeld" : mm.target_player ? (o.world.players.find((p) => p.id === mm.target_player) || {}).name || "Stadt" : (o.world.territories.find((t) => t.id === mm.target_terr) || {}).name || "Gebiet";
+        rows = o.marches.map((mm) => `${mm.kind === "scout" ? "\u{1F52D}" : mm.status === "gather" ? "\u26CF" : mm.status === "back" ? "\u21A9\uFE0F" : "\u26F5"} ${tname(mm)} \xB7 ${fmtTime(Math.max(0, ((mm.status === "out" ? Date.parse(mm.arrive) : mm.status === "gather" ? Date.parse(mm.gather_end) : Date.parse(mm.back_at)) - now) / 1e3))}`);
       } else if (o.active) return head + '<div class="sm">Lade Weltkarte \u2026</div>' + (o.error ? `<div class="warn">${o.error}</div>` : "");
       else rows = s.marches.map((mm) => `${mm.kind === "scout" ? "\u{1F52D}" : mm.phase === "back" ? "\u21A9\uFE0F" : "\u26F5"} ${s.terr[mm.target].name} \xB7 ${fmtTime(mm.left)}`);
       for (const mm of s.botMarches || []) rows.push(`${mm.phase === "back" ? "\u21A9\uFE0F" : "\u{1F3F4}\u200D\u2620\uFE0F"} ${mm.bot.name} \xB7 ${fmtTime(mm.left)}`);
@@ -5775,7 +6546,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       let out = this.head(`\u{1F3F4}\u200D\u2620\uFE0F ${b.name} \xB7 Stufe ${b.level}`) + `<div class="desc">Piratenschiff. Jede Stufe ist etwas st\xE4rker \u2013 versenke es f\xFCr Beschleuniger und Beute. Fahrt ${fmtTime(tt)}</div>
        <div class="inf">Mannschaft: ${troopStr(b.u)}</div>
        <div class="sm">\u26A1 Ausdauer: <b>${stamina(c).n}/${STAM_MAX}</b>${stamina(c).next ? " \xB7 +1 in " + fmtTime(stamina(c).next) : ""}</div>
-       <div class="sm">Beute: ${itemStr(r.items)} \xB7 ${r.res.map((v, i) => v ? `${RES_IC[i]} ${v}` : "").filter(Boolean).join(" ")}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer " + troopStr(r.u) : ""}${r.big ? ' \xB7 <b style="color:#ffd27a">Schatztruhe!</b>' : ""}</div>`;
+       <div class="sm">Beute: ${itemStr(r.items)} \xB7 ${r.res.map((v, i) => v ? `${RES_IC2[i]} ${v}` : "").filter(Boolean).join(" ")}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer " + troopStr(r.u) : ""}${r.big ? ' \xB7 <b style="color:#ffd27a">Schatztruhe!</b>' : ""}</div>`;
       out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Entern!", true, botBlocker(c, b.id, f), this.attackInfo(att, def) + `<div class="sm">${this.tideLine(tt)}</div>`, "sendBot");
       return out;
     }
@@ -5805,8 +6576,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     projectsHtml() {
       const o = this.o, P = o.projects || [];
       const NAMES = { deich: ["\u{1F30A} Allianz-Deich", "+0,5 m Dammschutz je Stufe f\xFCr alle"], speicher: ["\u{1F4E6} Gemeinschaftsspeicher", "+10 % Lagerplatz je Stufe"], werkstatt: ["\u{1F6E0}\uFE0F Werkstatt", "+4 % Produktion je Stufe"] };
-      if (this.donKind) {
-        const n = (k) => `<input class="n" id="dn${k}" type="number" min="0" inputmode="numeric" placeholder="${RES_IC[k]} ${RES[k]}" style="flex:1 1 23%">`;
+      if (this.donKind && NAMES[this.donKind]) {
+        const n = (k) => `<input class="n" id="dn${k}" type="number" min="0" inputmode="numeric" placeholder="${RES_IC2[k]} ${RES[k]}" style="flex:1 1 23%">`;
         return `<div class="sub2">Spenden f\xFCr ${NAMES[this.donKind][0]}</div><div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map(n).join("")}</div>
         <div class="btns"><button class="btn" data-a="donSend" ${this.busy ? "disabled" : ""}><b>Spenden</b></button><button class="btn ghost" data-a="donBack">Zur\xFCck</button></div>`;
       }
@@ -5851,12 +6622,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (this.o.active && this.o.reports) {
         const rows2 = this.o.reports.length ? this.o.reports.map((r) => {
           const d = new Date(r.at);
-          return `<div class="row rep ${r.win === true ? "win" : r.win === false ? "loss" : ""}"><div class="ri"><div class="sm">${d.toLocaleDateString("de-DE")} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</div>${r.text}</div></div>`;
+          return `<div class="row rep ${r.win === true ? "win" : r.win === false ? "loss" : ""}"><div class="ri"><div class="sm">${d.toLocaleDateString("de-DE")} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</div>${r.text}</div>${r.rp ? `<button class="btn sm2 ghost" data-a="replay" data-id="${r.id}">\u25B6</button>` : ""}</div>`;
         }).join("") : '<div class="sm">Noch keine K\xE4mpfe.</div>';
         return this.head("Kampfberichte") + rows2;
       }
       const s = this.c.s;
-      const rows = s.reports.length ? s.reports.map((r) => `<div class="row rep ${r.win ? "win" : "loss"}"><div class="ri"><div class="sm">Tag ${r.day} \xB7 ${clock(r.time)}</div>${r.text}</div></div>`).join("") : '<div class="sm">Noch keine K\xE4mpfe.</div>';
+      const rows = s.reports.length ? s.reports.map((r, k) => `<div class="row rep ${r.win ? "win" : "loss"}"><div class="ri"><div class="sm">Tag ${r.day} \xB7 ${clock(r.time)}</div>${r.text}</div>${r.rp ? `<button class="btn sm2 ghost" data-a="replay" data-k="${k}">\u25B6</button>` : ""}</div>`).join("") : '<div class="sm">Noch keine K\xE4mpfe.</div>';
       return this.head("Kampfberichte") + rows;
     }
     // ---------- Allianz ----------
@@ -5865,9 +6636,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (!o.active) return this.head("Allianz") + '<div class="desc">Allianzen gibt es im Online-Spiel. Erstelle dir ein Konto \u2013 nur ein Spielername ist n\xF6tig.</div><div class="btns"><button class="btn" data-a="goOnline">Online gehen</button></div>';
       const A = o.alliances;
       if (!A) return this.head("Allianz") + '<div class="inf">Lade \u2026</div>';
-      const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+      const esc2 = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
       if (!o.me || !o.me.alliance_id) {
-        const list = (A.list || []).map((a) => `<div class="row"><div class="ri"><b>[${esc(a.tag)}] ${esc(a.name)}</b><div class="sm">${a.members}/20 Mitglieder \xB7 Macht ${a.power}</div></div>
+        const list = (A.list || []).map((a) => `<div class="row"><div class="ri"><b>[${esc2(a.tag)}] ${esc2(a.name)}</b><div class="sm">${a.members}/20 Mitglieder \xB7 Macht ${a.power}</div></div>
         <button class="btn sm2" data-a="allyJoin" data-id="${a.id}" ${a.members >= 20 || this.busy ? "disabled" : ""}>Beitreten</button></div>`).join("") || '<div class="sm">Noch keine Allianzen \u2013 gr\xFCnde die erste!</div>';
         return this.head("Allianz") + `<div class="desc">Verb\xFCndete greifen sich nicht an, sehen ihre Gebiete und haben einen gemeinsamen Chat.</div>
          <div class="sub2">Neue Allianz gr\xFCnden</div>
@@ -5877,29 +6648,29 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
       const mine = (A.list || []).find((a) => a.id === o.me.alliance_id) || { name: "Allianz", tag: "?", leader: null };
       const leader = mine.leader === o.me.id;
-      const members = (A.members || []).map((m) => `<div class="row"><div class="ri">${m.id === mine.leader ? "\u{1F451} " : ""}<b>${esc(m.name)}</b> <span class="sh">\u2694 ${m.power}${m.online ? " \xB7 online" : ""}</span></div>
-      ${m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="helpPick" data-id="${m.id}" data-n="${esc(m.name)}">\u{1F91D}</button>` : ""}
+      const members = (A.members || []).map((m) => `<div class="row"><div class="ri">${m.id === mine.leader ? "\u{1F451} " : ""}<b>${esc2(m.name)}</b> <span class="sh">\u2694 ${m.power}${m.online ? " \xB7 online" : ""}</span></div>
+      ${m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="helpPick" data-id="${m.id}" data-n="${esc2(m.name)}">\u{1F91D}</button>` : ""}
       ${leader && m.id !== o.me.id ? `<button class="btn sm2 ghost" data-a="kick" data-id="${m.id}">Entfernen</button>` : ""}</div>`).join("");
-      const chat = o.chat.slice(-30).map((m) => `<div class="msg ${m.me ? "me" : ""} ${m.name === "System" ? "sys" : ""}"><b>${esc(m.name)}</b> ${esc(m.text)}</div>`).join("") || '<div class="sm">Noch keine Nachrichten.</div>';
+      const chat = o.chat.slice(-30).map((m) => `<div class="msg ${m.me ? "me" : ""} ${m.name === "System" ? "sys" : ""}"><b>${esc2(m.name)}</b> ${esc2(m.text)}</div>`).join("") || '<div class="sm">Noch keine Nachrichten.</div>';
       if (this.helpTo) {
         const n = (k, ic) => `<input class="n" id="hp${k}" type="number" min="0" inputmode="numeric" placeholder="${ic} ${RES[k]}" style="flex:1 1 23%">`;
-        return this.head(`\u{1F91D} Hilfe f\xFCr ${esc(this.helpTo.name)}`) + `<div class="desc">Schicke Rohstoffe an deinen Verb\xFCndeten \u2013 z. B. Holz f\xFCr den Damm bei einer Sturmflut. (max. 20.000 pro Stunde)</div>
-        <div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map((k) => n(k, RES_IC[k])).join("")}</div>
+        return this.head(`\u{1F91D} Hilfe f\xFCr ${esc2(this.helpTo.name)}`) + `<div class="desc">Schicke Rohstoffe an deinen Verb\xFCndeten \u2013 z. B. Holz f\xFCr den Damm bei einer Sturmflut. (max. 20.000 pro Stunde)</div>
+        <div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map((k) => n(k, RES_IC2[k])).join("")}</div>
         <div class="btns"><button class="btn" data-a="helpSend" ${this.busy ? "disabled" : ""}><b>Senden</b></button><button class="btn ghost" data-a="helpBack">Zur\xFCck</button></div>`;
       }
       if (this.rallySel) {
         const r = (o.rallies || []).find((x) => x.id === this.rallySel);
         if (!r || r.status !== "open") this.rallySel = null;
-        else return this.head(`\u2694\uFE0F Sammelangriff auf ${esc(r.target)}`) + `<div class="desc">Start in ${fmtTime(Math.max(0, (Date.parse(r.launch_at) - o.serverNow()) / 1e3))} \xB7 Anf\xFChrer ${esc(r.leader)}</div>` + this.troopForm("Mitmachen", true, null, "", "rallyJoin") + '<div class="btns"><button class="btn ghost" data-a="rallyBack">Zur\xFCck</button></div>';
+        else return this.head(`\u2694\uFE0F Sammelangriff auf ${esc2(r.target)}`) + `<div class="desc">Start in ${fmtTime(Math.max(0, (Date.parse(r.launch_at) - o.serverNow()) / 1e3))} \xB7 Anf\xFChrer ${esc2(r.leader)}</div>` + this.troopForm("Mitmachen", true, null, "", "rallyJoin") + '<div class="btns"><button class="btn ghost" data-a="rallyBack">Zur\xFCck</button></div>';
       }
       const rl = (o.rallies || []).map((r) => {
         const tot = (r.parts || []).reduce((acc, p) => acc.map((v, i) => v + (p.u[i] || 0)), zeroU());
         const left = r.status === "open" ? (Date.parse(r.launch_at) - o.serverNow()) / 1e3 : r.arrive ? (Date.parse(r.arrive) - o.serverNow()) / 1e3 : 0;
-        return `<div class="row"><div class="ri"><b>\u2694\uFE0F ${esc(r.target)}</b> <span class="sh">von ${esc(r.leader)} \xB7 ${(r.parts || []).length} dabei</span>
+        return `<div class="row"><div class="ri"><b>\u2694\uFE0F ${esc2(r.target)}</b> <span class="sh">von ${esc2(r.leader)} \xB7 ${(r.parts || []).length} dabei</span>
         <div class="sm">${troopStr(tot)} \xB7 ${r.status === "open" ? "Start in " : "Ankunft in "}${fmtTime(Math.max(0, left))}</div></div>
         ${r.status === "open" ? `<button class="btn sm2" data-a="rallyPick" data-id="${r.id}">Mitmachen</button>` : ""}</div>`;
       }).join("");
-      return this.head(`[${esc(mine.tag)}] ${esc(mine.name)}`) + (rl ? `<div class="sub2">\u2694\uFE0F Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der \u{1F5FA}\uFE0F Karte antippen, Trupp w\xE4hlen, \u201EAllianz-Sammelangriff\u201C.</div>') + this.projectsHtml() + `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
+      return this.head(`[${esc2(mine.tag)}] ${esc2(mine.name)}`) + (rl ? `<div class="sub2">\u2694\uFE0F Sammelangriffe</div>${rl}` : '<div class="sm">Sammelangriff starten: Ziel auf der \u{1F5FA}\uFE0F Karte antippen, Trupp w\xE4hlen, \u201EAllianz-Sammelangriff\u201C.</div>') + this.projectsHtml() + `<div class="sub2">Chat</div><div class="chat" id="chatBox">${chat}</div>
        <div class="form"><input id="chatIn" maxlength="200" placeholder="Nachricht an die Allianz \u2026"><button class="btn sm2" data-a="chat">Senden</button></div>
        <div class="sub2">Mitglieder (${(A.members || []).length}/20)</div>${members}
        <div class="btns"><button class="btn ${this.confirm === "leave" ? "danger" : "ghost"}" data-a="allyLeave">${this.confirm === "leave" ? "<b>Wirklich verlassen?</b>" : "Allianz verlassen"}</button></div>`;
@@ -5908,8 +6679,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const r = this.o.ranking;
       if (!this.o.active) return this.head("Rangliste") + '<div class="desc">Die Rangliste gibt es im Online-Spiel.</div>';
       if (!r) return this.head("Rangliste") + '<div class="inf">Lade \u2026</div>';
-      const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
-      return this.head("Rangliste") + '<div class="sm">Jeden Monat Saisonwertung: Platz 1 wird \u201EWattk\xF6nig\u201C, Platz 2 \u201EDeichgraf\u201C, Platz 3 \u201EStrandvogt\u201C, Platz 4\u201310 \u201EKapit\xE4n\u201C.</div>' + r.map((p, i) => `<div class="row ${p.me ? "meRow" : ""}"><div class="ri"><b>${i + 1}. ${p.tag ? "[" + esc(p.tag) + "] " : ""}${esc(p.name)}</b>${p.title ? ` <span class="title">\u{1F451} ${esc(p.title)}</span>` : ""}<div class="sm">Macht \u2694 ${p.power} \xB7 ${p.terr} Gebiete \xB7 \u{1F3C5} ${p.badges || 0} Erfolge</div></div></div>`).join("");
+      const esc2 = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+      return this.head("Rangliste") + '<div class="sm">Jeden Monat Saisonwertung: Platz 1 wird \u201EWattk\xF6nig\u201C, Platz 2 \u201EDeichgraf\u201C, Platz 3 \u201EStrandvogt\u201C, Platz 4\u201310 \u201EKapit\xE4n\u201C.</div>' + r.map((p, i) => `<div class="row ${p.me ? "meRow" : ""}"><div class="ri"><b>${i + 1}. ${p.tag ? "[" + esc2(p.tag) + "] " : ""}${esc2(p.name)}</b>${p.title ? ` <span class="title">\u{1F451} ${esc2(p.title)}</span>` : ""}<div class="sm">Macht \u2694 ${p.power} \xB7 ${p.terr} Gebiete \xB7 \u{1F3C5} ${p.badges || 0} Erfolge</div></div></div>`).join("");
     }
     accountHtml() {
       const o = this.o;
@@ -5929,7 +6700,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return this.head("Men\xFC") + bar + `<div class="tabbody">${tab === "codes" ? this.codesHtml() : tab === "admin" ? this.adminHtml() : this.settingsHtml()}</div>`;
     }
     adminHtml() {
-      const o = this.o, esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+      const o = this.o, esc2 = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
       let out = `<div class="sub2">\u{1F4E2} Nachricht an alle Spieler</div>
       <div class="form"><input id="admText" maxlength="300" placeholder="z. B. Heute Abend Leuchtturm-Krieg!"><button class="btn sm2" data-a="admBroadcast">Senden</button></div>`;
       if (this.codeMsg) out += `<div class="${this.codeMsg.ok ? "inf" : "warn"}">${this.codeMsg.text}</div>`;
@@ -5940,9 +6711,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="30">\u{1F9FA} 2\xD7 Sammeln 30 Min.</button><button class="btn ghost" data-a="admEvent" data-k="doppelt" data-m="120">\u{1F9FA} 2 Std.</button></div>
       <div class="btns"><button class="btn ghost" data-a="admEvent" data-k="stop" data-m="1">\u23F9 Alle Events beenden</button><button class="btn ghost" data-a="admBoss">\u{1F419} Krake rufen</button></div>`;
       const avq = o.avQueue || [];
-      out += `<div class="sub2">\u{1F4F7} Profilbilder pr\xFCfen (${avq.length})</div>` + (avq.length ? avq.map((a) => `<div class="row"><img src="${a.data}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-right:8px"><div class="ri"><b>${esc(a.name)}</b><div class="sm">Verst\xF6\xDFt das Bild gegen Gesetze oder ist es anst\xF6\xDFig? Dann ablehnen.</div></div>
+      out += `<div class="sub2">\u{1F4F7} Profilbilder pr\xFCfen (${avq.length})</div>` + (avq.length ? avq.map((a) => `<div class="row"><img src="${a.data}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-right:8px"><div class="ri"><b>${esc2(a.name)}</b><div class="sm">Verst\xF6\xDFt das Bild gegen Gesetze oder ist es anst\xF6\xDFig? Dann ablehnen.</div></div>
       <button class="btn sm2" data-a="avOk" data-id="${a.player}">\u2714</button><button class="btn sm2 danger" data-a="avNo" data-id="${a.player}">\u2716</button></div>`).join("") : '<div class="sm">Keine Bilder zu pr\xFCfen.</div>');
-      out += '<div class="sub2">\u{1F465} Spieler</div>' + (o.players || []).map((p) => `<div class="row"><div class="ri"><b>${esc(p.name)}</b> <span class="sh">\u2694 ${p.power}${p.admin ? " \xB7 \u{1F451}" : ""}${p.banned ? ' \xB7 <span style="color:#ff6a6a">gesperrt</span>' : ""}</span>
+      out += '<div class="sub2">\u{1F465} Spieler</div>' + (o.players || []).map((p) => `<div class="row"><div class="ri"><b>${esc2(p.name)}</b> <span class="sh">\u2694 ${p.power}${p.admin ? " \xB7 \u{1F451}" : ""}${p.banned ? ' \xB7 <span style="color:#ff6a6a">gesperrt</span>' : ""}</span>
       <div class="sm">zuletzt ${new Date(p.seen).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div></div>
       ${p.admin ? "" : p.banned ? `<button class="btn sm2 ghost" data-a="admBan" data-id="${p.id}" data-b="0">Entsperren</button>` : `<button class="btn sm2 ${this.confirm === "ban" + p.id ? "danger" : "ghost"}" data-a="admBan" data-id="${p.id}" data-b="1">${this.confirm === "ban" + p.id ? "Sperren?" : "Sperren"}</button>`}</div>`).join("");
       return out;
@@ -6090,7 +6861,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     rewardStr(res, u) {
       const parts = [];
-      (res || []).forEach((v, i) => v && parts.push(`${RES_IC[i]} ${v}`));
+      (res || []).forEach((v, i) => v && parts.push(`${RES_IC2[i]} ${v}`));
       (u || []).forEach((v, i) => v && parts.push(`${UNITS[i].ic} ${v}`));
       return parts.join(" \xB7 ");
     }
@@ -6138,8 +6909,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (!tr || tr.left <= 0) return this.head("\u26F5 H\xE4ndlerschiff") + `<div class="desc">Gerade liegt kein Schiff am Steg. N\xE4chstes in etwa ${fmtTime(tr ? tr.next : 60)}.</div>`;
       let out = this.head("\u26F5 H\xE4ndlerschiff") + `<div class="desc">Der H\xE4ndler legt in <b>${fmtTime(tr.left)}</b> wieder ab. Jedes Angebot gilt einmal.</div>`;
       tr.offers.forEach((o, k) => {
-        const get = o.unit !== void 0 ? `${UNITS[o.unit].ic} ${o.rn} ${UNITS[o.unit].name}` : `${RES_IC[o.get]} ${o.rn} ${RES[o.get]}`;
-        out += `<div class="row"><div class="ri"><b>${RES_IC[o.give]} ${o.gn} ${RES[o.give]}</b> \u2192 <b>${get}</b></div>
+        const get = o.unit !== void 0 ? `${UNITS[o.unit].ic} ${o.rn} ${UNITS[o.unit].name}` : `${RES_IC2[o.get]} ${o.rn} ${RES[o.get]}`;
+        out += `<div class="row"><div class="ri"><b>${RES_IC2[o.give]} ${o.gn} ${RES[o.give]}</b> \u2192 <b>${get}</b></div>
         <button class="btn sm2" data-a="trade" data-k="${k}" ${o.used || c.s.res[o.give] < o.gn ? "disabled" : ""}>${o.used ? "\u2714" : "Tauschen"}</button></div>`;
       });
       return out;
@@ -6269,6 +7040,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
        <div class="sm" style="margin-top:10px">Version ${this.version.name}${this.version.channel === "public" ? "" : " (Testversion)"} \xB7 Updates werden beim Start automatisch geladen.</div>`;
     }
   };
+  installUI2(UI);
 
   // src/online.js
   var SERVER = "https://qoatkmjobrlnqadsfmhs.supabase.co";
@@ -6302,6 +7074,15 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     GESPERRT: "Dieses Konto wurde vom Spielleiter gesperrt.",
     HILFE_LIMIT: "H\xF6chstens 20.000 Rohstoffe Hilfe pro Stunde.",
     ZU_WENIG: "So viel hast du nicht.",
+    KEINE_KAEMPFE: "F\xFCr heute sind alle Arena-K\xE4mpfe verbraucht. Morgen geht es weiter!",
+    SCHON_ABGEHOLT: "Heute schon abgeholt.",
+    NUR_ANFUEHRER: "Nur der Anf\xFChrer kann einen Krieg erkl\xE4ren.",
+    SCHON_IM_KRIEG: "Eine der beiden Allianzen ist schon im Krieg.",
+    PAUSE: "Nach einem Krieg ist 12 Stunden Pause.",
+    BURG_VOLL: "Die Allianzburg ist voll.",
+    NICHT_VERBUENDET: "Nur an Mitglieder deiner Allianz.",
+    ZU_FRUEH: "Du hast gerade erst um Verst\xE4rkung gebeten (alle 10 Minuten m\xF6glich).",
+    SCHON_UNTERWEGS: "Zu diesem Feld ist schon ein Trupp von dir unterwegs.",
     NUR_WOCHENENDE: "Um den Gro\xDFen Leuchtturm wird nur am Wochenende gek\xE4mpft (Samstag 0 Uhr bis Sonntag 20 Uhr)."
   };
   var Online = class {
@@ -6402,7 +7183,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     snapshot() {
       const c = this.c, s = c.s;
-      return { power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), vip: vipLevel(c), lm: c.levels(23), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
+      return { form: formOf(c), gcap: gcapOf(c), power: c.power, tower: c.towerLevel, u: s.troops.slice(0, 5), laz: c.levels(20), vip: vipLevel(c), lm: c.levels(23), ach: Object.keys(s.ach || {}).length, h: s.troops[0], w: s.troops[1], def: c.defense, res: s.res.map((v) => Math.floor(v)) };
     }
     async sync(strict) {
       if (!this.token) return;
@@ -6434,8 +7215,22 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (d.vip) addVip(this.c, d.vip);
         if (d.items) {
           s.items = s.items || {};
-          for (const k in d.items) if (d.items[k] > 0) s.items[k] = (s.items[k] || 0) + d.items[k];
+          for (const k in d.items) {
+            if (!(d.items[k] > 0)) continue;
+            if (k === "medals") s.medals = (s.medals || 0) + d.items[k];
+            else if (k === "ore") s.ore = (s.ore || 0) + d.items[k];
+            else s.items[k] = (s.items[k] || 0) + d.items[k];
+          }
         }
+        this.helpOpen = r.help_open || 0;
+        this.garrison = r.garrison || 0;
+        this.gcap = r.gcap || 0;
+        this.troopReq = r.troop_req || 0;
+        this.war = r.war || null;
+        this.trophies = r.trophies || 0;
+        if (r.me) this.me.leader = !!r.me.leader;
+        this.applyHelps(r.helps || []);
+        this.askHelps();
         const av = r.avatar;
         if (!av) this.avatar = null;
         else if (av.status !== "ok") this.avatar = { status: av.status };
@@ -6586,12 +7381,12 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     // ---------- Späher & Sammelangriffe ----------
     async scout(kind, target) {
-      await this.call("scout", { p_token: this.token, p_kind: kind, p_target: kind === "terr" ? target : null, p_target_player: kind === "player" ? target : null });
+      await this.call("scout", { p_token: this.token, p_kind: kind, p_target: kind === "terr" || kind === "gather" ? target : null, p_target_player: kind === "player" ? target : null });
       await this.sync();
     }
     async rallyCreate(kind, target, u, wait) {
       const s = this.c.s;
-      await this.call("rally_create", { p_token: this.token, p_kind: kind, p_target: kind === "terr" ? target : null, p_target_player: kind === "player" ? target : null, p_u: u, p_wait: wait });
+      await this.call("rally_create", { p_token: this.token, p_kind: kind, p_target: kind === "terr" || kind === "gather" ? target : null, p_target_player: kind === "player" ? target : null, p_u: u, p_wait: wait });
       s.troops = s.troops.map((v, i) => v - (u[i] || 0));
       await this.sync();
       await this.loadRallies();
@@ -6642,7 +7437,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const r = await this.call("send_march", () => ({
         p_token: this.token,
         p_kind: kind,
-        p_target: kind === "terr" ? target : null,
+        p_target: kind === "terr" || kind === "gather" ? target : null,
         p_target_player: kind === "player" ? target : null,
         p_u: u,
         p_boost: boost || 1,
@@ -6685,6 +7480,110 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     async sendChat(text) {
       await this.call("chat_send", { p_token: this.token, p_text: text });
       await this.loadChat();
+    }
+    // ---------- Allianz-Hilfe ----------
+    applyHelps(list) {
+      const s = this.c.s;
+      s.helpGot = s.helpGot || {};
+      const keep = {};
+      let n = 0, sec = 0;
+      for (const h2 of list) {
+        keep[h2.key] = Math.max(h2.got, s.helpGot[h2.key] || 0);
+        const prev = s.helpGot[h2.key] || 0;
+        if (h2.got > prev) {
+          sec += applyHelp(this.c, h2.key, h2.got - prev);
+          n += h2.got - prev;
+        }
+      }
+      s.helpGot = keep;
+      if (n > 0 && sec > 0) this.c.msg(`\u{1F91D} ${n}\xD7 Allianz-Hilfe: \u2212${fmtTime(sec)}`);
+    }
+    askHelps() {
+      if (!this.me || !this.me.alliance_id) return;
+      const s = this.c.s, req = s.helpReq || {}, now = {};
+      for (const t of helpTargets(this.c)) {
+        now[t.key] = 1;
+        if (!req[t.key]) this.call("help_ask", { p_token: this.token, p_key: t.key, p_label: t.label }).catch(() => {
+          delete s.helpReq[t.key];
+        });
+      }
+      s.helpReq = now;
+    }
+    async helpList() {
+      try {
+        this.helps = await this.call("help_list", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async helpGive(id) {
+      const r = await this.call("help_give", { p_token: this.token, p_id: id || null });
+      this.helpOpen = Math.max(0, this.helpOpen - r.n);
+      await this.helpList();
+      await this.sync();
+      return r;
+    }
+    // ---------- Allianzburg (Truppen spenden) ----------
+    async garrisonInfo() {
+      try {
+        this.garr = await this.call("garrison_info", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async troopRequest() {
+      await this.call("troop_request", { p_token: this.token });
+      await this.loadChat();
+    }
+    async troopDonate(to, u) {
+      await this.call("troop_donate", { p_token: this.token, p_to: to, p_u: u });
+      const s = this.c.s;
+      s.troops = s.troops.map((v, i) => Math.max(0, v - (u[i] || 0)));
+      await this.sync();
+      await this.garrisonInfo();
+    }
+    async garrisonBack(other) {
+      await this.call("garrison_back", { p_token: this.token, p_other: other || null });
+      await this.sync();
+      await this.garrisonInfo();
+    }
+    // ---------- Arena ----------
+    async arenaList() {
+      try {
+        this.arena = await this.call("arena_list", { p_token: this.token });
+      } catch (e) {
+        this.arenaErr = e.message;
+      }
+    }
+    async arenaFight(target, bot, boost) {
+      const r = await this.call("arena_fight", { p_token: this.token, p_target: target || null, p_bot: bot || null, p_boost: boost || 1 });
+      await this.arenaList();
+      return r;
+    }
+    async arenaClaim() {
+      const r = await this.call("arena_claim", { p_token: this.token });
+      await this.sync();
+      await this.arenaList();
+      return r;
+    }
+    // ---------- Allianz-Krieg ----------
+    async warInfo() {
+      try {
+        this.warI = await this.call("war_info", { p_token: this.token });
+      } catch (e) {
+      }
+    }
+    async warDeclare(id) {
+      await this.call("war_declare", { p_token: this.token, p_alliance: id });
+      await this.sync();
+      await this.warInfo();
+    }
+    // ---------- Rohstofffelder, Wiederholungen ----------
+    async gatherRecall(id) {
+      await this.call("gather_recall", { p_token: this.token, p_march: id });
+      await this.sync();
+      await this.loadWorld();
+    }
+    async replay(id) {
+      return this.call("report_replay", { p_token: this.token, p_id: id });
     }
     /// eigene Gebiete (für Produktionsbonus)
     ownedBonus() {

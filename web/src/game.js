@@ -1,4 +1,5 @@
 import { questEvent, traderTick, queueTick, checkAch, season, treasureTick } from './features.js';
+import { obstTick, formOf, formMul } from './social.js';
 import { botTick, ensureBots } from './bots.js';
 import { mods, researchTick, boatTick, capAtk, capSend, capSpeed, fleetSpeed } from './progress.js';
 // Spiellogik: Gezeiten, Rohstoffe, Bauen, Bevölkerung, Speichern, Offline-Fortschritt.
@@ -238,7 +239,7 @@ export class Colony {
     this.military(dt, false);
     this.gathering(dt, false);
     traderTick(this, dt);
-    treasureTick(this, dt);
+    treasureTick(this, dt); obstTick(this, dt);
     this.summerTick(dt);
     botTick(this, dt);
     researchTick(this, dt);
@@ -478,9 +479,9 @@ export class Colony {
 
 
   // ---------- Militär: Ausbildung, Märsche, Kämpfe, Überfälle ----------
-  report(text, win) {
+  report(text, win, rp) {
     const s = this.s;
-    s.reports.unshift({ text, win, day: s.days, time: s.dayTime });
+    s.reports.unshift({ text, win, day: s.days, time: s.dayTime, ...(rp ? { rp } : {}) });
     if (s.reports.length > 25) s.reports.length = 25;
     this.msg(text);
   }
@@ -644,18 +645,21 @@ export class Colony {
       if (s.raidTimer <= 0) {
         s.raidTimer = 420 + Math.random() * 300;
         const str = (25 + 18 * (s.days - 1) + 10 * this.towerLevel) * (0.8 + Math.random() * 0.4);
-        const def = this.defense * (0.85 + Math.random() * 0.3);
+        const fm = formMul(formOf(this)), troopPart = armyStr(s.troops, null, false) * mods(this).def;
+        const def = (this.defense + troopPart * (fm - 1)) * (0.85 + Math.random() * 0.3);
+        const n = Math.max(4, Math.round(str / 8)), pu = [Math.round(n * 0.3), Math.round(n * 0.1), Math.round(n * 0.35), Math.round(n * 0.1), Math.round(n * 0.15)];
+        const rp = (win, al, dl) => ({ a: { n: 'Piraten', u: pu, l: al }, d: { n: s.playerName || 'Pfahlstadt', u: s.troops.slice(0, 5), l: dl, def: Math.round(this.defense), f: formOf(this) }, win: !win, tide: this.tideState(0), raid: true });
         if (def > str) {
           const loss = Math.min(0.8, Math.pow(str / def, 1.3) * 0.5);
-          const lost = uScale(s.troops, loss);
+          const lost = uScale(s.troops, loss), r = rp(true, pu, lost);
           s.troops = uSub(s.troops, lost); this.addWounded(lost);
-          this.report(`Piratenüberfall abgewehrt! (Stärke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${troopStr(lost)}.`, true);
+          this.report(`Piratenüberfall abgewehrt! (Stärke ${Math.round(str)} gegen ${Math.round(def)}) Verluste: ${troopStr(lost)}.`, true, r);
         } else {
-          const lost = s.res.map((v) => Math.round(v * 0.2));
+          const lost = s.res.map((v) => Math.round(v * 0.2)), r = rp(false, uScale(pu, 0.3), uSub(s.troops, uScale(s.troops, 0.4)));
           lost.forEach((v, i) => (s.res[i] -= v));
           this.addWounded(uSub(s.troops, uScale(s.troops, 0.4)));
           s.troops = uScale(s.troops, 0.4);
-          this.report(`Piraten haben die Stadt geplündert! (Stärke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + ' ' + RES[i]).join(', ')}.`, false);
+          this.report(`Piraten haben die Stadt geplündert! (Stärke ${Math.round(str)} gegen ${Math.round(def)}) Verloren: ${lost.map((v, i) => v + ' ' + RES[i]).join(', ')}.`, false, r);
         }
       }
     }

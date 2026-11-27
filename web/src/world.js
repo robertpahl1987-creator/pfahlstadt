@@ -148,6 +148,13 @@ export class World {
     this.nodeMeshes = [0, 1, 2, 3].map((t) => { const b = new Builder(); M.resourceNode(b, t); return r.upload(b); });
     B = new Builder(); M.basket(B); this.basketMesh = r.upload(B);
     B = new Builder(); M.traderShip(B); this.shipMesh = r.upload(B);
+    // Hindernisse im Watt: Treibgut, Wrack, Tangberg, Felsbrocken
+    this.obstMeshes = [
+      (() => { const b = new Builder(); for (let k = 0; k < 5; k++) b.add('cylinder', [(k - 2) * 0.55, 0.25 + (k % 2) * 0.35, (k % 3 - 1) * 0.4], [0.28, 2.6 - (k % 3) * 0.5, 0.28], [0.5 - k * 0.03, 0.36, 0.22], { rot: [0, k * 37, 90] }); return r.upload(b); })(),
+      (() => { const b = new Builder(); M.traderShip(b); return r.upload(b); })(),
+      (() => { const b = new Builder(); for (let k = 0; k < 6; k++) b.add('sphere', [Math.cos(k) * 0.9, 0.35 + (k % 3) * 0.25, Math.sin(k * 1.3) * 0.8], [0.9, 0.7, 0.9], [0.22 + k * 0.02, 0.42 + (k % 2) * 0.08, 0.18]); return r.upload(b); })(),
+      (() => { const b = new Builder(); b.add('sphere', [0, 0.6, 0], [2.2, 1.5, 1.8], [0.48, 0.47, 0.45]); b.add('sphere', [1.1, 0.4, 0.6], [1.2, 0.9, 1.1], [0.42, 0.41, 0.4]); b.add('sphere', [-0.9, 0.3, -0.5], [1, 0.7, 0.9], [0.52, 0.5, 0.47]); return r.upload(b); })(),
+    ];
     B = new Builder(); B.add('cube', [0, 0.25, 0], [0.9, 0.5, 0.6], [0.45, 0.3, 0.15]); B.add('cylinder', [0, 0.5, 0], [0.9, 0.3, 0.6], [0.5, 0.33, 0.16], { rot: [0, 0, 90] }); B.add('cube', [0, 0.35, 0.31], [0.2, 0.2, 0.04], [1, 0.85, 0.3], { e: 2 }); B.add('sphere', [0, 0.75, 0], [0.5, 0.5, 0.5], [1, 0.9, 0.5], { e: 3 }); this.chestMesh = r.upload(B);
     B = new Builder(); B.add('cylinder', [0, 0, 0], [0.06, 0.4, 0.06], [0.3, 0.2, 0.12]); B.add('sphere', [0, 0.48, 0], [0.22, 0.32, 0.22], [1, 0.6, 0.2], { e: 3 }); this.torchMesh = r.upload(B);
     this.columns = []; this.seenMarch = new Set();
@@ -551,6 +558,7 @@ export class World {
     {
       // Sammelstellen liegen tiefer: Strahl auf Bodenhöhe schneiden
       const s0 = (0.3 - a[1]) / dir[1], gx = a[0] + dir[0] * s0, gz = a[2] + dir[2] * s0;
+      for (const t of this.c.s.obst || []) if (Math.hypot(gx - t.x, gz - t.z) < 3.5) return -4000 - t.id;
       for (const t of this.c.s.treasures || []) if (Math.hypot(gx - t.x, gz - t.z) < 4) return -3000 - t.id;
       for (const n of this.c.s.nodes) if (Math.hypot(gx - n.x, gz - n.z) < 4.5) return -1000 - n.id;
     }
@@ -642,6 +650,13 @@ export class World {
     for (const tr of c2.s.treasures || []) {
       const y = this.groundAt(tr.x, tr.z), p = 0.6 + 0.4 * Math.sin(this.time * 5 + tr.id);
       draws.push({ mesh: this.chestMesh, model: trs([tr.x, y + 0.1, tr.z], [0, this.time * 40 + tr.id * 50, 0], [1.4, 1.4, 1.4]), emis: p, noShadow: true });
+    }
+    for (const ob of c2.s.obst || []) {
+      const y = this.groundAt(ob.x, ob.z), cl = c2.s.clearing && c2.s.clearing.id === ob.id ? c2.s.clearing : null;
+      const k = cl ? 0.35 + 0.65 * Math.max(0, cl.left / cl.total) : 1, sel = this.selected === -4000 - ob.id;
+      const sc = ob.kind === 1 ? [0.5 * k, 0.5 * k, 0.5 * k] : [k, k, k];
+      draws.push({ mesh: this.obstMeshes[ob.kind], model: trs([ob.x, y - (ob.kind === 1 ? 0.5 : 0) + (cl ? Math.sin(this.time * 20) * 0.03 : 0), ob.z], ob.kind === 1 ? [0, ob.rot, 28] : [0, ob.rot, 0], sc) });
+      if (sel || cl) draws.push({ mesh: this.ringMesh, model: trs([ob.x, y + 0.08, ob.z], null, [4.5, 1, 4.5]), emis: 0.6 + 0.4 * Math.sin(this.time * 4), noShadow: true });
     }
     // eigene Kutter am Steg vor dem Tor
     for (let k = 0; k < Math.min(6, c2.s.boats || 0); k++) {

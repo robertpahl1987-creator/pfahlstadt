@@ -11,6 +11,8 @@ import { dailyState, dailyReward, claimDaily, DAILY, questsToday, claimQuest, AC
 const QOK = ['Alle Bautrupps beschäftigt', 'Zu wenig Rohstoffe'];
 import { TIERS } from './gfx.js';
 import { SeaMap } from './map.js';
+import { installUI2 } from './ui2.js';
+import { OBST } from './social.js';
 
 const $ = (sel) => document.querySelector(sel);
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -113,9 +115,19 @@ export class UI {
 
   select(i, keepMenu) {
     if (this.view === 'map' && i !== -1) return;
-    if (i <= -3000) { collectTreasure(this.c, -3000 - i); return; }
+    if (i <= -3000 && i > -4000) { collectTreasure(this.c, -3000 - i); return; }
     this.selected = i; this.w.selected = i; this.confirm = null; this.panelKey = null;
     if (i !== -1 && !keepMenu) { this.menu = false; this.mode = null; this.o.wantChat = false; }
+  }
+
+  /// Altersbestätigung (ab 10 Jahren) – einmal pro Gerät
+  ageOk() {
+    if (localStorage.getItem('pf_age10') === '1') return true;
+    const cb = $('#age10');
+    if (cb && cb.checked) { localStorage.setItem('pf_age10', '1'); return true; }
+    const e = $('#loginErr'); if (e) e.textContent = 'Bitte bestätige zuerst mit dem Häkchen, dass du mindestens 10 Jahre alt bist.';
+    const b = document.querySelector('#login .agebox'); if (b) { b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+    return false;
   }
 
   showLogin(on, codeMode) {
@@ -124,6 +136,7 @@ export class UI {
       $('#loginCodeBox').style.display = codeMode ? '' : 'none';
       $('#loginNameBox').style.display = codeMode ? 'none' : '';
       $('#loginErr').textContent = '';
+      const ab = document.querySelector('#login .agebox'); if (ab) ab.style.display = localStorage.getItem('pf_age10') === '1' ? 'none' : '';
     }
   }
 
@@ -162,6 +175,7 @@ export class UI {
   }
 
   action(a, ds) {
+    if (this.action2 && this.action2(a, ds)) { this.panelKey = null; return; }
     const c = this.c, o = this.o, v = +(ds.v || 0);
     const val = (id) => { const e = $('#' + id); return e ? e.value.trim() : ''; };
     if (a === 'beacon') c.toggleBeacon();
@@ -313,6 +327,7 @@ export class UI {
     }
     else if (a === 'reports') { this.showReports = !this.showReports; this.mapSel = null; }
     // ---- online
+    else if ((a === 'register' || a === 'restore' || a === 'offline') && !this.ageOk()) { return; }
     else if (a === 'register') {
       const name = val('loginName');
       this.run(async () => {
@@ -402,7 +417,7 @@ export class UI {
     if (this.view === 'map') btn(this.bMap, '🏘️', 'Stadt', '');
     else btn(this.bMap, '🗺️', 'Karte', nm ? nm + ' unterw.' : '');
     const al = this.o.alliances && this.o.me && this.o.me.alliance_id ? (this.o.alliances.list || []).find((x) => x.id === this.o.me.alliance_id) : null;
-    btn(this.bAlly, '🤝', 'Allianz', !this.o.active ? 'offline' : al ? '[' + al.tag + ']' : '');
+    btn(this.bAlly, '🤝', 'Allianz', !this.o.active ? 'offline' : this.o.helpOpen ? `<i style="color:#8ef0a0">🤝 ${this.o.helpOpen}</i>` : this.o.war ? '<i style="color:#ff9a5a">⚔️ Krieg</i>' : al ? '[' + al.tag + ']' : '');
     btn(this.bMenu, '☰', 'Menü', '');
     const tq = c.queued ? c.queued() : 0;
     btn(this.bTroops, '⚔️', 'Truppen', this.o.active && this.o.incoming ? '<i style="color:#ff6060">Angriff!</i>' : tq ? `🎓 ${tq}` : '');
@@ -457,7 +472,16 @@ export class UI {
     const ae = document.activeElement;
     if (ae && ae.tagName === 'INPUT' && this.panel.contains(ae)) return;
     let html = '';
-    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.mapSel.type === 'bot' ? this.botHtml() : this.mapSel.type === 'boss' ? this.bossHtml() : this.terrHtml()) : this.mapHtml();
+    try { html = this.panelBody(); } catch (e) { console.error(e); html = this.head('Hinweis') + '<div class="sm">Lade …</div>'; }
+    if (html === this.panelKey || this.holding) return;
+    this.panelKey = html;
+    this.showPanel(html);
+  }
+
+  panelBody() {
+    let html = '';
+    if (this.view === 'map' && this.mapSel && (this.mapSel.type === 'player' || this.mapSel.type === 'field') && !(this.o.world && this.o.me)) return this.head('Seekarte') + '<div class="sm">Lade Weltkarte …</div>';
+    if (this.view === 'map') html = this.showReports ? this.reportsHtml() : this.mapSel ? (this.mapSel.type === 'player' ? this.playerHtml() : this.mapSel.type === 'bot' ? this.botHtml() : this.mapSel.type === 'boss' ? this.bossHtml() : this.mapSel.type === 'field' ? this.fieldHtml() : this.terrHtml()) : this.mapHtml();
     else if (this.mode === 'ally') html = this.allyHtml();
     else if (this.mode === 'build') html = this.buildingsHtml();
     else if (this.mode === 'troops') html = this.troopsHtml();
@@ -470,9 +494,12 @@ export class UI {
     else if (this.mode === 'account') html = this.accountHtml();
     else if (this.menu) html = this.menuHtml();
     else if (this.selected >= 0) html = this.plotHtml();
+    else if (this.selected <= -4000) html = this.obstHtml();
     else if (this.selected <= -1000) html = this.nodeHtml();
-    if (html === this.panelKey || this.holding) return;
-    this.panelKey = html;
+    return html;
+  }
+
+  showPanel(html) {
     // Eingaben (Codes, Allianz, Chat …) beim Neuzeichnen behalten
     const keep = {};
     this.panel.querySelectorAll('input[id], textarea[id]').forEach((e) => { if (e.value) keep[e.id] = e.value; });
@@ -504,15 +531,19 @@ export class UI {
     for (const m of s.botMarches || []) out.push({ ic: m.phase === 'back' ? '↩️' : '🏴‍☠️', t: `${m.phase === 'back' ? 'Heimweg' : 'Entern'} ${m.bot.name}`, left: m.left, pct: 100 * (1 - m.left / m.total), a: 'data-a="gomap"' });
     if (s.trader && s.trader.left > 0) out.push({ ic: '⛵', t: 'Händler am Steg', left: s.trader.left, pct: null, a: 'data-a="trader"' });
     if (s.expLeft > 0) out.push({ ic: '🧭', t: 'Wattwanderung', left: s.expLeft, pct: pct(s.expLeft, EXP_TIME), a: '' });
+    if (s.clearing) { const ob = (s.obst || []).find((x) => x.id === s.clearing.id); out.push({ ic: '🧹', t: `Räumen: ${ob ? OBST[ob.kind].name : 'Hindernis'}`, left: s.clearing.left, pct: pct(s.clearing.left, s.clearing.total), a: '' }); }
     if (o.active) {
       const now = o.serverNow(), W = o.world || { players: [], territories: [] };
       for (const m of o.marches || []) {
         const back = m.status === 'back';
+        if (m.status === 'gather') { out.push({ ic: '⛏', t: 'Sammelt am Feld', left: Math.max(0, (Date.parse(m.gather_end) - now) / 1000), pct: null, a: 'data-a="gomap"' }); continue; }
         const left = Math.max(0, ((back ? Date.parse(m.back_at) : Date.parse(m.arrive)) - now) / 1000);
+        if (m.field_id) { out.push({ ic: back ? '↩️' : '⛏', t: back ? 'Heimweg mit Ladung' : 'Zum Rohstofffeld', left, pct: null, a: 'data-a="gomap"' }); continue; }
         const nm = m.target_player ? ((W.players.find((p) => p.id === m.target_player) || {}).name || 'Stadt') : ((W.territories.find((t) => t.id === m.target_terr) || {}).name || 'Gebiet');
         out.push({ ic: m.kind === 'scout' ? '🔭' : back ? '↩️' : m.kind === 'player' ? '⚔️' : '⛵', t: `${m.kind === 'scout' ? 'Späher' : back ? 'Heimweg' : m.rally_id ? 'Sammelangr.' : 'Angriff'} ${nm}`, left, pct: null, a: 'data-a="gomap"' });
       }
       if (o.incoming) out.push({ ic: '⚠️', t: 'Feind greift an!', left: null, red: true, a: 'data-a="gomap"' });
+      if (o.helpOpen > 0) out.unshift({ ic: '🤝', t: `${o.helpOpen}× Hilfe gesucht – tippen`, left: null, pct: null, a: 'data-a="helpAll"' });
     } else {
       for (const m of s.marches || []) {
         const back = m.phase === 'back', nm = (s.terr[m.target] || {}).name || 'Gebiet';
@@ -703,8 +734,8 @@ export class UI {
     let rows = [];
     if (this.sea.isOnline) {
       const now = o.serverNow();
-      const tname = (mm) => mm.target_player ? ((o.world.players.find((p) => p.id === mm.target_player) || {}).name || 'Stadt') : ((o.world.territories.find((t) => t.id === mm.target_terr) || {}).name || 'Gebiet');
-      rows = o.marches.map((mm) => `${mm.kind === 'scout' ? '🔭' : mm.status === 'back' ? '↩️' : '⛵'} ${tname(mm)} · ${fmtTime(Math.max(0, ((mm.status === 'out' ? Date.parse(mm.arrive) : Date.parse(mm.back_at)) - now) / 1000))}`);
+      const tname = (mm) => mm.field_id ? 'Rohstofffeld' : mm.target_player ? ((o.world.players.find((p) => p.id === mm.target_player) || {}).name || 'Stadt') : ((o.world.territories.find((t) => t.id === mm.target_terr) || {}).name || 'Gebiet');
+      rows = o.marches.map((mm) => `${mm.kind === 'scout' ? '🔭' : mm.status === 'gather' ? '⛏' : mm.status === 'back' ? '↩️' : '⛵'} ${tname(mm)} · ${fmtTime(Math.max(0, ((mm.status === 'out' ? Date.parse(mm.arrive) : mm.status === 'gather' ? Date.parse(mm.gather_end) : Date.parse(mm.back_at)) - now) / 1000))}`);
     } else if (o.active) return head + '<div class="sm">Lade Weltkarte …</div>' + (o.error ? `<div class="warn">${o.error}</div>` : '');
     else rows = s.marches.map((mm) => `${mm.kind === 'scout' ? '🔭' : mm.phase === 'back' ? '↩️' : '⛵'} ${s.terr[mm.target].name} · ${fmtTime(mm.left)}`);
     for (const mm of s.botMarches || []) rows.push(`${mm.phase === 'back' ? '↩️' : '🏴‍☠️'} ${mm.bot.name} · ${fmtTime(mm.left)}`);
@@ -796,7 +827,7 @@ export class UI {
   projectsHtml() {
     const o = this.o, P = o.projects || [];
     const NAMES = { deich: ['🌊 Allianz-Deich', '+0,5 m Dammschutz je Stufe für alle'], speicher: ['📦 Gemeinschaftsspeicher', '+10 % Lagerplatz je Stufe'], werkstatt: ['🛠️ Werkstatt', '+4 % Produktion je Stufe'] };
-    if (this.donKind) {
+    if (this.donKind && NAMES[this.donKind]) {
       const n = (k) => `<input class="n" id="dn${k}" type="number" min="0" inputmode="numeric" placeholder="${RES_IC[k]} ${RES[k]}" style="flex:1 1 23%">`;
       return `<div class="sub2">Spenden für ${NAMES[this.donKind][0]}</div><div class="form" style="flex-wrap:wrap;gap:4px">${[0, 1, 2, 3].map(n).join('')}</div>
         <div class="btns"><button class="btn" data-a="donSend" ${this.busy ? 'disabled' : ''}><b>Spenden</b></button><button class="btn ghost" data-a="donBack">Zurück</button></div>`;
@@ -846,12 +877,12 @@ export class UI {
     if (this.o.active && this.o.reports) {
       const rows = this.o.reports.length ? this.o.reports.map((r) => {
         const d = new Date(r.at);
-        return `<div class="row rep ${r.win === true ? 'win' : r.win === false ? 'loss' : ''}"><div class="ri"><div class="sm">${d.toLocaleDateString('de-DE')} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>${r.text}</div></div>`;
+        return `<div class="row rep ${r.win === true ? 'win' : r.win === false ? 'loss' : ''}"><div class="ri"><div class="sm">${d.toLocaleDateString('de-DE')} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>${r.text}</div>${r.rp ? `<button class="btn sm2 ghost" data-a="replay" data-id="${r.id}">▶</button>` : ''}</div>`;
       }).join('') : '<div class="sm">Noch keine Kämpfe.</div>';
       return this.head('Kampfberichte') + rows;
     }
     const s = this.c.s;
-    const rows = s.reports.length ? s.reports.map((r) => `<div class="row rep ${r.win ? 'win' : 'loss'}"><div class="ri"><div class="sm">Tag ${r.day} · ${clock(r.time)}</div>${r.text}</div></div>`).join('') : '<div class="sm">Noch keine Kämpfe.</div>';
+    const rows = s.reports.length ? s.reports.map((r, k) => `<div class="row rep ${r.win ? 'win' : 'loss'}"><div class="ri"><div class="sm">Tag ${r.day} · ${clock(r.time)}</div>${r.text}</div>${r.rp ? `<button class="btn sm2 ghost" data-a="replay" data-k="${k}">▶</button>` : ''}</div>`).join('') : '<div class="sm">Noch keine Kämpfe.</div>';
     return this.head('Kampfberichte') + rows;
   }
 
@@ -1267,3 +1298,5 @@ export class UI {
   }
 
 }
+
+installUI2(UI);

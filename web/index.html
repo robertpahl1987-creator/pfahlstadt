@@ -202,6 +202,29 @@
   #raid small { font-size: 9px; color: #ffb0a0; }
   #raid.alarm { border-color: #ff4040; animation: raidpulse .8s infinite alternate; }
   @keyframes raidpulse { from { box-shadow: 0 0 0 rgba(255,60,60,.0); } to { box-shadow: 0 0 16px rgba(255,60,60,.9); } }
+  .formgrid { background: linear-gradient(180deg, #5d4a35, #3e3122); border-radius: 12px; padding: 6px; margin: 6px 0; }
+  .frow { display: flex; align-items: center; gap: 8px; min-height: 38px; border-bottom: 1px dashed rgba(255,255,255,.15); padding: 2px 6px; }
+  .frow .fl { width: 78px; font-size: 12px; opacity: .85; }
+  .frow .fu { font-size: 22px; display: inline-flex; flex-direction: column; align-items: center; line-height: 1; }
+  .frow .fu small { font-size: 10px; opacity: .8; margin-top: 2px; }
+  .frow.gate { justify-content: center; border: 0; font-size: 13px; opacity: .8; min-height: 24px; }
+  .arenahd { display: flex; gap: 12px; align-items: center; background: linear-gradient(90deg, rgba(255,200,90,.18), transparent); border-radius: 12px; padding: 8px 10px; }
+  .arenahd .big { font-size: 34px; }
+  .warhd { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; text-align: center; background: var(--card); border-radius: 12px; padding: 8px; }
+  .warhd .big { font-size: 24px; font-weight: 800; }
+  .warhd .vs { font-size: 18px; font-weight: 700; }
+  .stars { font-size: 13px; letter-spacing: 1px; }
+  #replay { position: fixed; inset: 0; z-index: 20; background: rgba(0,10,20,.7); display: flex; align-items: center; justify-content: center; }
+  #replay .rpin { width: min(96vw, 640px); background: var(--panel); border-radius: 16px; padding: 12px 14px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  #replay canvas { width: 100%; height: 240px; border-radius: 12px; display: block; }
+  #replay .rpres { min-height: 20px; margin: 8px 0 2px; font-size: 13px; }
+  .agebox { background: rgba(255,255,255,.06); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; text-align: left; }
+  .agehd { font-size: 15px; margin-bottom: 6px; }
+  .age { display: flex; gap: 10px; align-items: center; font-size: 14px; padding: 6px 0; cursor: pointer; }
+  .age input { width: 24px; height: 24px; flex: 0 0 24px; accent-color: #3fb6a8; }
+  .fine { font-size: 10.5px; line-height: 1.35; opacity: .7; margin-top: 6px; }
+  .agebox.shake { animation: shk .4s; border: 1px solid #ff7a7a; }
+  @keyframes shk { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 </style>
 </head>
 <body>
@@ -230,6 +253,11 @@
 <div id="login">
   <div class="logo">Pfahlstadt</div><div class="sub">Ebbe &amp; Flut – Mehrspieler</div>
   <div class="box">
+    <div class="agebox">
+      <div class="agehd">ℹ️ Spielen erst ab <b>10 Jahren</b></div>
+      <label class="age"><input type="checkbox" id="age10"> <span>Ich bestätige, dass ich <b>10 Jahre oder älter</b> bin.</span></label>
+      <div class="fine">Warum ab 10? Pfahlstadt ist ein Online-Spiel: Du triffst dort auch fremde Spieler, und im Allianz-Chat kann jeder frei schreiben – das können wir nicht vollständig überwachen. Spieler greifen sich gegenseitig an und plündern Vorräte; Niederlagen und Verluste können frustrieren. Dein Spielername und dein Profilbild sind für alle sichtbar. Gib deshalb nie deinen echten Namen, deine Adresse, Telefonnummer oder Fotos von dir preis und triff dich nicht mit Leuten aus dem Spiel. Unter 16 Jahren spiele bitte nur mit Einverständnis deiner Eltern. Wenn dich jemand belästigt, sag es deinen Eltern und dem Spielleiter.</div>
+    </div>
     <div id="loginNameBox" style="display:flex;flex-direction:column;gap:10px">
       <div>Wähle deinen Spielernamen. Damit sehen dich deine Freunde auf der Seekarte.</div>
       <input id="loginName" maxlength="16" placeholder="Spielername (3–16 Zeichen)" autocomplete="off">

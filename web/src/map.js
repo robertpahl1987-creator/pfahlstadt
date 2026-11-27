@@ -56,7 +56,7 @@ export class SeaMap {
   items0() {
     if (this.isOnline) {
       const w = this.o.world;
-      return [...w.territories.map((t) => ({ ...t, type: 'terr' })), ...w.players.filter((p) => p.id !== this.o.me.id).map((p) => ({ ...p, type: 'player' }))];
+      return [...w.territories.map((t) => ({ ...t, type: 'terr' })), ...w.players.filter((p) => p.id !== this.o.me.id).map((p) => ({ ...p, type: 'player' })), ...(w.fields || []).map((f) => ({ ...f, type: 'field' }))];
     }
     return this.c.s.terr.map((t) => ({ ...t, type: 'terr' }));
   }
@@ -152,6 +152,21 @@ export class SeaMap {
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx, by, 6, 0, Math.PI * 2); ctx.fill();
   }
 
+  /// Rohstofffeld (online): Holz, Muscheln, Wasser, Altmetall – Stufe 1–5
+  field(f, x, y, selected, myAlly) {
+    const ctx = this.ctx, u = this.u, r = u * (0.13 + 0.02 * f.level);
+    const col = ['#b98a52', '#e9d6b8', '#6fc3ef', '#9aa3ad'][f.kind - 1], ic = ['🪵', '🦪', '💧', '⚙️'][f.kind - 1];
+    if (selected) { ctx.fillStyle = 'rgba(120,220,255,0.25)'; ctx.beginPath(); ctx.arc(x, y, r * 2, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(0,20,30,0.35)'; ctx.beginPath(); ctx.ellipse(x, y + r * 0.5, r * 1.3, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    const occ = f.occ, mine = f.mine, ally = !mine && occ && myAlly && f.occ_ally === myAlly;
+    ctx.strokeStyle = mine ? '#56e39a' : ally ? '#6fb6ff' : occ ? '#ff9a5a' : 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2.5; ctx.stroke();
+    const p = f.amount / Math.max(1, f.total);
+    ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(r * 1.2)}px system-ui`; ctx.fillText(ic, x, y);
+    if (u > 50 || selected) this.label(x, y + r + 4, `Stufe ${f.level}`, mine ? '#8ef0b0' : occ ? '#ffc29a' : '#fff', occ ? '⛏ ' + occ : null);
+  }
+
   city(x, y, name, color, mine, sub, selected, shield) {
     const ctx = this.ctx, u = this.u;
     if (selected) { ctx.fillStyle = 'rgba(120,220,255,0.25)'; ctx.beginPath(); ctx.arc(x, y, u * 0.45, 0, Math.PI * 2); ctx.fill(); }
@@ -188,12 +203,18 @@ export class SeaMap {
     const [mx, my] = this.pos(me.x, me.y);
     for (const m of o.marches) {
       let tx, ty;
-      if (m.target_player) { const p = wld.players.find((q) => q.id === m.target_player); if (!p) continue; [tx, ty] = this.pos(p.x, p.y); }
+      if (m.field_id) { const f = (wld.fields || []).find((q) => q.id === m.field_id); if (!f) continue; [tx, ty] = this.pos(f.x, f.y); if (m.status === 'gather') { this.march(mx, my, tx, ty, 1, 'rgba(140,240,160,0.7)'); continue; } }
+      else if (m.target_player) { const p = wld.players.find((q) => q.id === m.target_player); if (!p) continue; [tx, ty] = this.pos(p.x, p.y); }
       else { const t = wld.territories.find((q) => q.id === m.target_terr); if (!t) continue; [tx, ty] = this.pos(t.x, t.y); }
       let frac;
       if (m.status === 'out') { const a = Date.parse(m.depart), b = Date.parse(m.arrive); frac = Math.min(1, Math.max(0, (now - a) / Math.max(1, b - a))); }
       else { const b = Date.parse(m.back_at), a = b - Math.max(1, Date.parse(m.arrive) - Date.parse(m.depart)); frac = 1 - Math.min(1, Math.max(0, (now - a) / Math.max(1, b - a))); }
       this.march(mx, my, tx, ty, frac, m.status === 'out' ? (m.kind === 'player' ? 'rgba(255,90,90,0.85)' : 'rgba(255,170,90,0.8)') : 'rgba(200,220,255,0.7)');
+    }
+    for (const f of wld.fields || []) {
+      const [x, y] = this.pos(f.x, f.y);
+      if (x < -60 || y < -60 || x > this.w + 60 || y > this.h + 60) continue;
+      this.field(f, x, y, sel && sel.type === 'field' && sel.id === f.id, myAlly);
     }
     for (const t of wld.territories) {
       const [x, y] = this.pos(t.x, t.y);

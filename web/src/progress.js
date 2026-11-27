@@ -116,17 +116,46 @@ export function upCaptain(c, id) {
   c.msg(`🎖️ ${CAPTAINS.find((x) => x.id === id).name} ist jetzt Stufe ${k.lvl}.`);
   return null;
 }
-/// Kampf-Faktor eines Kapitäns (bei Ebbe/Flut/immer)
+// ---------- Ausrüstung der Kapitäne (Schmiede) ----------
+export const GEAR = [
+  { id: 'hut', ic: '🎩', name: 'Kapitänshut', text: '+1,5 % Kampfkraft je Stufe' },
+  { id: 'saebel', ic: '🗡️', name: 'Entersäbel', text: '+1,5 % Kampfkraft je Stufe' },
+  { id: 'mantel', ic: '🧥', name: 'Ölzeugmantel', text: '+2 % Beute je Stufe' },
+  { id: 'kompass', ic: '🧭', name: 'Messingkompass', text: '−1 % Fahrzeit je Stufe' },
+];
+export const GEAR_MAX = 10;
+export const gearLv = (c, cap, slot) => (((c.s.gear || {})[cap] || {})[slot] || 0);
+export const gearCost = (k) => ({ ore: 2 + 2 * k, metal: 50 * k });
+export function gearBlocker(c, cap, slot) {
+  if (!capOf(c, cap)) return 'Kapitän erst anheuern';
+  const k = gearLv(c, cap, slot) + 1, g = gearCost(k);
+  if (k > GEAR_MAX) return 'Höchste Stufe';
+  if (k > capOf(c, cap).lvl + 2) return `Braucht Kapitän Stufe ${k - 2}`;
+  if ((c.s.ore || 0) < g.ore) return `Braucht ${g.ore} 🔩`;
+  if (c.s.res[3] < g.metal) return 'Zu wenig Altmetall';
+  return null;
+}
+export function forgeGear(c, cap, slot) {
+  const e = gearBlocker(c, cap, slot); if (e) return e;
+  const k = gearLv(c, cap, slot) + 1, g = gearCost(k), s = c.s;
+  s.ore -= g.ore; s.res[3] -= g.metal;
+  s.gear = s.gear || {}; s.gear[cap] = s.gear[cap] || {}; s.gear[cap][slot] = k;
+  c.msg(`⚒️ ${GEAR.find((x) => x.id === slot).name} für ${CAPTAINS.find((x) => x.id === cap).name.split(' ')[0]} ist jetzt Stufe ${k}.`);
+  return null;
+}
+const gAtk = (c, id) => 1 + 0.015 * (gearLv(c, id, 'hut') + gearLv(c, id, 'saebel'));
+
+/// Kampf-Faktor eines Kapitäns (bei Ebbe/Flut/immer) inkl. Ausrüstung
 export function capAtk(c, id, tide) {
   const k = capOf(c, id); if (!k) return 1;
-  const m = capMul(k.lvl);
-  if (id === 'hanne') return tide === -1 ? 1 + 0.2 * m : 1;
-  if (id === 'okko') return tide === 1 ? 1 + 0.2 * m : 1;
-  if (id === 'gesa') return 1 + 0.12 * m;
-  return 1;
+  const m = capMul(k.lvl), g = gAtk(c, id);
+  if (id === 'hanne') return (tide === -1 ? 1 + 0.2 * m : 1) * g;
+  if (id === 'okko') return (tide === 1 ? 1 + 0.2 * m : 1) * g;
+  if (id === 'gesa') return (1 + 0.12 * m) * g;
+  return g;
 }
-export const capLoot = (c, id) => (id === 'fiete' && capOf(c, id) ? 1 + 0.3 * capMul(capOf(c, id).lvl) : 1);
-export const capSpeed = (c, id) => (id === 'wiebke' && capOf(c, id) ? Math.max(0.5, 1 - 0.25 * capMul(capOf(c, id).lvl) * 0.8) : 1);
+export const capLoot = (c, id) => (capOf(c, id) ? (id === 'fiete' ? 1 + 0.3 * capMul(capOf(c, id).lvl) : 1) * (1 + 0.02 * gearLv(c, id, 'mantel')) : 1);
+export const capSpeed = (c, id) => (capOf(c, id) ? (id === 'wiebke' ? Math.max(0.5, 1 - 0.25 * capMul(capOf(c, id).lvl) * 0.8) : 1) * (1 - 0.01 * gearLv(c, id, 'kompass')) : 1);
 export function capSend(c, id, travel) { const k = capOf(c, id); if (k) { k.busy = Date.now() + travel * 2000 + 5000; k.xp = (k.xp || 0) + 1; } }
 
 // ---------- Werft & Flotte ----------
@@ -163,15 +192,15 @@ export function mods(c) {
   const ally = o && o.active && o.ally ? o.ally : {};
   return {
     prod: (1 + [0, 0.02, 0.02, 0.02, 0.05, 0.05, 0.05, 0.08, 0.08, 0.08, 0.12][v]) * (1 + 0.05 * techLv(c, 'prod')) * (1 + 0.02 * L) * (1 + (ally.landmark || 0) + (ally.workshop || 0)),
-    build: 1 / (1 + [0, 0, 0.05, 0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15][v]) * Math.max(0.5, 1 - 0.06 * techLv(c, 'build')),
+    build: 1 / (1 + [0, 0, 0.05, 0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15][v]) * Math.max(0.5, 1 - 0.06 * techLv(c, 'build')) * (1 - (ally.build || 0)),
     train: 1 / (1 + (v >= 9 ? 0.2 : v >= 5 ? 0.1 : 0)) * Math.max(0.5, 1 - 0.08 * techLv(c, 'drill')),
     builds: 2 + (v >= 3 ? 1 : 0) + (v >= 7 ? 1 : 0),
     queue: 3 + (v >= 5 ? 1 : 0),
-    gather: 1 + (v >= 4 ? 0.1 : 0) + 0.1 * techLv(c, 'gath'),
-    atk: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, 'atk')),
-    def: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, 'def')),
+    gather: 1 + (v >= 4 ? 0.1 : 0) + 0.1 * techLv(c, 'gath') + (ally.gather || 0),
+    atk: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, 'atk')) * (1 + (ally.atk || 0)),
+    def: (1 + (v >= 10 ? 0.1 : v >= 6 ? 0.05 : 0)) * (1 + 0.05 * techLv(c, 'def')) * (1 + (ally.def || 0)),
     save: (v >= 8 ? 0.1 : 0) + 0.05 * techLv(c, 'med'),
-    travel: (v >= 9 ? 0.9 : 1) * Math.max(0.6, 1 - 0.06 * techLv(c, 'navi')),
+    travel: (v >= 9 ? 0.9 : 1) * Math.max(0.6, 1 - 0.06 * techLv(c, 'navi')) * (1 - (ally.march || 0)),
     store: (1 + 0.1 * techLv(c, 'store')) * (1 + (ally.storage || 0)),
     deck: 0.3 * techLv(c, 'pile'),
     dam: ally.dike || 0,
