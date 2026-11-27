@@ -4138,7 +4138,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     // ---------------- Kamera ----------------
     camera(aspect) {
       const t = (this.dist - this.minDist) / (this.maxDist - this.minDist);
-      const pitch = lerp(36, 58, clamp01(t)) * D2R, yaw = 0;
+      const pitch = clamp(lerp(36, 58, clamp01(t)) + (this.tilt || 0), 14, 82) * D2R, yaw = (this.yaw || 0) * D2R;
       const fwd = [Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
       const pos = [this.target[0] - fwd[0] * this.dist, this.target[1] - fwd[1] * this.dist, this.target[2] - fwd[2] * this.dist];
       const fov = (aspect < 1 ? 55 : 42) * D2R;
@@ -4148,14 +4148,19 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       return this.cam;
     }
     pan(dx, dy, viewH) {
-      const k = this.dist / viewH * 1.6;
-      this.target[0] += dx * k;
-      this.target[2] += dy * k;
+      const k = this.dist / viewH * 1.6, y = (this.yaw || 0) * D2R, c = Math.cos(y), sn = Math.sin(y);
+      this.target[0] += (dx * c + dy * sn) * k;
+      this.target[2] += (-dx * sn + dy * c) * k;
       const r = Math.hypot(this.target[0], this.target[2]);
       if (r > 75) {
         this.target[0] *= 75 / r;
         this.target[2] *= 75 / r;
       }
+    }
+    /// Ein Finger nach kurzem Halten: links/rechts dreht, hoch/runter neigt
+    rotate(dx, dy, viewH) {
+      this.yaw = ((this.yaw || 0) - dx / viewH * 200) % 360;
+      this.tilt = clamp((this.tilt || 0) + dy / viewH * 70, -22, 24);
     }
     zoom(f) {
       this.dist = clamp(this.dist * f, this.minDist, this.maxDist);
@@ -7864,15 +7869,43 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       }
     };
     const ptrs = /* @__PURE__ */ new Map();
-    let moved = 0, pinch = 0;
+    let moved = 0, pinch = 0, rot = false, holdT = null;
+    const hint = document.createElement("div");
+    hint.id = "rotHint";
+    hint.textContent = "\u27F2 Drehen & Neigen";
+    document.body.appendChild(hint);
+    const showHint = (on, x, y) => {
+      hint.style.display = on ? "block" : "none";
+      if (on) {
+        hint.style.left = x + "px";
+        hint.style.top = y - 70 + "px";
+      }
+    };
     canvas.addEventListener("pointerdown", (e) => {
       canvas.setPointerCapture(e.pointerId);
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (ptrs.size === 1) moved = 0;
+      clearTimeout(holdT);
+      if (ptrs.size === 1) {
+        moved = 0;
+        rot = false;
+        holdT = setTimeout(() => {
+          if (ptrs.size === 1 && moved < 8) {
+            rot = true;
+            const p = [...ptrs.values()][0];
+            showHint(true, p.x, p.y);
+            try {
+              navigator.vibrate && navigator.vibrate(15);
+            } catch (er) {
+            }
+          }
+        }, 380);
+      }
       if (ptrs.size === 2) {
         const [a, b] = [...ptrs.values()];
         pinch = Math.hypot(a.x - b.x, a.y - b.y);
         moved = 999;
+        rot = false;
+        showHint(false);
       }
     });
     canvas.addEventListener("pointermove", (e) => {
@@ -7883,7 +7916,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       p.y = e.clientY;
       if (ptrs.size === 1) {
         moved += Math.abs(dx) + Math.abs(dy);
-        if (moved > 10) world.pan(dx, dy, canvas.clientHeight);
+        if (rot) {
+          world.rotate(dx, dy, canvas.clientHeight);
+          showHint(true, p.x, p.y);
+        } else if (moved > 10) {
+          clearTimeout(holdT);
+          world.pan(dx, dy, canvas.clientHeight);
+        }
       } else if (ptrs.size === 2) {
         const [a, b] = [...ptrs.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -7894,11 +7933,16 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const up = (e) => {
       const p = ptrs.get(e.pointerId);
       ptrs.delete(e.pointerId);
+      clearTimeout(holdT);
       if (!p) return;
-      if (ptrs.size === 0 && moved <= 10 && e.type === "pointerup") {
+      if (ptrs.size === 0 && moved <= 10 && !rot && e.type === "pointerup") {
         const rect = canvas.getBoundingClientRect();
         const nx = (e.clientX - rect.left) / rect.width * 2 - 1, ny = 1 - (e.clientY - rect.top) / rect.height * 2;
         if (ui.view === "city") ui.select(world.pick(nx, ny));
+      }
+      if (ptrs.size === 0) {
+        rot = false;
+        showHint(false);
       }
       if (ptrs.size === 1) moved = 999;
     };

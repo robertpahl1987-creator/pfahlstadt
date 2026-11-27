@@ -515,7 +515,7 @@ export class World {
 
   camera(aspect) {
     const t = (this.dist - this.minDist) / (this.maxDist - this.minDist);
-    const pitch = lerp(36, 58, clamp01(t)) * D2R, yaw = 0;
+    const pitch = clamp(lerp(36, 58, clamp01(t)) + (this.tilt || 0), 14, 82) * D2R, yaw = (this.yaw || 0) * D2R;
     const fwd = [Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
     const pos = [this.target[0] - fwd[0] * this.dist, this.target[1] - fwd[1] * this.dist, this.target[2] - fwd[2] * this.dist];
     const fov = (aspect < 1 ? 55 : 42) * D2R;
@@ -526,12 +526,18 @@ export class World {
   }
 
   pan(dx, dy, viewH) {
-    const k = (this.dist / viewH) * 1.6;
-    // Kamera schaut entlang +z: rechts = -x
-    this.target[0] += dx * k;
-    this.target[2] += dy * k;
+    const k = (this.dist / viewH) * 1.6, y = (this.yaw || 0) * D2R, c = Math.cos(y), sn = Math.sin(y);
+    // Bei Blickrichtung +z ist rechts = -x; gedreht um yaw
+    this.target[0] += (dx * c + dy * sn) * k;
+    this.target[2] += (-dx * sn + dy * c) * k;
     const r = Math.hypot(this.target[0], this.target[2]);
     if (r > 75) { this.target[0] *= 75 / r; this.target[2] *= 75 / r; }
+  }
+
+  /// Ein Finger nach kurzem Halten: links/rechts dreht, hoch/runter neigt
+  rotate(dx, dy, viewH) {
+    this.yaw = ((this.yaw || 0) - dx / viewH * 200) % 360;
+    this.tilt = clamp((this.tilt || 0) + dy / viewH * 70, -22, 24);
   }
 
   zoom(f) { this.dist = clamp(this.dist * f, this.minDist, this.maxDist); }

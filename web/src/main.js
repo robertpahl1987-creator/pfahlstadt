@@ -51,14 +51,23 @@ function start() {
     } catch (e) { /* */ }
   };
 
-  // ---- Steuerung: 1 Finger verschieben, 2 Finger zoomen, Tippen wählen ----
+  // ---- Steuerung: 1 Finger ziehen = verschieben, 1 Finger kurz halten + ziehen = drehen und neigen,
+  //      2 Finger = zoomen, Tippen = wählen ----
   const ptrs = new Map();
-  let moved = 0, pinch = 0;
+  let moved = 0, pinch = 0, rot = false, holdT = null;
+  const hint = document.createElement('div'); hint.id = 'rotHint'; hint.textContent = '⟲ Drehen & Neigen'; document.body.appendChild(hint);
+  const showHint = (on, x, y) => { hint.style.display = on ? 'block' : 'none'; if (on) { hint.style.left = x + 'px'; hint.style.top = (y - 70) + 'px'; } };
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) moved = 0;
-    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); moved = 999; }
+    clearTimeout(holdT);
+    if (ptrs.size === 1) {
+      moved = 0; rot = false;
+      holdT = setTimeout(() => {
+        if (ptrs.size === 1 && moved < 8) { rot = true; const p = [...ptrs.values()][0]; showHint(true, p.x, p.y); try { navigator.vibrate && navigator.vibrate(15); } catch (er) { /* */ } }
+      }, 380);
+    }
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); moved = 999; rot = false; showHint(false); }
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = ptrs.get(e.pointerId);
@@ -67,7 +76,8 @@ function start() {
     p.x = e.clientX; p.y = e.clientY;
     if (ptrs.size === 1) {
       moved += Math.abs(dx) + Math.abs(dy);
-      if (moved > 10) world.pan(dx, dy, canvas.clientHeight);
+      if (rot) { world.rotate(dx, dy, canvas.clientHeight); showHint(true, p.x, p.y); }
+      else if (moved > 10) { clearTimeout(holdT); world.pan(dx, dy, canvas.clientHeight); }
     } else if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -78,12 +88,14 @@ function start() {
   const up = (e) => {
     const p = ptrs.get(e.pointerId);
     ptrs.delete(e.pointerId);
+    clearTimeout(holdT);
     if (!p) return;
-    if (ptrs.size === 0 && moved <= 10 && e.type === 'pointerup') {
+    if (ptrs.size === 0 && moved <= 10 && !rot && e.type === 'pointerup') {
       const rect = canvas.getBoundingClientRect();
       const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1, ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
       if (ui.view === 'city') ui.select(world.pick(nx, ny));
     }
+    if (ptrs.size === 0) { rot = false; showHint(false); }
     if (ptrs.size === 1) moved = 999;
   };
   canvas.addEventListener('pointerup', up);

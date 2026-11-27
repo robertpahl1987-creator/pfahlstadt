@@ -1,0 +1,34 @@
+name: Unity-Build prüfen
+
+# Zeigt den Stand der letzten Unity-Builds und bei Fehlern die Fehlermeldungen aus dem Build-Protokoll.
+on:
+  workflow_dispatch:
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Letzte Builds und Fehler anzeigen
+        env:
+          AUTH: ${{ secrets.UNITY_AUTH }}
+          UNITY_ORG: '9072494446539'
+          UNITY_PROJECT: 'e5ced9f3-f832-4e54-b13b-3e0adad4e7d8'
+          API: https://build-automation.services.api.unity.com/v2
+        run: |
+          set -u
+          A=$(printf '%s' "$AUTH" | tr -d '\r\n' | sed -E 's/^[[:space:]]*[Aa]uthorization:[[:space:]]*//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+          case "$A" in Basic\ *) H="$A" ;; *) H="Basic $A" ;; esac
+          base="$API/orgs/$UNITY_ORG/projects/$UNITY_PROJECT"
+          curl -sS -H "Authorization: $H" "$base/buildtargets" -o targets.json
+          target=$(jq -r 'if type=="array" then ([.[] | select((.platform // "") | test("android";"i"))][0].buildtargetid // .[0].buildtargetid // empty) else empty end' targets.json)
+          echo "Build-Ziel: $target"
+          curl -sS -H "Authorization: $H" "$base/buildtargets/$target/builds?per_page=4" -o builds.json
+          jq -r '.[] | "Build \(.build): \(.buildStatus)  Commit \(.lastBuiltRevision // "-" | .[0:7])  \(.created // "")"' builds.json || head -c 1500 builds.json
+          for n in $(jq -r '.[] | select(.buildStatus=="failure" or .buildStatus=="success") | .build' builds.json | head -2); do
+            st=$(jq -r --argjson n "$n" '.[] | select(.build==$n) | .buildStatus' builds.json)
+            echo "================ Build $n ($st) ================"
+            curl -sSL -H "Authorization: $H" "$base/buildtargets/$target/builds/$n/log" -o log.txt || true
+            echo "Protokoll: $(wc -l < log.txt) Zeilen"
+            grep -nE "error CS[0-9]+|warning CS0(103|246|117)|Exception|Error building|BUILD FAILED|Scripts have compiler errors" log.txt | sed -E 's#https?://[^ ]+#<link>#g' | head -80 || true
+            if [ "$st" = "failure" ]; then echo "--- Ende des Protokolls ---"; tail -n 40 log.txt | sed -E 's#https?://[^ ]+#<link>#g'; fi
+          done

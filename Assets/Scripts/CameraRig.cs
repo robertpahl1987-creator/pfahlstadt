@@ -2,8 +2,8 @@ using UnityEngine;
 
 namespace Pfahlstadt
 {
-    /// Kamera: ein Finger verschiebt, zwei Finger zoomen (spreizen), drehen (Finger umeinander drehen)
-    /// und neigen (beide Finger hoch/runter). Tippen wählt einen Bauplatz.
+    /// Kamera: ein Finger ziehen verschiebt, ein Finger kurz halten und dann ziehen dreht (links/rechts)
+    /// und neigt (hoch/runter), zwei Finger zoomen. Tippen wählt einen Bauplatz.
     /// Am PC: linke Maustaste ziehen, Mausrad zoomen, Klick wählt.
     public class CameraRig : MonoBehaviour
     {
@@ -16,8 +16,12 @@ namespace Pfahlstadt
         float yaw;
         Vector2 start, lastMouse;
         bool dragging, startOverUI;
-        float lastPinch, lastAngle, tilt;
-        Vector2 lastMid;
+        float lastPinch, tilt, downTime;
+        bool rotating, multi;
+        Vector2 fingerPos;
+        GUIStyle hintStyle;
+        Texture2D hintTex;
+        const float HoldTime = 0.38f;
 
         void Awake()
         {
@@ -65,50 +69,79 @@ namespace Pfahlstadt
         {
             if (Input.touchCount >= 2)
             {
+                // Zwei Finger: nur zoomen
                 var a = Input.GetTouch(0);
                 var b = Input.GetTouch(1);
                 float d = Vector2.Distance(a.position, b.position);
-                Vector2 dir = b.position - a.position;
-                float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                Vector2 mid = (a.position + b.position) * 0.5f;
-                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began || lastPinch <= 0f)
-                {
-                    lastPinch = d; lastAngle = ang; lastMid = mid;
-                }
+                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began || lastPinch <= 0f) lastPinch = d;
                 else
                 {
-                    // Zoomen
                     Dist *= lastPinch / Mathf.Max(1f, d);
-                    // Drehen um die Hochachse
-                    yaw -= Mathf.DeltaAngle(lastAngle, ang);
-                    // Neigen: beide Finger gemeinsam hoch/runter
-                    float dy = mid.y - lastMid.y;
-                    tilt = Mathf.Clamp(tilt - dy / Mathf.Max(1, Screen.height) * 120f, -25f, 30f);
-                    lastPinch = d; lastAngle = ang; lastMid = mid;
+                    lastPinch = d;
                 }
-                dragging = true;
+                dragging = true; multi = true; rotating = false;
                 return;
             }
             lastPinch = 0f;
-            if (Input.touchCount != 1) return;
+            if (Input.touchCount != 1) { rotating = false; if (Input.touchCount == 0) multi = false; return; }
 
             var t = Input.GetTouch(0);
+            fingerPos = t.position;
             switch (t.phase)
             {
                 case TouchPhase.Began:
                     start = t.position;
-                    dragging = false;
+                    dragging = false; rotating = false;
+                    downTime = Time.unscaledTime;
                     startOverUI = GameUI.IsOverUI(t.position);
                     break;
+                case TouchPhase.Stationary:
                 case TouchPhase.Moved:
-                    if (startOverUI) break;
+                    if (startOverUI || multi) break;
+                    // Finger ruhig gehalten → Dreh-Modus
+                    if (!dragging && !rotating && Time.unscaledTime - downTime >= HoldTime && (t.position - start).magnitude < TapThreshold * 0.7f)
+                    {
+                        rotating = true;
+#if UNITY_ANDROID && !UNITY_EDITOR
+                        Handheld.Vibrate();
+#endif
+                    }
+                    if (t.phase != TouchPhase.Moved) break;
+                    if (rotating)
+                    {
+                        float px = 1f / Mathf.Max(1, Screen.height);
+                        yaw += t.deltaPosition.x * px * 200f;
+                        tilt = Mathf.Clamp(tilt - t.deltaPosition.y * px * 70f, -25f, 30f);
+                        break;
+                    }
                     if (!dragging && (t.position - start).magnitude > TapThreshold) dragging = true;
                     if (dragging) Pan(t.deltaPosition);
                     break;
                 case TouchPhase.Ended:
-                    if (!dragging && !startOverUI) Tap(t.position);
+                case TouchPhase.Canceled:
+                    if (t.phase == TouchPhase.Ended && !dragging && !rotating && !startOverUI && !multi) Tap(t.position);
+                    rotating = false;
+                    if (Input.touchCount <= 1) multi = false;
                     break;
             }
+        }
+
+        // kleiner Hinweis über dem Finger, solange gedreht wird
+        void OnGUI()
+        {
+            if (!rotating) return;
+            if (hintStyle == null)
+            {
+                hintTex = new Texture2D(1, 1) { hideFlags = HideFlags.DontSave };
+                hintTex.SetPixel(0, 0, new Color(0.04f, 0.16f, 0.2f, 0.88f)); hintTex.Apply();
+                hintStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+                hintStyle.normal.textColor = new Color(0.85f, 1f, 0.97f);
+                hintStyle.normal.background = hintTex;
+            }
+            hintStyle.fontSize = Mathf.RoundToInt(Screen.height * 0.018f);
+            float w = Screen.height * 0.2f, h = Screen.height * 0.035f;
+            var r = new Rect(fingerPos.x - w * 0.5f, Screen.height - fingerPos.y - h - Screen.height * 0.07f, w, h);
+            GUI.Label(r, "Drehen & Neigen", hintStyle);
         }
 
         void HandleMouse()
