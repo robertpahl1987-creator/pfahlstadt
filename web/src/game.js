@@ -292,10 +292,19 @@ export class Colony {
     const fb = this.freeboard;
     const flood = offline ? 0.5 : fb < 0 ? Math.max(0.25, Math.min(1, 1 + fb / 2)) : 1;
     const tide = offline ? 0 : this.tideSin;
-    for (const p of s.plots) {
-      if (p.type < 0 || p.level <= 0) continue;
+    // Arbeiter werden zuerst für Essen und Wasser eingeteilt, dann Holz, dann der Rest –
+    // so verhungert die Stadt nicht, nur weil zu viele andere Gebäude Leute brauchen.
+    let avail = Math.max(0, this.healthy - this.gatherers);
+    const prio = (t) => (DEFS[t].prod === MUSCHELN || DEFS[t].prod === WASSER ? 0 : DEFS[t].prod === HOLZ ? 1 : 2);
+    const prodPlots = s.plots.filter((p) => p.type >= 0 && p.level > 0 && DEFS[p.type].prod >= 0).sort((a, b) => prio(a.type) - prio(b.type));
+    const effOf = new Map();
+    for (const p of prodPlots) {
+      const need = DEFS[p.type].workers * p.level;
+      effOf.set(p, need > 0 ? Math.min(1, avail / need) : 1);
+      avail -= Math.min(avail, need);
+    }
+    for (const p of prodPlots) {
       const d = DEFS[p.type];
-      if (d.prod < 0) continue;
       let f = 1;
       if (p.type === T.MUSCHEL) f = 1 - 0.5 * tide;
       if (p.type === T.TAUCHER) f = 1 + 0.5 * tide;
@@ -305,7 +314,7 @@ export class Colony {
       if (se === 1 && p.type === T.MUSCHEL) f *= 1.15;
       if (se === 2 && p.type === T.TREIBHOLZ) f *= 1.25;
       if (se === 3 && p.type === T.MUSCHEL) f *= 0.8;
-      r[d.prod] += rateAt(p.type, p.level) * this.efficiency * flood * f;
+      r[d.prod] += rateAt(p.type, p.level) * effOf.get(p) * flood * f;
     }
     const kitchen = 1 + Math.min(0.6, 0.06 * this.levels(T.KUECHE));
     const terrBonus = [1, 1, 1, 1];
@@ -316,8 +325,10 @@ export class Colony {
     for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh * pm;
     r[MUSCHELN] -= this.upkeep / 60;
     r[MUSCHELN] += 0.25; r[WASSER] += 0.25; // Notvorrat des Gezeitenturms: niemand verhungert ganz
-    r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
-    r[WASSER] -= s.survivors * 0.03;
+    // Notration: Ist ein Vorrat leer, essen bzw. trinken alle nur noch 60 %
+    this.ration = [s.res[MUSCHELN] <= 1, s.res[WASSER] <= 1];
+    r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke)) * (this.ration[0] ? 0.6 : 1);
+    r[WASSER] -= s.survivors * 0.03 * (this.ration[1] ? 0.6 : 1);
     if (s.beaconOn) r[HOLZ] -= beaconWood(this.towerLevel);
     for (let i = 0; i < 4; i++) this.rates[i] = r[i] * 60;
     return r;
@@ -364,12 +375,13 @@ export class Colony {
     if (s.sick > 0 && !wet) {
       let healers = 0;
       for (const p of s.plots) if (p.type === T.HEILER) healers += p.level;
-      s.healProg += dt * (0.004 + 0.02 * healers) * (this.beaconBurning ? 1.5 : 1);
-      if (s.healProg >= 1) { s.healProg = 0; s.sick--; this.msg('Ein Kranker ist wieder gesund.'); }
+      // Jeder Kranke erholt sich auch von selbst (im Schnitt nach gut 10 Minuten), Heiler beschleunigen das
+      s.healProg += dt * (Math.max(0.004, 0.0015 * Math.min(s.sick, 60)) + 0.02 * healers) * (this.beaconBurning ? 1.5 : 1);
+      while (s.healProg >= 1 && s.sick > 0) { s.healProg -= 1; s.sick--; this.msg('Ein Kranker ist wieder gesund.'); }
     }
 
     // neue Siedler kommen nur, wenn genug Muscheln und Wasser für sie da sind
-    if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning && this.rates[MUSCHELN] > 2 && this.rates[WASSER] > 2) {
+    if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning && this.rates[MUSCHELN] > 4 && this.rates[WASSER] > 3.5) {
       s.arriveProg += dt / 25;
       if (s.arriveProg >= 1) { s.arriveProg = 0; s.survivors++; this.msg('Ein Boot legt an: Ein neuer Siedler!'); }
     }

@@ -2167,10 +2167,17 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const fb = this.freeboard;
       const flood = offline ? 0.5 : fb < 0 ? Math.max(0.25, Math.min(1, 1 + fb / 2)) : 1;
       const tide = offline ? 0 : this.tideSin;
-      for (const p of s.plots) {
-        if (p.type < 0 || p.level <= 0) continue;
+      let avail = Math.max(0, this.healthy - this.gatherers);
+      const prio = (t) => DEFS[t].prod === MUSCHELN || DEFS[t].prod === WASSER ? 0 : DEFS[t].prod === HOLZ ? 1 : 2;
+      const prodPlots = s.plots.filter((p) => p.type >= 0 && p.level > 0 && DEFS[p.type].prod >= 0).sort((a, b) => prio(a.type) - prio(b.type));
+      const effOf = /* @__PURE__ */ new Map();
+      for (const p of prodPlots) {
+        const need = DEFS[p.type].workers * p.level;
+        effOf.set(p, need > 0 ? Math.min(1, avail / need) : 1);
+        avail -= Math.min(avail, need);
+      }
+      for (const p of prodPlots) {
         const d = DEFS[p.type];
-        if (d.prod < 0) continue;
         let f = 1;
         if (p.type === T.MUSCHEL) f = 1 - 0.5 * tide;
         if (p.type === T.TAUCHER) f = 1 + 0.5 * tide;
@@ -2180,7 +2187,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         if (se === 1 && p.type === T.MUSCHEL) f *= 1.15;
         if (se === 2 && p.type === T.TREIBHOLZ) f *= 1.25;
         if (se === 3 && p.type === T.MUSCHEL) f *= 0.8;
-        r[d.prod] += rateAt(p.type, p.level) * this.efficiency * flood * f;
+        r[d.prod] += rateAt(p.type, p.level) * effOf.get(p) * flood * f;
       }
       const kitchen = 1 + Math.min(0.6, 0.06 * this.levels(T.KUECHE));
       const terrBonus = [1, 1, 1, 1];
@@ -2192,8 +2199,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       r[MUSCHELN] -= this.upkeep / 60;
       r[MUSCHELN] += 0.25;
       r[WASSER] += 0.25;
-      r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
-      r[WASSER] -= s.survivors * 0.03;
+      this.ration = [s.res[MUSCHELN] <= 1, s.res[WASSER] <= 1];
+      r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke)) * (this.ration[0] ? 0.6 : 1);
+      r[WASSER] -= s.survivors * 0.03 * (this.ration[1] ? 0.6 : 1);
       if (s.beaconOn) r[HOLZ] -= beaconWood(this.towerLevel);
       for (let i = 0; i < 4; i++) this.rates[i] = r[i] * 60;
       return r;
@@ -2244,14 +2252,14 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       if (s.sick > 0 && !wet) {
         let healers = 0;
         for (const p of s.plots) if (p.type === T.HEILER) healers += p.level;
-        s.healProg += dt * (4e-3 + 0.02 * healers) * (this.beaconBurning ? 1.5 : 1);
-        if (s.healProg >= 1) {
-          s.healProg = 0;
+        s.healProg += dt * (Math.max(4e-3, 15e-4 * Math.min(s.sick, 60)) + 0.02 * healers) * (this.beaconBurning ? 1.5 : 1);
+        while (s.healProg >= 1 && s.sick > 0) {
+          s.healProg -= 1;
           s.sick--;
           this.msg("Ein Kranker ist wieder gesund.");
         }
       }
-      if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning && this.rates[MUSCHELN] > 2 && this.rates[WASSER] > 2) {
+      if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning && this.rates[MUSCHELN] > 4 && this.rates[WASSER] > 3.5) {
         s.arriveProg += dt / 25;
         if (s.arriveProg >= 1) {
           s.arriveProg = 0;
@@ -5783,6 +5791,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         c.msg(e || "\u26F5 Handel abgeschlossen.");
       } else if (a === "tutSkip") {
         c.s.tut = TUT.length;
+      } else if (a === "warnHide") {
+        this.warnHide = c.time + 90;
       } else if (a === "goto") {
         const i = +ds.i;
         this.menu = false;
@@ -6129,13 +6139,38 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const gready = ds.can || qready || this.passReady();
       btn(this.bGift, "\u{1F381}", "Belohn.", gready ? '<i class="dot"></i>' : "");
       this.bGift.classList.toggle("on", gready);
-      const ts = tutStep(c);
-      if (ts < TUT.length && this.view === "city" && this.panel.style.display === "none") {
+      const ts = tutStep(c), wn = this.warnHtml(), calm = this.view === "city" && this.panel.style.display === "none";
+      this.tutEl.classList.toggle("warnmode", !!wn);
+      if (wn && calm) {
+        setHTML(this.tutEl, wn);
+        this.tutEl.style.display = "";
+      } else if (ts < TUT.length && calm) {
         setHTML(this.tutEl, `<span class="tn">Tipp ${ts + 1}/${TUT.length}</span> ${TUT[ts].text}<button class="tx" data-a="tutSkip">\u2715</button>`);
         this.tutEl.style.display = "";
       } else this.tutEl.style.display = "none";
       btn(this.bBuild, "\u{1F3D7}\uFE0F", "Geb\xE4ude", c.activeBuilds ? `\u{1F528} ${c.activeBuilds}/2` : "");
       this.renderPanel();
+    }
+    /// Warnung, wenn Muscheln, Wasser oder Holz bald ausgehen (mit Lösungsvorschlag)
+    warnHtml() {
+      const c = this.c, s = c.s;
+      if (this.warnHide && c.time < this.warnHide) return "";
+      const chk = (i, name, ic, t, hint) => {
+        const r = c.rates[i];
+        if (r >= 0 && s.res[i] > 1) return null;
+        if (s.res[i] <= 1) return { text: `${ic} <b>${name} sind alle!</b> ${i === 0 ? "Das Licht ist aus." : "Notration \u2013 Siedler werden krank."} ${hint}`, t };
+        const left = s.res[i] / -r;
+        return left < 8 ? { text: `${ic} ${name} reichen nur noch <b>${fmtTime(left * 60)}</b>. ${hint}`, t } : null;
+      };
+      const w = chk(1, "Muscheln", "\u{1F9AA}", T.MUSCHEL, "Muschelbank bauen/ausbauen oder Sammler zu Muschelb\xE4nken schicken.") || chk(2, "Wasser", "\u{1F4A7}", T.REGEN, "Regenf\xE4nger bauen/ausbauen oder Sammler zu S\xFC\xDFwassert\xFCmpeln.") || (s.beaconOn ? chk(0, "Holz", "\u{1FAB5}", T.TREIBHOLZ, "Treibholz sammeln \u2013 oder das Licht ausschalten, das spart Holz.") : null);
+      if (w) {
+        const tgt = c.levels(w.t) > 0 ? s.plots.findIndex((p) => p.type === w.t && p.buildLeft <= 0) : -1;
+        const btn = tgt >= 0 ? `<button class="btn sm2" data-a="goto" data-i="${tgt}">\u2B06 ${DEFS[w.t].name}</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${w.t}">\u{1F528} ${DEFS[w.t].name}</button>`;
+        return `<span class="tn">\u26A0 Achtung</span> ${w.text}<div class="wb">${btn}</div><button class="tx" data-a="warnHide">\u2715</button>`;
+      }
+      if (s.sick >= 3 && c.levels(T.HEILER) <= 0) return `<span class="tn">\u26A0 Achtung</span> \u{1F912} <b>${s.sick} Kranke</b> arbeiten nicht. Eine Heilerh\xFCtte macht sie viel schneller gesund.<div class="wb"><button class="btn sm2" data-a="quickbuild" data-v="${T.HEILER}">\u{1F528} ${DEFS[T.HEILER].name}</button></div><button class="tx" data-a="warnHide">\u2715</button>`;
+      if (c.freeboard < 0 && !c.damHolds) return `<span class="tn">\u26A0 Achtung</span> \u{1F30A} <b>Nasse F\xFC\xDFe!</b> Das Wasser steht \xFCber dem Deck \u2013 Siedler werden krank. Gezeitenturm ausbauen (h\xF6heres Deck) oder einen Damm bauen.<button class="tx" data-a="warnHide">\u2715</button>`;
+      return "";
     }
     cityLabels(cw, ch) {
       const c = this.c, s = c.s, deck = c.deck;

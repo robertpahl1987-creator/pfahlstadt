@@ -259,6 +259,7 @@ export class UI {
     else if (a === 'trader') { this.openMode('trader'); }
     else if (a === 'trade') { const e = trade(c, +ds.k); c.msg(e || '⛵ Handel abgeschlossen.'); }
     else if (a === 'tutSkip') { c.s.tut = TUT.length; }
+    else if (a === 'warnHide') { this.warnHide = c.time + 90; }
     else if (a === 'goto') { const i = +ds.i; this.menu = false; const pp = plotPos(i); this.w.target[0] = pp[0]; this.w.target[2] = pp[2]; this.w.dist = Math.min(this.w.dist, 45); this.select(i); }
     else if (a === 'upq') c.startUpgrade(+ds.i);
     else if (a === 'close') {
@@ -429,11 +430,36 @@ export class UI {
     const gready = ds.can || qready || this.passReady();
     btn(this.bGift, '🎁', 'Belohn.', gready ? '<i class="dot"></i>' : '');
     this.bGift.classList.toggle('on', gready);
-    const ts = tutStep(c);
-    if (ts < TUT.length && this.view === 'city' && this.panel.style.display === 'none') { setHTML(this.tutEl, `<span class="tn">Tipp ${ts + 1}/${TUT.length}</span> ${TUT[ts].text}<button class="tx" data-a="tutSkip">✕</button>`); this.tutEl.style.display = ''; }
+    const ts = tutStep(c), wn = this.warnHtml(), calm = this.view === 'city' && this.panel.style.display === 'none';
+    this.tutEl.classList.toggle('warnmode', !!wn);
+    if (wn && calm) { setHTML(this.tutEl, wn); this.tutEl.style.display = ''; }
+    else if (ts < TUT.length && calm) { setHTML(this.tutEl, `<span class="tn">Tipp ${ts + 1}/${TUT.length}</span> ${TUT[ts].text}<button class="tx" data-a="tutSkip">✕</button>`); this.tutEl.style.display = ''; }
     else this.tutEl.style.display = 'none';
     btn(this.bBuild, '🏗️', 'Gebäude', c.activeBuilds ? `🔨 ${c.activeBuilds}/2` : '');
     this.renderPanel();
+  }
+
+  /// Warnung, wenn Muscheln, Wasser oder Holz bald ausgehen (mit Lösungsvorschlag)
+  warnHtml() {
+    const c = this.c, s = c.s;
+    if (this.warnHide && c.time < this.warnHide) return '';
+    const chk = (i, name, ic, t, hint) => {
+      const r = c.rates[i]; if (r >= 0 && s.res[i] > 1) return null;
+      if (s.res[i] <= 1) return { text: `${ic} <b>${name} sind alle!</b> ${i === 0 ? 'Das Licht ist aus.' : 'Notration – Siedler werden krank.'} ${hint}`, t };
+      const left = s.res[i] / -r;
+      return left < 8 ? { text: `${ic} ${name} reichen nur noch <b>${fmtTime(left * 60)}</b>. ${hint}`, t } : null;
+    };
+    const w = chk(1, 'Muscheln', '🦪', T.MUSCHEL, 'Muschelbank bauen/ausbauen oder Sammler zu Muschelbänken schicken.')
+      || chk(2, 'Wasser', '💧', T.REGEN, 'Regenfänger bauen/ausbauen oder Sammler zu Süßwassertümpeln.')
+      || (s.beaconOn ? chk(0, 'Holz', '🪵', T.TREIBHOLZ, 'Treibholz sammeln – oder das Licht ausschalten, das spart Holz.') : null);
+    if (w) {
+      const tgt = c.levels(w.t) > 0 ? s.plots.findIndex((p) => p.type === w.t && p.buildLeft <= 0) : -1;
+      const btn = tgt >= 0 ? `<button class="btn sm2" data-a="goto" data-i="${tgt}">⬆ ${DEFS[w.t].name}</button>` : `<button class="btn sm2" data-a="quickbuild" data-v="${w.t}">🔨 ${DEFS[w.t].name}</button>`;
+      return `<span class="tn">⚠ Achtung</span> ${w.text}<div class="wb">${btn}</div><button class="tx" data-a="warnHide">✕</button>`;
+    }
+    if (s.sick >= 3 && c.levels(T.HEILER) <= 0) return `<span class="tn">⚠ Achtung</span> 🤒 <b>${s.sick} Kranke</b> arbeiten nicht. Eine Heilerhütte macht sie viel schneller gesund.<div class="wb"><button class="btn sm2" data-a="quickbuild" data-v="${T.HEILER}">🔨 ${DEFS[T.HEILER].name}</button></div><button class="tx" data-a="warnHide">✕</button>`;
+    if (c.freeboard < 0 && !c.damHolds) return `<span class="tn">⚠ Achtung</span> 🌊 <b>Nasse Füße!</b> Das Wasser steht über dem Deck – Siedler werden krank. Gezeitenturm ausbauen (höheres Deck) oder einen Damm bauen.<button class="tx" data-a="warnHide">✕</button>`;
+    return '';
   }
 
   cityLabels(cw, ch) {
