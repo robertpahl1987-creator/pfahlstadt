@@ -127,6 +127,11 @@ namespace Pfahlstadt.EditorTools
         public void OnPreprocessBuild(BuildReport report)
         {
             PfahlstadtSetup.EnsureMaterials();
+            // App-Name und Symbol (sonst zeigt die App das Unity-Logo)
+            PlayerSettings.productName = "Pfahlstadt";
+            PlayerSettings.companyName = "Robert Baasner";
+            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Icons/pfahlstadt_icon.png");
+            if (icon != null) PlayerSettings.SetIcons(NamedBuildTarget.Unknown, new[] { icon }, IconKind.Any);
         }
     }
 
