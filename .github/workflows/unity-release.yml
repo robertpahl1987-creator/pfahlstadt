@@ -16,7 +16,7 @@ concurrency:
 
 env:
   # Aus der Adresse von cloud.unity.com (organizations/<ORG>/projects/<PROJEKT>)
-  UNITY_ORG: '__ORG__'
+  UNITY_ORG: '9072494446539'
   UNITY_PROJECT: '__PROJECT__'
   APP_NAME: 'Pfahlstadt'
   API: https://build-automation.services.api.unity.com/v2
@@ -32,12 +32,19 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -u
-          if [ -z "$AUTH" ] || [ -z "$UNITY_ORG" ] || [ "$UNITY_ORG" = "__ORG__" ]; then
+          if [ -z "$AUTH" ] || [ -z "$UNITY_ORG" ] || [ "$UNITY_ORG" = "x" ]; then
             echo "Noch nicht eingerichtet (Secret UNITY_AUTH oder Org/Projekt fehlt)."; exit 0
           fi
           # Erlaubt: "Basic xyz", "Authorization: Basic xyz" oder nur "xyz"
           A=$(printf '%s' "$AUTH" | tr -d '\r\n' | sed -E 's/^[[:space:]]*[Aa]uthorization:[[:space:]]*//; s/^[[:space:]]+//; s/[[:space:]]+$//')
           case "$A" in Basic\ *) H="$A" ;; *) H="Basic $A" ;; esac
+          if [ -z "$UNITY_PROJECT" ] || [ "$UNITY_PROJECT" = "__PROJECT__" ]; then
+            # Projekt-ID anhand des Namens suchen
+            curl -sS -H "Authorization: $H" "$API/orgs/$UNITY_ORG/projects" -o projects.json
+            UNITY_PROJECT=$(jq -r --arg n "$APP_NAME" 'if type=="array" then ([.[] | select((.name // "") | ascii_downcase == ($n | ascii_downcase))][0] // .[0]) | (.guid // .projectid // .id // empty) else empty end' projects.json)
+            if [ -z "$UNITY_PROJECT" ]; then echo "Projekt nicht gefunden. Antwort:"; head -c 1500 projects.json; echo; exit 1; fi
+            echo "Projekt: $UNITY_PROJECT"
+          fi
           base="$API/orgs/$UNITY_ORG/projects/$UNITY_PROJECT"
 
           curl -sS -H "Authorization: $H" "$base/buildtargets" -o targets.json
