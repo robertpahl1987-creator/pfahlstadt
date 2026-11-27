@@ -2277,6 +2277,76 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     B.add("cylinder", [0, 1.42, -0.04], [0.55, 0.04, 0.6], [0.9, 0.75, 0.2], { g: 0.4 });
     B.add("sphere", [0, 1.48, 0], [0.36, 0.2, 0.36], [0.9, 0.75, 0.2], { g: 0.4 });
   }
+  var SKINS = [[0.93, 0.76, 0.64], [0.72, 0.53, 0.4], [0.5, 0.35, 0.26]];
+  var HAIRS = [[0.22, 0.15, 0.1], [0.78, 0.62, 0.36], [0.62, 0.6, 0.58]];
+  function personTorso(B, coat, hat, skin, trousers) {
+    const sk = SKINS[skin], dark = [0.16, 0.13, 0.11];
+    B.add("capsule", [0, 0.93, 0], [0.33, 0.14, 0.21], trousers, { g: 0.15 });
+    B.add("capsule", [0, 1.19, 0], [0.38, 0.3, 0.24], coat, { g: 0.25 });
+    B.add("capsule", [0, 1.4, -5e-3], [0.46, 0.13, 0.25], coat, { rot: [0, 0, 90], g: 0.25 });
+    B.add("cube", [0, 1.4, -5e-3], [0.36, 0.13, 0.24], coat, { g: 0.25 });
+    B.add("cylinder", [0, 1, 0], [0.37, 0.025, 0.23], dark, { g: 0.4 });
+    B.add("cube", [0, 1, 0.115], [0.06, 0.045, 0.012], [0.75, 0.65, 0.35], { g: 0.8 });
+    for (let k = 0; k < 3; k++) B.add("sphere", [0, 1.12 + k * 0.1, 0.122], [0.025, 0.025, 0.015], dark, { g: 0.6 });
+    B.add("cube", [0, 1.2, 0.118], [0.012, 0.36, 0.01], mulCol(coat, 0.7));
+    B.add("cylinder", [0, 1.49, 0], [0.17, 0.035, 0.15], mulCol(coat, 0.85));
+    B.add("cylinder", [0, 1.53, 5e-3], [0.095, 0.05, 0.095], sk);
+    B.add("sphere", [0, 1.66, 0.01], [0.19, 0.235, 0.215], sk, { g: 0.15 });
+    B.add("sphere", [0, 1.6, 0.04], [0.15, 0.1, 0.15], sk);
+    B.add("cube", [0, 1.655, 0.115], [0.028, 0.05, 0.035], mulCol(sk, 0.95), { rot: [-12, 0, 0] });
+    for (const x of [-0.042, 0.042]) {
+      B.add("sphere", [x, 1.69, 0.1], [0.03, 0.022, 0.02], [0.96, 0.96, 0.94]);
+      B.add("sphere", [x, 1.69, 0.108], [0.016, 0.016, 0.01], [0.12, 0.1, 0.09]);
+      B.add("cube", [x, 1.716, 0.103], [0.04, 8e-3, 0.01], dark);
+    }
+    B.add("cube", [0, 1.615, 0.103], [0.05, 9e-3, 0.01], mulCol(sk, 0.7));
+    for (const x of [-0.098, 0.098]) B.add("sphere", [x, 1.665, 0], [0.03, 0.06, 0.04], mulCol(sk, 0.95));
+    if (hat === 0) {
+      const y = [0.95, 0.78, 0.18];
+      B.add("sphere", [0, 1.75, -5e-3], [0.235, 0.16, 0.25], y, { g: 0.55 });
+      B.add("cylinder", [0, 1.725, -0.035], [0.33, 0.012, 0.37], y, { rot: [-9, 0, 0], g: 0.55 });
+    } else if (hat === 1) {
+      const col = [[0.7, 0.15, 0.13], [0.15, 0.3, 0.55], [0.9, 0.9, 0.86]][(coat[0] * 10 | 0) % 3];
+      B.add("sphere", [0, 1.755, -5e-3], [0.215, 0.17, 0.235], col, { g: 0.1 });
+      B.add("cylinder", [0, 1.7, -5e-3], [0.22, 0.025, 0.24], mulCol(col, 0.8));
+      B.add("sphere", [0, 1.85, -0.01], [0.07, 0.07, 0.07], [0.95, 0.95, 0.92]);
+    } else {
+      const hc = HAIRS[hat - 2];
+      B.add("sphere", [0, 1.73, -0.01], [0.205, 0.15, 0.225], hc, { g: 0.2 });
+      B.add("sphere", [0, 1.67, -0.06], [0.2, 0.18, 0.14], hc, { g: 0.2 });
+    }
+  }
+  function personThigh(B, trousers) {
+    B.add("capsule", [0, -0.21, 0], [0.15, 0.25, 0.16], trousers, { g: 0.15 });
+  }
+  function personShin(B, trousers) {
+    const boot = [0.2, 0.17, 0.14];
+    B.add("capsule", [0, -0.16, 0], [0.12, 0.19, 0.125], trousers, { g: 0.15 });
+    B.add("capsule", [0, -0.33, 0], [0.125, 0.12, 0.13], boot, { g: 0.45 });
+    B.add("cube", [0, -0.425, 0.045], [0.115, 0.075, 0.25], boot, { g: 0.45 });
+    B.add("sphere", [0, -0.415, 0.15], [0.11, 0.08, 0.08], boot, { g: 0.45 });
+    B.add("cube", [0, -0.458, 0.04], [0.12, 0.018, 0.26], [0.1, 0.09, 0.08]);
+  }
+  function personUpperArm(B, coat) {
+    B.add("sphere", [0, -0.01, 0], [0.13, 0.13, 0.13], coat, { g: 0.25 });
+    B.add("capsule", [0, -0.15, 0], [0.105, 0.17, 0.11], coat, { g: 0.25 });
+  }
+  function personForearm(B, coat, skin) {
+    const sk = SKINS[skin];
+    B.add("capsule", [0, -0.12, 0], [0.095, 0.15, 0.1], coat, { g: 0.25 });
+    B.add("cylinder", [0, -0.235, 0], [0.1, 0.015, 0.105], mulCol(coat, 0.75));
+    B.add("sphere", [0, -0.3, 0.01], [0.075, 0.11, 0.05], sk, { g: 0.1 });
+    B.add("sphere", [0.035, -0.27, 0.035], [0.03, 0.06, 0.03], sk, { rot: [0, 0, 30] });
+  }
+  function backBasket(B) {
+    B.add("cylinder", [0, 1.24, -0.27], [0.34, 0.19, 0.3], [0.72, 0.6, 0.35], { g: 0.1 });
+    for (let k = 0; k < 3; k++) B.add("cylinder", [0, 1.12 + k * 0.12, -0.27], [0.35, 0.01, 0.31], [0.55, 0.44, 0.24]);
+    for (const x of [-0.11, 0.11]) {
+      B.add("cube", [x, 1.26, 0.122], [0.035, 0.34, 0.012], [0.35, 0.25, 0.16]);
+      B.add("cube", [x, 1.43, -0.02], [0.035, 0.012, 0.27], [0.35, 0.25, 0.16]);
+    }
+  }
+  var mulCol = (c, f) => [c[0] * f, c[1] * f, c[2] * f];
   function gullBody(B) {
     B.add("capsule", [0, 0, 0], [0.25, 0.4, 0.25], [0.95, 0.95, 0.95], { rot: [90, 0, 0], g: 0.2 });
     B.add("cube", [0, 0.05, 0.45], [0.08, 0.06, 0.2], [0.95, 0.75, 0.2]);
@@ -2294,6 +2364,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var RING = 20;
   var RING2 = 34;
   var RING3R = 47;
+  var STRIDE = 1.25;
+  var randomLook = () => ({ coat: Math.floor(Math.random() * COATS.length), hat: Math.floor(Math.random() * 5), skin: Math.random() < 0.6 ? 0 : Math.random() < 0.6 ? 1 : 2, tr: Math.floor(Math.random() * 3) });
   var COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
   var AREA = { r: 45 };
   var wallRadius = () => AREA.r + 3;
@@ -2400,6 +2472,24 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const sickB = new Builder();
       villager(sickB, [0.45, 0.58, 0.42]);
       this.sickMesh = r.upload(sickB);
+      const up = (f) => {
+        const B2 = new Builder();
+        f(B2);
+        return r.upload(B2);
+      };
+      const TROUSERS = [[0.2, 0.22, 0.28], [0.32, 0.27, 0.2], [0.24, 0.24, 0.24]];
+      const coatsP = COATS.concat([[0.45, 0.58, 0.42]]);
+      this.P = {
+        torso: coatsP.map((c, ci) => [0, 1, 2, 3, 4].map((h2) => [0, 1, 2].map((sk) => TROUSERS.map((tr) => null)))),
+        thigh: TROUSERS.map((tr) => up((B2) => personThigh(B2, tr))),
+        shin: TROUSERS.map((tr) => up((B2) => personShin(B2, tr))),
+        uarm: coatsP.map((c) => up((B2) => personUpperArm(B2, c))),
+        farm: coatsP.map((c) => [0, 1, 2].map((sk) => up((B2) => personForearm(B2, c, sk)))),
+        basket: up((B2) => backBasket(B2)),
+        torsoMesh: (ci, h2, sk, tr) => this.P.torso[ci][h2][sk][tr] || (this.P.torso[ci][h2][sk][tr] = up((B2) => personTorso(B2, coatsP[ci], h2, sk, TROUSERS[tr])))
+      };
+      this.gState = /* @__PURE__ */ new WeakMap();
+      this.dtNow = 0.016;
       let B = new Builder();
       gullBody(B);
       this.gullBody = r.upload(B);
@@ -2550,6 +2640,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     // ---------------- Aktualisierung ----------------
     update(dt) {
+      this.dtNow = Math.min(0.1, dt);
       this.time += dt;
       const c = this.c;
       const deck = c.deck;
@@ -2586,7 +2677,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const want = Math.max(0, Math.min(c.s.survivors - c.gatherers, 36));
       while (this.villagers.length < want) {
         const a = Math.random() * 6.28, d = 3 + Math.random() * 4.5;
-        this.villagers.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, yaw: 0, path: [], spoke: -1, wait: Math.random() * 2, speed: 1.5 + Math.random() * 0.6, phase: Math.random() * 10, mesh: Math.floor(Math.random() * COATS.length) });
+        this.villagers.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, yaw: 0, path: [], spoke: -1, wait: Math.random() * 2, speed: 1.3 + Math.random() * 0.5, phase: Math.random() * 10, mesh: Math.floor(Math.random() * COATS.length), look: randomLook(), ph: 0, amp: 0 });
       }
       this.villagers.length = want;
       const polar = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
@@ -2595,6 +2686,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         v.sick = idx < c.s.sick;
         if (!v.path.length) {
           v.bob = 0;
+          v.amp = Math.max(0, v.amp - dt * 4);
           v.wait -= dt;
           if (v.wait > 0) return;
           if (v.spoke >= 0) v.path.push(polar(spokeA(v.spoke), 8));
@@ -2627,6 +2719,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         const sp = v.speed * (v.sick ? 0.45 : 1) * (c.storm ? 0.7 : 1);
         v.x += dx / d * sp * dt;
         v.z += dz / d * sp * dt;
+        v.ph += sp * dt * Math.PI * 2 / STRIDE;
+        v.amp = Math.min(Math.min(1, sp / 1.6), v.amp + dt * 4);
         const fr = Math.hypot(v.x, v.z);
         if (v.spoke < 0 && fr < 2.3 && fr > 1e-3) {
           v.x *= 2.3 / fr;
@@ -2637,8 +2731,58 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         while (diff > Math.PI) diff -= 6.283;
         while (diff < -Math.PI) diff += 6.283;
         v.yaw += diff * Math.min(1, dt * 8);
-        v.bob = Math.abs(Math.sin((this.time + v.phase) * 9)) * 0.07;
+        v.bob = 0;
       });
+    }
+    /// Mensch mit natürlichem Gang: Hüfte, Knie, Schultern, Ellbogen; Becken hebt/senkt sich, Arme gegengleich
+    person(draws, look, pos, yaw, ph, amp, mode, sick, basket2, seed) {
+      const S = 0.86, t = this.time + seed;
+      if (this.dist > (this.figureLod || 115)) {
+        draws.push({ mesh: sick ? this.sickMesh : this.villagerMeshes[look.coat % this.villagerMeshes.length], model: trs(pos, [0, yaw, 0], [0.9, 0.9, 0.9]) });
+        return;
+      }
+      const ci = sick ? COATS.length : look.coat, P = this.P;
+      if (sick) amp *= 0.6;
+      const work = mode === "work";
+      let lean = 2 + 4 * amp + (sick ? 12 : 0), roll = 2.2 * amp * Math.sin(ph), bob = 0.045 * amp * (Math.cos(2 * ph) - 1);
+      let twist = 5 * amp * Math.sin(ph);
+      if (work) {
+        const w = Math.sin(t * 4.2);
+        lean = 40 + 8 * w;
+        bob = -0.165;
+        roll = 0;
+        twist = 0;
+      }
+      const breathe = 1 + 0.012 * Math.sin(t * 1.7);
+      const root = trs([pos[0], pos[1] + bob * S, pos[2]], [0, yaw, roll], [S, S, S]);
+      const upper = mul(root, trs([0, 0.9, 0], [lean, twist, 0], [1, breathe, 1]));
+      const torsoM = mul(upper, trs([0, -0.9, 0]));
+      draws.push({ mesh: P.torsoMesh(ci, look.hat, look.skin, look.tr), model: torsoM });
+      if (basket2) draws.push({ mesh: P.basket, model: torsoM });
+      for (const side of [-1, 1]) {
+        const ps = ph + (side > 0 ? 0 : Math.PI), sn = Math.sin(ps), cs = Math.cos(ps);
+        let thighA = -sn * 27 * amp, knee = amp * (4 + 52 * Math.pow(Math.max(0, cs), 1.4));
+        if (work) {
+          thighA = -42;
+          knee = 74;
+        }
+        const thigh = mul(root, trs([side * 0.095, 0.9, 0], [thighA, 0, side * 2]));
+        draws.push({ mesh: P.thigh[look.tr], model: thigh });
+        draws.push({ mesh: P.shin[look.tr], model: mul(thigh, trs([0, -0.44, 0], [knee, 0, 0])) });
+        let armA = sn * 21 * amp + 3 + 1.5 * Math.sin(t * 1.3 + side), elbow = -(9 + 26 * amp * Math.max(0, -sn));
+        if (work) {
+          const w = Math.sin(t * 4.2 + (side > 0 ? 0 : 0.5));
+          armA = -62 - 34 * w;
+          elbow = -28 - 16 * w;
+        }
+        if (basket2 && !work) {
+          armA = sn * 12 * amp - 8;
+          elbow = -34;
+        }
+        const shoulder = mul(upper, trs([side * 0.215, 0.5, -0.01], [armA, 0, side * (5 + 2 * amp)]));
+        draws.push({ mesh: P.uarm[ci], model: shoulder, noShadow: true });
+        draws.push({ mesh: P.farm[ci][look.skin], model: mul(shoulder, trs([0, -0.29, 0], [elbow, 0, 0])), noShadow: true });
+      }
     }
     updateSmoke(dt) {
       const P = this.smokeP;
@@ -2832,15 +2976,19 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         let y = this.groundAt(x, z);
         if (n && path.L - g.d < 5) y = lerp(y, n.h > 0.3 ? n.h - 0.1 : 0, 1 - (path.L - g.d) / 5);
         const yaw = (g.phase === "back" ? yaw0 + Math.PI : yaw0) / D2R;
-        const bob = g.phase === "work" ? Math.abs(Math.sin(this.time * 6)) * 0.15 : Math.abs(Math.sin(this.time * 9 + g.d)) * 0.07;
-        const m = trs([x, y + bob, z], [g.phase === "work" ? 25 : 0, yaw, 0], [1, 1, 1]);
-        draws.push({ mesh: this.villagerMeshes[(g.node + Math.floor(g.d * 0)) % this.villagerMeshes.length], model: m });
-        if (g.load > 0 || g.phase === "work") draws.push({ mesh: this.basketMesh, model: m, noShadow: true });
+        let st = this.gState.get(g);
+        if (!st) {
+          st = { d: g.d, ph: Math.random() * 6, amp: 0, look: randomLook() };
+          this.gState.set(g, st);
+        }
+        const moved = Math.abs(g.d - st.d);
+        st.d = g.d;
+        if (moved < 1) st.ph += moved * Math.PI * 2 / STRIDE;
+        const walking = g.phase !== "work" && moved > 5e-4;
+        st.amp = walking ? Math.min(1, st.amp + this.dtNow * 4) : Math.max(0, st.amp - this.dtNow * 4);
+        this.person(draws, st.look, [x, y, z], yaw, st.ph, st.amp, g.phase === "work" ? "work" : "walk", false, g.load > 0 || g.phase === "work", g.d * 7.3);
       }
-      for (const v of this.villagers) {
-        const m = trs([v.x, deck + (v.bob || 0), v.z], [0, v.yaw / D2R, 0], [1, 1, 1]);
-        draws.push({ mesh: v.sick ? this.sickMesh : this.villagerMeshes[v.mesh], model: m });
-      }
+      for (const v of this.villagers) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, "walk", v.sick, false, v.phase);
       for (const g of this.gulls) {
         const p = [Math.cos(g.angle) * g.radius, deck + g.height + Math.sin(g.angle * 3) * 1.5, Math.sin(g.angle) * g.radius];
         const yaw = Math.atan2(-Math.sin(g.angle) * Math.sign(g.speed), Math.cos(g.angle) * Math.sign(g.speed)) / D2R;
@@ -2944,6 +3092,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     apply() {
       this.world.shadowSize = Math.min(SHADOW[this.tier], this.maxTex);
       this.world.particleMul = PARTICLES[this.tier];
+      this.world.figureLod = [50, 80, 115, 150][this.tier];
       this.low = 0;
     }
     cycle() {

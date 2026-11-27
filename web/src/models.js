@@ -494,6 +494,80 @@ export function villager(B, coat) {
   B.add('sphere', [0, 1.48, 0], [0.36, 0.2, 0.36], [0.9, 0.75, 0.2], { g: 0.4 });
 }
 
+// ---------- Menschen mit Gelenken (Rumpf + Kopf, Oberschenkel, Unterschenkel, Oberarm, Unterarm) ----------
+// Maße in Metern, Ursprung = Boden zwischen den Füßen, Hüfte bei 0,9, Schultern bei 1,42, vorne = +z
+export const SKINS = [[0.93, 0.76, 0.64], [0.72, 0.53, 0.4], [0.5, 0.35, 0.26]];
+const HAIRS = [[0.22, 0.15, 0.1], [0.78, 0.62, 0.36], [0.62, 0.6, 0.58]];
+export function personTorso(B, coat, hat, skin, trousers) {
+  const sk = SKINS[skin], dark = [0.16, 0.13, 0.11];
+  // Hose / Hüfte
+  B.add('capsule', [0, 0.93, 0], [0.33, 0.14, 0.21], trousers, { g: 0.15 });
+  // Jacke: Rumpf, Schultern, Kragen, Gürtel, Knöpfe, Saum
+  B.add('capsule', [0, 1.19, 0], [0.38, 0.3, 0.24], coat, { g: 0.25 });
+  B.add('capsule', [0, 1.4, -0.005], [0.46, 0.13, 0.25], coat, { rot: [0, 0, 90], g: 0.25 });
+  B.add('cube', [0, 1.4, -0.005], [0.36, 0.13, 0.24], coat, { g: 0.25 });
+  B.add('cylinder', [0, 1.0, 0], [0.37, 0.025, 0.23], dark, { g: 0.4 });
+  B.add('cube', [0, 1.0, 0.115], [0.06, 0.045, 0.012], [0.75, 0.65, 0.35], { g: 0.8 });
+  for (let k = 0; k < 3; k++) B.add('sphere', [0, 1.12 + k * 0.1, 0.122], [0.025, 0.025, 0.015], dark, { g: 0.6 });
+  B.add('cube', [0.0, 1.2, 0.118], [0.012, 0.36, 0.01], mulCol(coat, 0.7));
+  B.add('cylinder', [0, 1.49, 0], [0.17, 0.035, 0.15], mulCol(coat, 0.85));
+  // Hals und Kopf
+  B.add('cylinder', [0, 1.53, 0.005], [0.095, 0.05, 0.095], sk);
+  B.add('sphere', [0, 1.66, 0.01], [0.19, 0.235, 0.215], sk, { g: 0.15 });
+  B.add('sphere', [0, 1.6, 0.04], [0.15, 0.1, 0.15], sk);
+  B.add('cube', [0, 1.655, 0.115], [0.028, 0.05, 0.035], mulCol(sk, 0.95), { rot: [-12, 0, 0] });
+  for (const x of [-0.042, 0.042]) {
+    B.add('sphere', [x, 1.69, 0.1], [0.03, 0.022, 0.02], [0.96, 0.96, 0.94]);
+    B.add('sphere', [x, 1.69, 0.108], [0.016, 0.016, 0.01], [0.12, 0.1, 0.09]);
+    B.add('cube', [x, 1.716, 0.103], [0.04, 0.008, 0.01], dark);
+  }
+  B.add('cube', [0, 1.615, 0.103], [0.05, 0.009, 0.01], mulCol(sk, 0.7));
+  for (const x of [-0.098, 0.098]) B.add('sphere', [x, 1.665, 0.0], [0.03, 0.06, 0.04], mulCol(sk, 0.95));
+  if (hat === 0) { // Südwester
+    const y = [0.95, 0.78, 0.18];
+    B.add('sphere', [0, 1.75, -0.005], [0.235, 0.16, 0.25], y, { g: 0.55 });
+    B.add('cylinder', [0, 1.725, -0.035], [0.33, 0.012, 0.37], y, { rot: [-9, 0, 0], g: 0.55 });
+  } else if (hat === 1) { // Strickmütze mit Bommel
+    const col = [[0.7, 0.15, 0.13], [0.15, 0.3, 0.55], [0.9, 0.9, 0.86]][(coat[0] * 10 | 0) % 3];
+    B.add('sphere', [0, 1.755, -0.005], [0.215, 0.17, 0.235], col, { g: 0.1 });
+    B.add('cylinder', [0, 1.7, -0.005], [0.22, 0.025, 0.24], mulCol(col, 0.8));
+    B.add('sphere', [0, 1.85, -0.01], [0.07, 0.07, 0.07], [0.95, 0.95, 0.92]);
+  } else { // Haare
+    const hc = HAIRS[hat - 2];
+    B.add('sphere', [0, 1.73, -0.01], [0.205, 0.15, 0.225], hc, { g: 0.2 });
+    B.add('sphere', [0, 1.67, -0.06], [0.2, 0.18, 0.14], hc, { g: 0.2 });
+  }
+}
+export function personThigh(B, trousers) {
+  B.add('capsule', [0, -0.21, 0], [0.15, 0.25, 0.16], trousers, { g: 0.15 });
+}
+export function personShin(B, trousers) {
+  const boot = [0.2, 0.17, 0.14];
+  B.add('capsule', [0, -0.16, 0], [0.12, 0.19, 0.125], trousers, { g: 0.15 });
+  B.add('capsule', [0, -0.33, 0], [0.125, 0.12, 0.13], boot, { g: 0.45 });
+  B.add('cube', [0, -0.425, 0.045], [0.115, 0.075, 0.25], boot, { g: 0.45 });
+  B.add('sphere', [0, -0.415, 0.15], [0.11, 0.08, 0.08], boot, { g: 0.45 });
+  B.add('cube', [0, -0.458, 0.04], [0.12, 0.018, 0.26], [0.1, 0.09, 0.08]);
+}
+export function personUpperArm(B, coat) {
+  B.add('sphere', [0, -0.01, 0], [0.13, 0.13, 0.13], coat, { g: 0.25 });
+  B.add('capsule', [0, -0.15, 0], [0.105, 0.17, 0.11], coat, { g: 0.25 });
+}
+export function personForearm(B, coat, skin) {
+  const sk = SKINS[skin];
+  B.add('capsule', [0, -0.12, 0.0], [0.095, 0.15, 0.1], coat, { g: 0.25 });
+  B.add('cylinder', [0, -0.235, 0], [0.1, 0.015, 0.105], mulCol(coat, 0.75));
+  B.add('sphere', [0, -0.3, 0.01], [0.075, 0.11, 0.05], sk, { g: 0.1 });
+  B.add('sphere', [0.035, -0.27, 0.035], [0.03, 0.06, 0.03], sk, { rot: [0, 0, 30] });
+}
+/// Kiepe (Rückenkorb), am Rumpf befestigt
+export function backBasket(B) {
+  B.add('cylinder', [0, 1.24, -0.27], [0.34, 0.19, 0.3], [0.72, 0.6, 0.35], { g: 0.1 });
+  for (let k = 0; k < 3; k++) B.add('cylinder', [0, 1.12 + k * 0.12, -0.27], [0.35, 0.01, 0.31], [0.55, 0.44, 0.24]);
+  for (const x of [-0.11, 0.11]) { B.add('cube', [x, 1.26, 0.122], [0.035, 0.34, 0.012], [0.35, 0.25, 0.16]); B.add('cube', [x, 1.43, -0.02], [0.035, 0.012, 0.27], [0.35, 0.25, 0.16]); }
+}
+const mulCol = (c, f) => [c[0] * f, c[1] * f, c[2] * f];
+
 export function gullBody(B) {
   B.add('capsule', [0, 0, 0], [0.25, 0.4, 0.25], [0.95, 0.95, 0.95], { rot: [90, 0, 0], g: 0.2 });
   B.add('cube', [0, 0.05, 0.45], [0.08, 0.06, 0.2], [0.95, 0.75, 0.2]);

@@ -32,6 +32,7 @@ export class Graphics {
   apply() {
     this.world.shadowSize = Math.min(SHADOW[this.tier], this.maxTex);
     this.world.particleMul = PARTICLES[this.tier];
+    this.world.figureLod = [50, 80, 115, 150][this.tier];
     this.low = 0;
   }
 

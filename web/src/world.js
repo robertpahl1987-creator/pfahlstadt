@@ -6,6 +6,8 @@ import { PLOTS, INNER, RING3, WALL, TOWERS, DAMM, T, deckFor, damTopFor } from '
 import { trs, mul, perspective, lookAt, invert, normalMat, clamp, clamp01, lerp, lerpC, mulC, moveTowards, rng, noise1, D2R, project } from './math.js';
 
 export const RING = 20, RING2 = 34, RING3R = 47;
+const STRIDE = 1.25; // Meter pro Doppelschritt
+const randomLook = () => ({ coat: Math.floor(Math.random() * COATS.length), hat: Math.floor(Math.random() * 5), skin: Math.random() < 0.6 ? 0 : Math.random() < 0.6 ? 1 : 2, tr: Math.floor(Math.random() * 3) });
 const COATS = [[0.75, 0.55, 0.15], [0.2, 0.32, 0.5], [0.55, 0.2, 0.18], [0.3, 0.42, 0.3], [0.5, 0.45, 0.38], [0.85, 0.75, 0.3]];
 
 /// Geländeradius (wächst mit jedem Neubau) – wird von der Welt laufend gesetzt
@@ -118,6 +120,21 @@ export class World {
     const r = this.r;
     this.villagerMeshes = COATS.map((c) => { const B = new Builder(); M.villager(B, c); return r.upload(B); });
     const sickB = new Builder(); M.villager(sickB, [0.45, 0.58, 0.42]); this.sickMesh = r.upload(sickB);
+    // Menschen mit Gelenken
+    const up = (f) => { const B = new Builder(); f(B); return r.upload(B); };
+    const TROUSERS = [[0.2, 0.22, 0.28], [0.32, 0.27, 0.2], [0.24, 0.24, 0.24]];
+    const coatsP = COATS.concat([[0.45, 0.58, 0.42]]); // letzter = krank (blass-grün)
+    this.P = {
+      torso: coatsP.map((c, ci) => [0, 1, 2, 3, 4].map((h) => [0, 1, 2].map((sk) => TROUSERS.map((tr) => null)))),
+      thigh: TROUSERS.map((tr) => up((B) => M.personThigh(B, tr))),
+      shin: TROUSERS.map((tr) => up((B) => M.personShin(B, tr))),
+      uarm: coatsP.map((c) => up((B) => M.personUpperArm(B, c))),
+      farm: coatsP.map((c) => [0, 1, 2].map((sk) => up((B) => M.personForearm(B, c, sk)))),
+      basket: up((B) => M.backBasket(B)),
+      torsoMesh: (ci, h, sk, tr) => this.P.torso[ci][h][sk][tr] || (this.P.torso[ci][h][sk][tr] = up((B) => M.personTorso(B, coatsP[ci], h, sk, TROUSERS[tr]))),
+    };
+    this.gState = new WeakMap();
+    this.dtNow = 0.016;
     let B = new Builder(); M.gullBody(B); this.gullBody = r.upload(B);
     B = new Builder(); M.gullWing(B, -1); this.gullWingL = r.upload(B);
     B = new Builder(); M.gullWing(B, 1); this.gullWingR = r.upload(B);
@@ -242,6 +259,7 @@ export class World {
   // ---------------- Aktualisierung ----------------
 
   update(dt) {
+    this.dtNow = Math.min(0.1, dt);
     this.time += dt;
     const c = this.c;
     const deck = c.deck;
@@ -274,7 +292,7 @@ export class World {
     const want = Math.max(0, Math.min(c.s.survivors - c.gatherers, 36));
     while (this.villagers.length < want) {
       const a = Math.random() * 6.28, d = 3 + Math.random() * 4.5;
-      this.villagers.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, yaw: 0, path: [], spoke: -1, wait: Math.random() * 2, speed: 1.5 + Math.random() * 0.6, phase: Math.random() * 10, mesh: Math.floor(Math.random() * COATS.length) });
+      this.villagers.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, yaw: 0, path: [], spoke: -1, wait: Math.random() * 2, speed: 1.3 + Math.random() * 0.5, phase: Math.random() * 10, mesh: Math.floor(Math.random() * COATS.length), look: randomLook(), ph: 0, amp: 0 });
     }
     this.villagers.length = want;
     // Soldaten (sichtbar als rote Figuren auf der Mittelplattform)
@@ -283,7 +301,7 @@ export class World {
     this.villagers.forEach((v, idx) => {
       v.sick = idx < c.s.sick;
       if (!v.path.length) {
-        v.bob = 0;
+        v.bob = 0; v.amp = Math.max(0, v.amp - dt * 4);
         v.wait -= dt;
         if (v.wait > 0) return;
         if (v.spoke >= 0) v.path.push(polar(spokeA(v.spoke), 8));
@@ -311,14 +329,53 @@ export class World {
       if (d < 0.25) { v.path.shift(); if (!v.path.length) v.wait = 1.5 + Math.random() * 3.5; return; }
       const sp = v.speed * (v.sick ? 0.45 : 1) * (c.storm ? 0.7 : 1);
       v.x += (dx / d) * sp * dt; v.z += (dz / d) * sp * dt;
+      v.ph += (sp * dt * Math.PI * 2) / STRIDE; v.amp = Math.min(Math.min(1, sp / 1.6), v.amp + dt * 4);
       const fr = Math.hypot(v.x, v.z);
       if (v.spoke < 0 && fr < 2.3 && fr > 0.001) { v.x *= 2.3 / fr; v.z *= 2.3 / fr; }
       const want2 = Math.atan2(dx, dz);
       let diff = want2 - v.yaw;
       while (diff > Math.PI) diff -= 6.283; while (diff < -Math.PI) diff += 6.283;
       v.yaw += diff * Math.min(1, dt * 8);
-      v.bob = Math.abs(Math.sin((this.time + v.phase) * 9)) * 0.07;
+      v.bob = 0;
     });
+  }
+
+  /// Mensch mit natürlichem Gang: Hüfte, Knie, Schultern, Ellbogen; Becken hebt/senkt sich, Arme gegengleich
+  person(draws, look, pos, yaw, ph, amp, mode, sick, basket, seed) {
+    const S = 0.86, t = this.time + seed;
+    if (this.dist > (this.figureLod || 115)) { // weit weg / schwache Grafik: einfache Figur
+      draws.push({ mesh: sick ? this.sickMesh : this.villagerMeshes[look.coat % this.villagerMeshes.length], model: trs(pos, [0, yaw, 0], [0.9, 0.9, 0.9]) });
+      return;
+    }
+    const ci = sick ? COATS.length : look.coat, P = this.P;
+    if (sick) amp *= 0.6;
+    const work = mode === 'work';
+    let lean = 2 + 4 * amp + (sick ? 12 : 0), roll = 2.2 * amp * Math.sin(ph), bob = 0.045 * amp * (Math.cos(2 * ph) - 1);
+    let twist = 5 * amp * Math.sin(ph);
+    if (work) { const w = Math.sin(t * 4.2); lean = 40 + 8 * w; bob = -0.165; roll = 0; twist = 0; }
+    const breathe = 1 + 0.012 * Math.sin(t * 1.7);
+    const root = trs([pos[0], pos[1] + bob * S, pos[2]], [0, yaw, roll], [S, S, S]);
+    const upper = mul(root, trs([0, 0.9, 0], [lean, twist, 0], [1, breathe, 1]));
+    const torsoM = mul(upper, trs([0, -0.9, 0]));
+    draws.push({ mesh: P.torsoMesh(ci, look.hat, look.skin, look.tr), model: torsoM });
+    if (basket) draws.push({ mesh: P.basket, model: torsoM });
+    for (const side of [-1, 1]) {
+      const ps = ph + (side > 0 ? 0 : Math.PI), sn = Math.sin(ps), cs = Math.cos(ps);
+      // Bein: Oberschenkel nach vorn (negativ) / hinten (positiv), Knie beugt in der Schwungphase
+      let thighA = -sn * 27 * amp, knee = amp * (4 + 52 * Math.pow(Math.max(0, cs), 1.4));
+      if (work) { thighA = -42; knee = 74; }
+      const thigh = mul(root, trs([side * 0.095, 0.9, 0], [thighA, 0, side * 2]));
+      draws.push({ mesh: P.thigh[look.tr], model: thigh });
+      // Fuß rollt ab: Unterschenkel samt Stiefel
+      draws.push({ mesh: P.shin[look.tr], model: mul(thigh, trs([0, -0.44, 0], [knee, 0, 0])) });
+      // Arm schwingt gegengleich zum Bein derselben Seite
+      let armA = sn * 21 * amp + 3 + 1.5 * Math.sin(t * 1.3 + side), elbow = -(9 + 26 * amp * Math.max(0, -sn));
+      if (work) { const w = Math.sin(t * 4.2 + (side > 0 ? 0 : 0.5)); armA = -62 - 34 * w; elbow = -28 - 16 * w; }
+      if (basket && !work) { armA = sn * 12 * amp - 8; elbow = -34; }
+      const shoulder = mul(upper, trs([side * 0.215, 0.5, -0.01], [armA, 0, side * (5 + 2 * amp)]));
+      draws.push({ mesh: P.uarm[ci], model: shoulder, noShadow: true });
+      draws.push({ mesh: P.farm[ci][look.skin], model: mul(shoulder, trs([0, -0.29, 0], [elbow, 0, 0])), noShadow: true });
+    }
   }
 
   updateSmoke(dt) {
@@ -503,15 +560,15 @@ export class World {
       let y = this.groundAt(x, z);
       if (n && path.L - g.d < 5) y = lerp(y, n.h > 0.3 ? n.h - 0.1 : 0, 1 - (path.L - g.d) / 5);
       const yaw = (g.phase === 'back' ? yaw0 + Math.PI : yaw0) / D2R;
-      const bob = g.phase === 'work' ? Math.abs(Math.sin(this.time * 6)) * 0.15 : Math.abs(Math.sin(this.time * 9 + g.d)) * 0.07;
-      const m = trs([x, y + bob, z], [g.phase === 'work' ? 25 : 0, yaw, 0], [1, 1, 1]);
-      draws.push({ mesh: this.villagerMeshes[(g.node + Math.floor(g.d * 0)) % this.villagerMeshes.length], model: m });
-      if (g.load > 0 || g.phase === 'work') draws.push({ mesh: this.basketMesh, model: m, noShadow: true });
+      let st = this.gState.get(g);
+      if (!st) { st = { d: g.d, ph: Math.random() * 6, amp: 0, look: randomLook() }; this.gState.set(g, st); }
+      const moved = Math.abs(g.d - st.d); st.d = g.d;
+      if (moved < 1) st.ph += (moved * Math.PI * 2) / STRIDE;
+      const walking = g.phase !== 'work' && moved > 0.0005;
+      st.amp = walking ? Math.min(1, st.amp + this.dtNow * 4) : Math.max(0, st.amp - this.dtNow * 4);
+      this.person(draws, st.look, [x, y, z], yaw, st.ph, st.amp, g.phase === 'work' ? 'work' : 'walk', false, g.load > 0 || g.phase === 'work', g.d * 7.3);
     }
-    for (const v of this.villagers) {
-      const m = trs([v.x, deck + (v.bob || 0), v.z], [0, v.yaw / D2R, 0], [1, 1, 1]);
-      draws.push({ mesh: v.sick ? this.sickMesh : this.villagerMeshes[v.mesh], model: m });
-    }
+    for (const v of this.villagers) this.person(draws, v.look, [v.x, deck, v.z], v.yaw / D2R, v.ph, v.amp, 'walk', v.sick, false, v.phase);
     for (const g of this.gulls) {
       const p = [Math.cos(g.angle) * g.radius, deck + g.height + Math.sin(g.angle * 3) * 1.5, Math.sin(g.angle) * g.radius];
       const yaw = Math.atan2(-Math.sin(g.angle) * Math.sign(g.speed), Math.cos(g.angle) * Math.sign(g.speed)) / D2R;
