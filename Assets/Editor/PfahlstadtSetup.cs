@@ -25,12 +25,27 @@ namespace Pfahlstadt.EditorTools
             };
         }
 
+        public static void EnsureMaterials()
+        {
+            Directory.CreateDirectory(MatDir);
+            AssetDatabase.Refresh();
+            CreateMats();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+
         [MenuItem("Pfahlstadt/Projekt einrichten")]
         public static void Run()
         {
             Directory.CreateDirectory(MatDir);
             Directory.CreateDirectory("Assets/Scenes");
             AssetDatabase.Refresh();
+            CreateMats();
+            FinishSetup();
+        }
+
+        static void CreateMats()
+        {
 
             CreateMat("Std", "Standard", null);
             CreateMat("StdEmis", "Standard", m =>
@@ -56,6 +71,10 @@ namespace Pfahlstadt.EditorTools
             CreateMat("PartAlpha", "Legacy Shaders/Particles/Alpha Blended", null);
             CreateMat("PartAdd", "Legacy Shaders/Particles/Additive", null);
             CreateMat("Sky", "Skybox/Procedural", null);
+        }
+
+        static void FinishSetup()
+        {
 
             if (!File.Exists(ScenePath))
             {
@@ -97,6 +116,17 @@ namespace Pfahlstadt.EditorTools
             PlayerSettings.Android.bundleVersionCode = 1;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
             PlayerSettings.colorSpace = ColorSpace.Linear;
+        }
+    }
+
+    /// Läuft bei jedem Build (auch in Unity Cloud Build im Batch-Modus):
+    /// legt fehlende Material-Vorlagen an, damit die Shader im APK landen.
+    public class PfahlstadtPreBuild : IPreprocessBuildWithReport
+    {
+        public int callbackOrder => -100;
+        public void OnPreprocessBuild(BuildReport report)
+        {
+            PfahlstadtSetup.EnsureMaterials();
         }
     }
 
