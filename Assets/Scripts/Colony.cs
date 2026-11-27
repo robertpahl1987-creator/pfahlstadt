@@ -6,7 +6,7 @@ using Random = UnityEngine.Random;
 namespace Pfahlstadt
 {
     /// Spiellogik: Gezeiten, Rohstoffe, Bauen, Bevölkerung, Speichern.
-    public class Colony : MonoBehaviour
+    public partial class Colony : MonoBehaviour
     {
         public static Colony I { get; private set; }
 
@@ -18,20 +18,23 @@ namespace Pfahlstadt
         public const float ExpeditionFood = 30f;
         public const float EbbLimit = 1.0f;         // Wattwanderung nur unter diesem Wasserstand
         const string SaveKey = "pfahlstadt_save_v1";
+        const string SaveKey2 = "pfahlstadt_save2_v1";
 
         public SaveData S;
+        public SaveData2 S2;
+        public float GameTime { get; private set; }
 
         public float WaterLevel { get; private set; }
         public float TideSin { get; private set; }  // -1 Niedrigwasser, +1 Hochwasser
         public bool TideRising { get; private set; }
-        public float DeckHeight => DeckFor(TowerLevel);
-        public float DamTop { get { int L = Levels(BType.Damm); return L > 0 ? 3.0f + 0.25f * L : -99f; } }
+        public float DeckHeight => DeckFor(TowerLevel) + M.Deck;
+        public float DamTop { get { int L = Levels(BType.Damm); return L > 0 ? 3.0f + 0.25f * L + M.Dam : -99f; } }
         /// Hält der Damm, bleibt die Stadt trocken, auch wenn draußen das Wasser höher steht
         public bool DamHolds => WaterLevel > DeckHeight && WaterLevel <= DamTop;
         public float InWater => DamHolds ? DeckHeight - 0.35f : WaterLevel;
         public float Freeboard => DeckHeight - InWater;   // < 0 = Plattformen überspült
         public int Levels(BType t) { int n = 0; foreach (var p in S.plots) if (p.type == (int)t) n += p.level; return n; }
-        public int Storage => 1500 + 2500 * Levels(BType.Lager);
+        public int Storage => Mathf.RoundToInt((1500 + 2500 * Levels(BType.Lager)) * M.Store);
         /// Gebäude auf dem Gelände (ohne Turm, Mauer, Abwehrtürme)
         public int BuiltCount { get { int n = 0; for (int i = 1; i < Defs.Wall; i++) if (S.plots[i].type >= 0 && S.plots[i].level > 0) n++; return n; } }
         public float AreaRadius => Mathf.Min(66f, 40f + 1.4f * BuiltCount);
@@ -65,7 +68,9 @@ namespace Pfahlstadt
 
         void Update()
         {
-            Tick(Time.deltaTime);
+            float dt = Mathf.Min(Time.deltaTime, 0.5f);
+            GameTime += dt;
+            Tick(dt);
             autosave += Time.unscaledDeltaTime;
             if (autosave > 30f) { autosave = 0f; Save(); }
         }
@@ -116,6 +121,7 @@ namespace Pfahlstadt
             AdvanceConstruction(dt);
             UpdatePopulation(dt);
             UpdateExpedition(dt);
+            TickExtra(dt, false);
         }
 
         void UpdateWater()
@@ -146,7 +152,7 @@ namespace Pfahlstadt
             }
             WorkersNeeded = workers;
             Capacity = cap;
-            Efficiency = workers == 0 ? 1f : Mathf.Clamp01((float)Healthy / workers);
+            Efficiency = workers == 0 ? 1f : Mathf.Clamp01((float)Mathf.Max(0, Healthy - Gatherers) / workers);
 
             float flood = offline ? 0.5f : (Freeboard < 0f ? Mathf.Clamp(1f + Freeboard / 2f, 0.25f, 1f) : 1f);
             float tide = offline ? 0f : TideSin;
@@ -155,7 +161,7 @@ namespace Pfahlstadt
             var prod = new List<PlotData>();
             foreach (var p in S.plots) if (p.type >= 0 && p.level > 0 && Defs.Get(p.type).Produces >= 0) prod.Add(p);
             prod.Sort((a, b) => Prio(a.type).CompareTo(Prio(b.type)));
-            float avail = Healthy;
+            float avail = Mathf.Max(0, Healthy - Gatherers);
             foreach (var p in prod)
             {
                 var d = Defs.Get(p.type);
@@ -170,7 +176,9 @@ namespace Pfahlstadt
             }
             float kitchen = 1f + Mathf.Min(0.6f, 0.06f * Levels(BType.Kueche));
             float landmark = 1f + 0.02f * Levels(BType.Wahrzeichen);
-            for (int i = 0; i < 4; i++) if (rate[i] > 0f) rate[i] *= kitchen * landmark;
+            float pm = M.Prod / (1f + 0.02f * Levels(BType.Wahrzeichen)); // Wahrzeichen steckt schon in landmark
+            for (int i = 0; i < 4; i++) if (rate[i] > 0f) rate[i] *= kitchen * landmark * pm * SeasonProdMul(i) * TerrBonus(i);
+            rate[(int)Res.Muscheln] -= Upkeep / 60f;
 
             // Notvorrat des Gezeitenturms: niemand verhungert ganz
             rate[(int)Res.Muscheln] += 0.25f;
@@ -227,7 +235,7 @@ namespace Pfahlstadt
 
             if (wet || starving)
             {
-                float sev = (wet ? -Freeboard * 1.2f : 0f) + (starving ? 1f : 0f);
+                float sev = (wet ? -Freeboard * 0.6f : 0f) + (starving ? 0.25f : 0f);
                 S.sickProg += dt * sev * Healthy / 120f;
                 while (S.sickProg >= 1f && S.sick < S.survivors)
                 {
@@ -240,7 +248,7 @@ namespace Pfahlstadt
 
             if (S.sick > 0 && S.survivors > 1 && (Freeboard < -1.2f || starving))
             {
-                S.deathProg += dt * S.sick / 240f;
+                S.deathProg += dt * Mathf.Min(S.sick, 10) / 900f;
                 if (S.deathProg >= 1f)
                 {
                     S.deathProg = 0f;
@@ -254,13 +262,14 @@ namespace Pfahlstadt
             {
                 int healers = 0;
                 foreach (var p in S.plots) if (p.type == (int)BType.Heilerhuette) healers += p.level;
-                float speed = (0.004f + 0.02f * healers) * (BeaconBurning ? 1.5f : 1f);
+                // Jeder Kranke erholt sich auch von selbst, Heiler beschleunigen das
+                float speed = (Mathf.Max(0.004f, 0.0015f * Mathf.Min(S.sick, 60)) + 0.02f * healers) * (BeaconBurning ? 1.5f : 1f);
                 S.healProg += dt * speed;
-                if (S.healProg >= 1f) { S.healProg = 0f; S.sick--; Msg("Ein Kranker ist wieder gesund."); }
+                while (S.healProg >= 1f && S.sick > 0) { S.healProg -= 1f; S.sick--; Msg("Ein Kranker ist wieder gesund."); }
             }
 
             // Neue Siedler finden die Stadt nur, wenn das Leuchtfeuer brennt
-            if (S.survivors < Capacity && !wet && !starving && BeaconBurning)
+            if (S.survivors < Capacity && !wet && !starving && BeaconBurning && RatePerMin[(int)Res.Muscheln] > 4f && RatePerMin[(int)Res.Wasser] > 3.5f)
             {
                 S.arriveProg += dt / 25f;
                 if (S.arriveProg >= 1f) { S.arriveProg = 0f; S.survivors++; Msg("Ein Boot legt an: Ein neuer Siedler!"); }
@@ -286,13 +295,15 @@ namespace Pfahlstadt
             get { int n = 0; foreach (var p in S.plots) if (p.buildLeft > 0f) n++; return n; }
         }
 
+        public int MaxBuilds => M.Builds;
+
         public bool CanAfford(float[] c)
         {
             for (int i = 0; i < 4; i++) if (S.res[i] < c[i]) return false;
             return true;
         }
 
-        void Pay(float[] c)
+        public void Pay(float[] c)
         {
             for (int i = 0; i < 4; i++) S.res[i] -= c[i];
         }
@@ -305,7 +316,7 @@ namespace Pfahlstadt
             if (plot >= Defs.Towers && plot < Defs.Dam && Levels(BType.Festungsmauer) <= 0) return "Erst die Festungsmauer bauen";
             if (plot >= Defs.Inner && plot < Defs.Ring3 && TowerLevel < Defs.OuterLevel) return $"Äußerer Ring ab Gezeitenturm Stufe {Defs.OuterLevel}";
             if (plot >= Defs.Ring3 && plot < Defs.Wall && BuiltCount < Ring3Needed(plot)) return $"Gelände zu klein: noch {Ring3Needed(plot) - BuiltCount} Gebäude bauen";
-            if (ActiveBuilds >= MaxParallelBuilds) return "Alle Bautrupps beschäftigt";
+            if (ActiveBuilds >= MaxBuilds) return "Alle Bautrupps beschäftigt";
             if (!CanAfford(Defs.Get(t).CostFor(1))) return "Zu wenig Rohstoffe";
             return null;
         }
@@ -318,8 +329,9 @@ namespace Pfahlstadt
             var p = S.plots[plot];
             p.type = (int)t;
             p.level = 0;
-            p.buildTotal = p.buildLeft = d.BuildTime(1);
+            p.buildTotal = p.buildLeft = d.BuildTime(1) * M.Build;
             Msg($"Bau von {d.Name} begonnen.");
+            QuestEvent(Stat.Build, 1);
             return true;
         }
 
@@ -331,7 +343,7 @@ namespace Pfahlstadt
             if (p.buildLeft > 0f) return "Wird gerade gebaut";
             if (p.level >= d.MaxLevel) return "Maximale Stufe";
             if (plot != 0 && p.level + 1 > TowerLevel) return $"Erst Gezeitenturm auf Stufe {p.level + 1}";
-            if (ActiveBuilds >= MaxParallelBuilds) return "Alle Bautrupps beschäftigt";
+            if (ActiveBuilds >= MaxBuilds) return "Alle Bautrupps beschäftigt";
             if (!CanAfford(d.CostFor(p.level + 1))) return "Zu wenig Rohstoffe";
             return null;
         }
@@ -342,8 +354,9 @@ namespace Pfahlstadt
             var p = S.plots[plot];
             var d = Defs.Get(p.type);
             Pay(d.CostFor(p.level + 1));
-            p.buildTotal = p.buildLeft = d.BuildTime(p.level + 1);
+            p.buildTotal = p.buildLeft = d.BuildTime(p.level + 1) * M.Build;
             Msg($"Ausbau: {d.Name} → Stufe {p.level + 1}");
+            QuestEvent(Stat.Build, 1);
             return true;
         }
 
@@ -376,7 +389,7 @@ namespace Pfahlstadt
         {
             if (ExpeditionBlocker() != null) return false;
             S.res[(int)Res.Muscheln] -= ExpeditionFood;
-            S.expeditionLeft = ExpeditionTime;
+            S.expeditionLeft = ExpeditionTime * (SeasonIdx == 3 ? 1.5f : 1f);
             S.expeditionSurprised = false;
             Msg("Eine Gruppe wandert ins Watt hinaus.");
             return true;
@@ -388,9 +401,8 @@ namespace Pfahlstadt
             float holz = Mathf.Round(Random.Range(40f, 90f) * m);
             float musch = Mathf.Round(Random.Range(30f, 70f) * m);
             float metall = Mathf.Round(Random.Range(6f, 22f) * m);
-            S.res[(int)Res.Holz] += holz;
-            S.res[(int)Res.Muscheln] += musch;
-            S.res[(int)Res.Altmetall] += metall;
+            AddRes(0, holz); AddRes(1, musch); AddRes(3, metall);
+            QuestEvent(Stat.Exp, 1);
             Msg($"Wattwanderung zurück: +{holz} Holz, +{musch} Muscheln, +{metall} Altmetall");
             if (!S.expeditionSurprised && Random.value < 0.3f && S.survivors < Capacity)
             {
@@ -410,10 +422,18 @@ namespace Pfahlstadt
                 try { S = JsonUtility.FromJson<SaveData>(json); }
                 catch (Exception) { S = null; }
             }
+            S2 = null;
+            string json2 = PlayerPrefs.GetString(SaveKey2, "");
+            if (!string.IsNullOrEmpty(json2))
+            {
+                try { S2 = JsonUtility.FromJson<SaveData2>(json2); }
+                catch (Exception) { S2 = null; }
+            }
             if (S == null || S.plots == null || S.plots.Length != PlotCount || S.version < 2 || S.res == null || S.res.Length != 4)
                 NewGame();
             else
             {
+                EnsureExtra();
                 Msg("Willkommen zurück in der Pfahlstadt!");
                 CatchUpOffline();
             }
@@ -426,6 +446,7 @@ namespace Pfahlstadt
             if (S == null) return;
             S.lastSaveUtc = DateTime.UtcNow.Ticks;
             PlayerPrefs.SetString(SaveKey, JsonUtility.ToJson(S));
+            if (S2 != null) PlayerPrefs.SetString(SaveKey2, JsonUtility.ToJson(S2));
             PlayerPrefs.Save();
         }
 
@@ -445,6 +466,10 @@ namespace Pfahlstadt
             S.plots[3] = new PlotData { type = (int)BType.Muschelzucht, level = 1 };
             S.plots[4] = new PlotData { type = (int)BType.Regenfaenger, level = 1 };
             S.plots[5] = new PlotData { type = (int)BType.Unterkunft, level = 1 };
+            string keepName = S2 != null ? S2.playerName : "";
+            S2 = new SaveData2();
+            S2.playerName = keepName;
+            EnsureExtra();
             Log.Clear();
             Msg("Willkommen in der Pfahlstadt! Bau den Gezeitenturm aus, bevor die große Flut kommt.");
             Save();
@@ -471,6 +496,7 @@ namespace Pfahlstadt
                     S.expeditionLeft -= dt;
                     if (S.expeditionLeft <= 0f) { S.expeditionLeft = 0f; FinishExpedition(); }
                 }
+                TickExtra(dt, true);
             }
 
             string gains = "";

@@ -26,6 +26,7 @@ namespace Pfahlstadt
             gameObject.AddComponent<CameraRig>();
             gameObject.AddComponent<GraphicsQuality>();
             gameObject.AddComponent<WorldView>();
+            gameObject.AddComponent<WattView>();
             gameObject.AddComponent<GameUI>();
         }
     }

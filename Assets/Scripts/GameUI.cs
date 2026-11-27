@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Pfahlstadt
 {
     /// Benutzeroberfläche (skaliert auf jede Bildschirmgröße, Hochformat).
-    public class GameUI : MonoBehaviour
+    public partial class GameUI : MonoBehaviour
     {
         public static GameUI I { get; private set; }
         public int Selected { get; private set; } = -1;
@@ -21,6 +21,8 @@ namespace Pfahlstadt
 
         public void Select(int i)
         {
+            if (i <= -3000 && i > -4000) { if (Colony.I != null) Colony.I.CollectTreasure(-3000 - i); Selected = -1; return; }
+            if (i != -1) panel = null;
             Selected = i;
             confirmDemolish = false;
             if (i >= 0) menu = false;
@@ -84,7 +86,7 @@ namespace Pfahlstadt
             GUI.enabled = enabled;
             bool b = GUI.Button(r, text, stBtn);
             GUI.enabled = old;
-            return b;
+            return b && !dragMoved;
         }
 
         void Bar(Rect r, float v, Color c)
@@ -143,6 +145,7 @@ namespace Pfahlstadt
             var c = Colony.I;
             if (c == null || c.S == null) return;
             if (st == null) InitStyles();
+            EnsureExtraStyles();
             if (Event.current.type == EventType.Layout) rects.Clear();
 
             sc = Mathf.Max(0.3f, Mathf.Min(Screen.width / 720f, Screen.height / 1280f));
@@ -157,8 +160,12 @@ namespace Pfahlstadt
             TopBar(c);
             Toasts(c);
             BottomBar(c);
-            if (menu) MenuPanel(c);
+            if (panel != null) BigPanel(c);
+            else if (menu) MenuPanel(c);
             else if (Selected >= 0) PlotPanel(c);
+            else if (Selected <= -1000) WattPanel(c);
+            else { QuickButtons(c); WarnBox(c); }
+            if (replay != null) ReplayView();
         }
 
         void WorldLabels(Colony c)
@@ -251,26 +258,23 @@ namespace Pfahlstadt
         {
             float h = 120f, y = VH - bottom - h;
             Panel(new Rect(0, y, VW, h + bottom));
-            float x0 = VW / 2f - 352f, bw = 168f, step = 178.6f;
-
-            string beacon = c.S.beaconOn ? "<color=#FFD27A>AN</color>" : "<color=#9AB8C8>AUS</color>";
-            if (Btn(new Rect(x0, y + 14, bw, 92), $"<b>Leuchtfeuer</b>\n{beacon}")) c.ToggleBeacon();
-
-            string block = c.ExpeditionBlocker();
-            string exp = c.S.expeditionLeft > 0f
-                ? $"<b>Im Watt</b>\n{Defs.Time(c.S.expeditionLeft)}"
-                : block == "Wartet auf Ebbe" ? "<b>Wattwandern</b>\n<size=17>wartet auf Ebbe</size>"
-                : $"<b>Wattwandern</b>\n<size=17>{Colony.ExpeditionFood:0} Muscheln</size>";
-            if (Btn(new Rect(x0 + step, y + 14, bw, 92), exp, block == null)) c.StartExpedition();
-
-            var g = GraphicsQuality.I;
-            if (Btn(new Rect(x0 + step * 2, y + 14, bw, 92), $"<b>Grafik</b>\n<size=18>{(g.Auto ? "Auto · " : "")}{g.Tier}</size>")) g.Cycle();
-
-            if (Btn(new Rect(x0 + step * 3, y + 14, bw, 92), "<b>Menü</b>"))
+            float x0 = VW / 2f - 352f, bw = 134f, step = 142.5f;
+            string[] names = { "Truppen", "Karte", "Belohnung", "Stadt", "Menü" };
+            string[] keys = { "troops", "map", "rewards", "city", "menu" };
+            for (int k = 0; k < 5; k++)
             {
-                menu = !menu;
-                confirmNew = false;
-                if (menu) Selected = -1;
+                string sub = "";
+                if (k == 0) sub = $"{Units.Sum(c.S2.troops)} da";
+                if (k == 1) sub = c.S2.marches.Count + c.S2.botMarches.Count > 0 ? $"{c.S2.marches.Count + c.S2.botMarches.Count} unterwegs" : "";
+                if (k == 2) sub = RewardsReady(c) > 0 ? $"<color=#8EF0A0>{RewardsReady(c)} bereit</color>" : "";
+                if (k == 3) sub = c.TraderHere ? "<color=#FFD27A>Händler!</color>" : c.S2.researchIdx >= 0 ? "forscht" : "";
+                bool on = k == 4 ? menu : panel == keys[k];
+                string label = (on ? "<color=#FFE08A>" : "") + $"<b>{names[k]}</b>" + (on ? "</color>" : "") + (sub != "" ? $"\n<size=16>{sub}</size>" : "");
+                if (Btn(new Rect(x0 + step * k, y + 14, bw, 92), label))
+                {
+                    if (k == 4) { menu = !menu; confirmNew = false; panel = null; if (menu) Selected = -1; }
+                    else OpenPanel(on ? null : keys[k]);
+                }
             }
         }
 
@@ -296,7 +300,11 @@ namespace Pfahlstadt
                     string blk = c.BuildBlocker(Selected, (BType)t);
                     if (blk != null && blk != "Zu wenig Rohstoffe")
                         GUI.Label(new Rect(row.x + 12, row.y + 54, row.width - 170, 22), $"<color=#FF8A8A>{blk}</color>", stTiny);
-                    if (Btn(new Rect(row.xMax - 150, row.y + 12, 138, 56), "Bauen", blk == null)) c.StartBuild(Selected, (BType)t);
+                    if (blk == "Alle Bautrupps beschäftigt" || blk == "Zu wenig Rohstoffe")
+                    {
+                        if (Btn(new Rect(row.xMax - 150, row.y + 12, 138, 56), "<size=18>Warte-\nschlange</size>")) { string e = c.QueueAdd(Selected, t); if (e != null) c.Msg(e); }
+                    }
+                    else if (Btn(new Rect(row.xMax - 150, row.y + 12, 138, 56), "Bauen", blk == null)) c.StartBuild(Selected, (BType)t);
                 }
                 return;
             }
@@ -320,6 +328,7 @@ namespace Pfahlstadt
             {
                 GUI.Label(new Rect(pr.x + 18, y + 4, w - 36, 30), $"Bauarbeiten: noch {Defs.Time(p.buildLeft)}", st);
                 Bar(new Rect(pr.x + 18, y + 38, w - 36, 22), 1f - p.buildLeft / Mathf.Max(0.01f, p.buildTotal), new Color(0.4f, 0.85f, 1f));
+                SpeedButtons(c, new Rect(pr.x + 18, pr.yMax - 86, 400, 70), "plot", Selected);
             }
             else if (p.level < def.MaxLevel)
             {
@@ -327,7 +336,11 @@ namespace Pfahlstadt
                 GUI.Label(new Rect(pr.x + 18, y + 6, w - 36, 28), $"Ausbau auf Stufe {p.level + 1}:  {CostStr(def.CostFor(p.level + 1))}   ·  {Defs.Time(def.BuildTime(p.level + 1))}", stSmall);
                 if (blk != null && blk != "Zu wenig Rohstoffe")
                     GUI.Label(new Rect(pr.x + 18, y + 34, w - 36, 26), $"<color=#FF8A8A>{blk}</color>", stSmall);
-                if (Btn(new Rect(pr.x + 18, pr.yMax - 86, 330, 70), $"<b>Ausbauen → {p.level + 1}</b>", blk == null)) c.StartUpgrade(Selected);
+                if (blk == "Alle Bautrupps beschäftigt" || blk == "Zu wenig Rohstoffe")
+                {
+                    if (Btn(new Rect(pr.x + 18, pr.yMax - 86, 330, 70), "<b>In Warteschlange</b>")) { string e = c.QueueAdd(Selected, -1); if (e != null) c.Msg(e); }
+                }
+                else if (Btn(new Rect(pr.x + 18, pr.yMax - 86, 330, 70), $"<b>Ausbauen → {p.level + 1}</b>", blk == null)) c.StartUpgrade(Selected);
             }
             else GUI.Label(new Rect(pr.x + 18, y + 6, w - 36, 28), "Maximale Stufe erreicht.", stSmall);
 
@@ -386,7 +399,7 @@ namespace Pfahlstadt
 
         void MenuPanel(Colony c)
         {
-            float w = 704f, h = 560f;
+            float w = 704f, h = 600f;
             var r = Panel(new Rect(VW / 2f - w / 2f, VH / 2f - h / 2f, w, h));
             if (Header(r, "Pfahlstadt – Menü")) { menu = false; return; }
             var g = GraphicsQuality.I;
@@ -400,8 +413,9 @@ namespace Pfahlstadt
             };
             foreach (var l in lines) { GUI.Label(new Rect(r.x + 18, y, w - 36, 30), l, stSmall); y += 32f; }
 
-            y += 16f;
-            if (Btn(new Rect(r.x + 18, y, w - 36, 70), "Spiel speichern")) { c.Save(); c.Msg("Spielstand gespeichert."); }
+            y += 8f;
+            if (Btn(new Rect(r.x + 18, y, (w - 46) / 2, 70), $"Grafik: {(g.Auto ? "Auto · " : "")}{g.Tier}")) g.Cycle();
+            if (Btn(new Rect(r.x + 28 + (w - 46) / 2, y, (w - 46) / 2, 70), "Spiel speichern")) { c.Save(); c.Msg("Spielstand gespeichert."); }
             y += 84f;
             if (!confirmNew) { if (Btn(new Rect(r.x + 18, y, w - 36, 70), "Neues Spiel")) confirmNew = true; }
             else if (Btn(new Rect(r.x + 18, y, w - 36, 70), "<color=#FFB0A0><b>Wirklich neu anfangen? Alles geht verloren</b></color>"))
