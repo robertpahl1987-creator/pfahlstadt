@@ -428,6 +428,8 @@ export class UI {
     this.panel.style.display = html ? '' : 'none';
     const mini = this.view !== 'map' && !this.mode && !this.menu && ((this.selected >= 0 && this.c.s.plots[this.selected].type >= 0) || this.selected <= -1000);
     this.panel.classList.toggle('mini', mini);
+    this.panel.classList.toggle('seamini', this.view === 'map' && !this.mapSel && !this.showReports);
+    this.panel.classList.toggle('sea', this.view === 'map');
     const qk = document.getElementById('quick'); if (qk) qk.style.display = html ? 'none' : '';
     const cb = document.getElementById('chatBox');
     if (cb) cb.scrollTop = cb.scrollHeight;
@@ -631,26 +633,23 @@ export class UI {
   }
 
   mapHtml() {
-    const c = this.c, s = c.s, away = c.troopsAway, o = this.o;
+    const c = this.c, s = c.s, away = c.troopsAway, o = this.o, fmtN = (n) => n.toLocaleString('de-DE');
+    const st = c.tideState(0), m = TIDE_MUL[String(st)];
+    const eff = UNITS.map((u, i) => (m[i] !== 1 ? `${u.ic}${m[i] > 1 ? '+' : '−'}${Math.round(Math.abs(m[i] - 1) * 100)}%` : '')).filter(Boolean).join(' ');
+    const head = `<div class="ph"><div class="pt" style="font-size:16px">🗺️ Seekarte</div><button class="btn sm2 ghost" data-a="reports">📜 ${(o.active ? o.reports : s.reports).length}</button><button class="x" data-a="close">✕</button></div>`;
+    const line1 = `<div class="sm">🌊 <b>${TIDE_NAME[st]}</b> ${eff} · wechselt in ${fmtTime(c.tideChangeIn())}</div>`;
+    let rows = [];
     if (this.sea.isOnline) {
       const now = o.serverNow();
-      const tname = (m) => m.target_player ? ((o.world.players.find((p) => p.id === m.target_player) || {}).name || 'Stadt') : ((o.world.territories.find((t) => t.id === m.target_terr) || {}).name || 'Gebiet');
-      const marches = o.marches.map((m) => {
-        const left = m.status === 'out' ? Date.parse(m.arrive) - now : Date.parse(m.back_at) - now;
-        return `<div class="sm">${m.kind === 'scout' ? '🔭 Späher' : `⛵ ${uSum(m.u || zeroU())} Krieger${m.rally_id ? ' (Sammelangriff)' : ''}`} → ${tname(m)} (${m.status === 'back' ? 'Heimweg' : m.kind === 'player' ? 'Angriff auf Stadt' : m.kind === 'scout' ? 'Erkundung' : 'Gebiet'}) · ${fmtTime(Math.max(0, left / 1000))}</div>`;
-      }).join('');
-      return this.head('Seekarte (online)') + this.tideBox() + this.homeTroops(c, s, away) +
-        `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches}
-         <div class="sm">Ziehen zum Verschieben. Tippe auf Inseln oder fremde Städte (🏰). Grün = deins, blau = Verbündete, orange = Gegner.</div>
-         <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${o.reports.length})</button></div>`;
-    }
-    if (o.active) return this.head('Seekarte') + '<div class="inf">Lade Weltkarte …</div>' + (o.error ? `<div class="warn">${o.error}</div>` : '');
-    const owned = s.terr.filter((t) => t.owner === 1).length;
-    const marches = s.marches.map((m) => `<div class="sm">${m.kind === 'scout' ? '🔭 Späher' : `⛵ ${uSum(m.u || zeroU())} Krieger`} → ${s.terr[m.target].name} (${m.kind === 'scout' ? 'Erkundung' : m.phase === 'back' ? 'Heimweg' : m.kind === 'attack' ? 'Angriff' : 'Verstärkung'}) · ${fmtTime(m.left)}</div>`).join('');
-    return this.head('Seekarte (offline)') + this.tideBox() + this.homeTroops(c, s, away) +
-      `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
-       <div class="sm">Offline kämpfst du gegen Piraten. Für Mitspieler und Allianzen: Menü → Online-Konto.</div>
-       <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${s.reports.length})</button></div>`;
+      const tname = (mm) => mm.target_player ? ((o.world.players.find((p) => p.id === mm.target_player) || {}).name || 'Stadt') : ((o.world.territories.find((t) => t.id === mm.target_terr) || {}).name || 'Gebiet');
+      rows = o.marches.map((mm) => `${mm.kind === 'scout' ? '🔭' : mm.status === 'back' ? '↩️' : '⛵'} ${tname(mm)} · ${fmtTime(Math.max(0, ((mm.status === 'out' ? Date.parse(mm.arrive) : Date.parse(mm.back_at)) - now) / 1000))}`);
+    } else if (o.active) return head + '<div class="sm">Lade Weltkarte …</div>' + (o.error ? `<div class="warn">${o.error}</div>` : '');
+    else rows = s.marches.map((mm) => `${mm.kind === 'scout' ? '🔭' : mm.phase === 'back' ? '↩️' : '⛵'} ${s.terr[mm.target].name} · ${fmtTime(mm.left)}`);
+    for (const mm of s.botMarches || []) rows.push(`${mm.phase === 'back' ? '↩️' : '🏴‍☠️'} ${mm.bot.name} · ${fmtTime(mm.left)}`);
+    const owned = this.sea.isOnline ? o.owned.length : s.terr.filter((t) => t.owner === 1).length;
+    const line2 = `<div class="sm">🏠 Zu Hause <b>${fmtN(uSum(s.troops))}</b> · ⚔ unterwegs/Besatzung <b>${fmtN(uSum(away))}</b> · 🚩 <b>${owned}</b> Gebiete</div>`;
+    const marches = rows.length ? `<div class="sm">${rows.slice(0, 3).join(' &nbsp;·&nbsp; ')}${rows.length > 3 ? ` (+${rows.length - 3})` : ''}</div>` : '';
+    return head + line1 + line2 + marches + '<div class="sm" style="opacity:.75">Tippe auf Inseln, Städte oder 🏴‍☠️ Schiffe.</div>';
   }
 
   terrHtml() {

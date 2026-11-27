@@ -4860,6 +4860,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       this.panel.style.display = html ? "" : "none";
       const mini = this.view !== "map" && !this.mode && !this.menu && (this.selected >= 0 && this.c.s.plots[this.selected].type >= 0 || this.selected <= -1e3);
       this.panel.classList.toggle("mini", mini);
+      this.panel.classList.toggle("seamini", this.view === "map" && !this.mapSel && !this.showReports);
+      this.panel.classList.toggle("sea", this.view === "map");
       const qk = document.getElementById("quick");
       if (qk) qk.style.display = html ? "none" : "";
       const cb = document.getElementById("chatBox");
@@ -5083,24 +5085,23 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
        <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
     }
     mapHtml() {
-      const c = this.c, s = c.s, away = c.troopsAway, o = this.o;
+      const c = this.c, s = c.s, away = c.troopsAway, o = this.o, fmtN = (n) => n.toLocaleString("de-DE");
+      const st = c.tideState(0), m = TIDE_MUL[String(st)];
+      const eff = UNITS.map((u, i) => m[i] !== 1 ? `${u.ic}${m[i] > 1 ? "+" : "\u2212"}${Math.round(Math.abs(m[i] - 1) * 100)}%` : "").filter(Boolean).join(" ");
+      const head = `<div class="ph"><div class="pt" style="font-size:16px">\u{1F5FA}\uFE0F Seekarte</div><button class="btn sm2 ghost" data-a="reports">\u{1F4DC} ${(o.active ? o.reports : s.reports).length}</button><button class="x" data-a="close">\u2715</button></div>`;
+      const line1 = `<div class="sm">\u{1F30A} <b>${TIDE_NAME[st]}</b> ${eff} \xB7 wechselt in ${fmtTime(c.tideChangeIn())}</div>`;
+      let rows = [];
       if (this.sea.isOnline) {
         const now = o.serverNow();
-        const tname = (m) => m.target_player ? (o.world.players.find((p) => p.id === m.target_player) || {}).name || "Stadt" : (o.world.territories.find((t) => t.id === m.target_terr) || {}).name || "Gebiet";
-        const marches2 = o.marches.map((m) => {
-          const left = m.status === "out" ? Date.parse(m.arrive) - now : Date.parse(m.back_at) - now;
-          return `<div class="sm">${m.kind === "scout" ? "\u{1F52D} Sp\xE4her" : `\u26F5 ${uSum(m.u || zeroU())} Krieger${m.rally_id ? " (Sammelangriff)" : ""}`} \u2192 ${tname(m)} (${m.status === "back" ? "Heimweg" : m.kind === "player" ? "Angriff auf Stadt" : m.kind === "scout" ? "Erkundung" : "Gebiet"}) \xB7 ${fmtTime(Math.max(0, left / 1e3))}</div>`;
-        }).join("");
-        return this.head("Seekarte (online)") + this.tideBox() + this.homeTroops(c, s, away) + `<div class="inf">Deine Gebiete: <b>${o.owned.length}</b> &nbsp; Spieler auf der Karte: <b>${o.world.players.length}</b></div>${marches2}
-         <div class="sm">Ziehen zum Verschieben. Tippe auf Inseln oder fremde St\xE4dte (\u{1F3F0}). Gr\xFCn = deins, blau = Verb\xFCndete, orange = Gegner.</div>
-         <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${o.reports.length})</button></div>`;
-      }
-      if (o.active) return this.head("Seekarte") + '<div class="inf">Lade Weltkarte \u2026</div>' + (o.error ? `<div class="warn">${o.error}</div>` : "");
-      const owned = s.terr.filter((t) => t.owner === 1).length;
-      const marches = s.marches.map((m) => `<div class="sm">${m.kind === "scout" ? "\u{1F52D} Sp\xE4her" : `\u26F5 ${uSum(m.u || zeroU())} Krieger`} \u2192 ${s.terr[m.target].name} (${m.kind === "scout" ? "Erkundung" : m.phase === "back" ? "Heimweg" : m.kind === "attack" ? "Angriff" : "Verst\xE4rkung"}) \xB7 ${fmtTime(m.left)}</div>`).join("");
-      return this.head("Seekarte (offline)") + this.tideBox() + this.homeTroops(c, s, away) + `<div class="inf">Gebiete: <b>${owned}/${s.terr.length}</b></div>${marches}
-       <div class="sm">Offline k\xE4mpfst du gegen Piraten. F\xFCr Mitspieler und Allianzen: Men\xFC \u2192 Online-Konto.</div>
-       <div class="btns"><button class="btn ghost" data-a="reports">Berichte (${s.reports.length})</button></div>`;
+        const tname = (mm) => mm.target_player ? (o.world.players.find((p) => p.id === mm.target_player) || {}).name || "Stadt" : (o.world.territories.find((t) => t.id === mm.target_terr) || {}).name || "Gebiet";
+        rows = o.marches.map((mm) => `${mm.kind === "scout" ? "\u{1F52D}" : mm.status === "back" ? "\u21A9\uFE0F" : "\u26F5"} ${tname(mm)} \xB7 ${fmtTime(Math.max(0, ((mm.status === "out" ? Date.parse(mm.arrive) : Date.parse(mm.back_at)) - now) / 1e3))}`);
+      } else if (o.active) return head + '<div class="sm">Lade Weltkarte \u2026</div>' + (o.error ? `<div class="warn">${o.error}</div>` : "");
+      else rows = s.marches.map((mm) => `${mm.kind === "scout" ? "\u{1F52D}" : mm.phase === "back" ? "\u21A9\uFE0F" : "\u26F5"} ${s.terr[mm.target].name} \xB7 ${fmtTime(mm.left)}`);
+      for (const mm of s.botMarches || []) rows.push(`${mm.phase === "back" ? "\u21A9\uFE0F" : "\u{1F3F4}\u200D\u2620\uFE0F"} ${mm.bot.name} \xB7 ${fmtTime(mm.left)}`);
+      const owned = this.sea.isOnline ? o.owned.length : s.terr.filter((t) => t.owner === 1).length;
+      const line2 = `<div class="sm">\u{1F3E0} Zu Hause <b>${fmtN(uSum(s.troops))}</b> \xB7 \u2694 unterwegs/Besatzung <b>${fmtN(uSum(away))}</b> \xB7 \u{1F6A9} <b>${owned}</b> Gebiete</div>`;
+      const marches = rows.length ? `<div class="sm">${rows.slice(0, 3).join(" &nbsp;\xB7&nbsp; ")}${rows.length > 3 ? ` (+${rows.length - 3})` : ""}</div>` : "";
+      return head + line1 + line2 + marches + '<div class="sm" style="opacity:.75">Tippe auf Inseln, St\xE4dte oder \u{1F3F4}\u200D\u2620\uFE0F Schiffe.</div>';
     }
     terrHtml() {
       const c = this.c, s = c.s, o = this.o, f = this.form, att = Math.round(armyStr(f, null, true));
