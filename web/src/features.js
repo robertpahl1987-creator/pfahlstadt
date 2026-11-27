@@ -198,8 +198,8 @@ export function season() {
 }
 
 // ---------- Kostenloser Saison-Pass (pro Monat, 30 Stufen) ----------
-export const PASS_XP = 150, PASS_TIERS = 30;
-const XP = { build: 10, train: 1, gather: 0.05, win: 25, bot: 30, exp: 10, trade: 15, heal: 2, daily: 50, treasure: 8 };
+export const PASS_XP = 800, PASS_TIERS = 30;
+const XP = { build: 6, train: 0.5, gather: 0.01, win: 25, bot: 30, exp: 10, trade: 15, heal: 2, daily: 50, treasure: 8 };
 const monthKey = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}`; };
 export function passState(c) {
   const s = c.s;
@@ -244,8 +244,8 @@ export function treasureTick(c, dt) {
   if ((c.tideSin || 0) > 0.15) { if (s.treasures.length) s.treasures = []; return; }
   if ((c.tideSin || 0) > -0.4) return;
   s.treasureT = (s.treasureT || 8) - dt;
-  if (s.treasureT > 0 || s.treasures.length >= 2) return;
-  s.treasureT = 18 + Math.random() * 25;
+  if (s.treasureT > 0 || s.treasures.length >= 1) return;
+  s.treasureT = 90 + Math.random() * 150;
   const a = (Math.random() < 0.5 ? 1 : -1) * (0.4 + Math.random() * 2.4), r = c.areaRadius + 3 + 15 + Math.random() * 14;
   s.treasureSeq = (s.treasureSeq || 0) + 1;
   s.treasures.push({ id: s.treasureSeq, x: Math.sin(a) * r, z: Math.cos(a) * r });
@@ -257,9 +257,9 @@ export function collectTreasure(c, id) {
   const roll = Math.random(), f = 1 + 0.25 * (c.towerLevel - 1);
   s.items = s.items || {};
   let txt;
-  if (roll < 0.45) { s.items.sp1 = (s.items.sp1 || 0) + 1; txt = '⚡ Beschleuniger 1 Min.'; }
-  else if (roll < 0.7) { s.items.sp5 = (s.items.sp5 || 0) + 1; txt = '⚡ Beschleuniger 5 Min.'; }
-  else if (roll < 0.75) { s.items.sp15 = (s.items.sp15 || 0) + 1; txt = '⚡ Beschleuniger 15 Min.!'; }
+  if (roll < 0.35) { s.items.sp1 = (s.items.sp1 || 0) + 1; txt = '⚡ Beschleuniger 1 Min.'; }
+  else if (roll < 0.5) { s.items.sp5 = (s.items.sp5 || 0) + 1; txt = '⚡ Beschleuniger 5 Min.'; }
+  else if (roll < 0.53) { s.items.sp15 = (s.items.sp15 || 0) + 1; txt = '⚡ Beschleuniger 15 Min.!'; }
   else { const v = Math.round((40 + Math.random() * 120) * f); c.addRes(3, v); txt = `${v} Altmetall`; }
   c.msg(`✨ Schatz im Watt gefunden: ${txt}`);
   questEvent(c, 'treasure', 1);

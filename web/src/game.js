@@ -10,7 +10,7 @@ export const T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS
 
 export const DEFS = [
   { name: 'Gezeitenturm', short: 'Herz der Stadt', desc: 'Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt höher über das Wasser.', cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
-  { name: 'Treibholzsammler', short: '+Holz', desc: 'Fischt angeschwemmtes Holz aus dem Wasser.', cost: [40, 0, 0, 0], prod: HOLZ, rate: 0.9, workers: 2, build: 6 },
+  { name: 'Treibholzsammler', short: '+Holz', desc: 'Fischt angeschwemmtes Holz aus dem Wasser.', cost: [40, 0, 0, 0], prod: HOLZ, rate: 1.2, workers: 2, build: 6 },
   { name: 'Muschelzucht', short: '+Muscheln, stark bei Ebbe', desc: 'Muschelpfähle im Watt. Bei Ebbe wird viel geerntet, bei Flut wenig.', cost: [60, 0, 0, 0], prod: MUSCHELN, rate: 0.75, workers: 2, build: 6 },
   { name: 'Regenfänger', short: '+Wasser, stark bei Sturm', desc: 'Segeltrichter und Fässer sammeln Regen. Bei Sturmflut fällt besonders viel.', cost: [70, 0, 0, 5], prod: WASSER, rate: 0.6, workers: 1, build: 6 },
   { name: 'Wracktaucher', short: '+Altmetall, stark bei Flut', desc: 'Taucher bergen Metall aus alten Wracks. Bei hohem Wasser kommen sie besser heran.', cost: [120, 40, 0, 0], prod: METALL, rate: 0.25, workers: 3, build: 6 },
@@ -101,10 +101,16 @@ export function makeTerritories() {
 export const travelTime = (t) => 20 + Math.hypot(t.x, t.y) * 22;
 export const MAX_LEVEL = 20;
 
-export const costFor = (t, lvl) => DEFS[t].cost.map((c) => Math.round(c * Math.pow(1.55, Math.min(lvl, 10) - 1) * Math.pow(1.3, Math.max(0, lvl - 10))));
-export const buildTime = (t, lvl) => DEFS[t].build * Math.pow(lvl, 1.5);
+export const costFor = (t, lvl) => {
+  const f = Math.pow(1.55, Math.min(lvl, 10) - 1) * Math.pow(1.3, Math.max(0, lvl - 10));
+  const c = DEFS[t].cost.map((v) => Math.round(v * f));
+  // ab Stufe 6 brauchen Gebäude auch Muscheln und Wasser (Proviant für die Bautrupps)
+  if (lvl >= 6) { const w = DEFS[t].cost[0] * f * Math.min(0.6, 0.12 * (lvl - 5)); c[1] += Math.round(w * 0.6); c[2] += Math.round(w * 0.5); }
+  return c;
+};
+export const buildTime = (t, lvl) => DEFS[t].build * (lvl <= 1 ? 1 : 2 * Math.pow(lvl, 1.8));
 export const rateAt = (t, lvl) => (lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 * (lvl - 1)));
-export const deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, Math.min(lvl, 10)) + 0.2 * Math.max(0, lvl - 10);
+export const deckFor = (lvl) => 2.65 + 0.55 * Math.max(1, Math.min(lvl, 10)) + 0.2 * Math.max(0, lvl - 10);
 export const beaconWood = (lvl) => 0.04 + 0.04 * lvl;
 
 export const DAMM = 52;
@@ -308,6 +314,7 @@ export class Colony {
     const pm = mods(this).prod;
     for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh * pm;
     r[MUSCHELN] -= this.upkeep / 60;
+    r[MUSCHELN] += 0.25; r[WASSER] += 0.25; // Notvorrat des Gezeitenturms: niemand verhungert ganz
     r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
     r[WASSER] -= s.survivors * 0.03;
     if (s.beaconOn) r[HOLZ] -= beaconWood(this.towerLevel);
@@ -340,7 +347,7 @@ export class Colony {
     const s = this.s;
     const wet = this.freeboard < 0, starving = this.starving;
     if (wet || starving) {
-      const sev = (wet ? -this.freeboard * 1.2 : 0) + (starving ? 1 : 0);
+      const sev = (wet ? -this.freeboard * 0.6 : 0) + (starving ? 0.25 : 0);
       s.sickProg += dt * sev * this.healthy / 120;
       while (s.sickProg >= 1 && s.sick < s.survivors) {
         s.sickProg -= 1; s.sick++;
@@ -349,7 +356,7 @@ export class Colony {
     } else s.sickProg = Math.max(0, s.sickProg - dt * 0.01);
 
     if (s.sick > 0 && s.survivors > 1 && (this.freeboard < -1.2 || starving)) {
-      s.deathProg += dt * s.sick / 240;
+      s.deathProg += dt * Math.min(s.sick, 10) / 900; // höchstens etwa 1 Todesfall pro 1,5 Minuten
       if (s.deathProg >= 1) { s.deathProg = 0; s.sick--; s.survivors--; this.msg('Ein Siedler hat es nicht geschafft …'); }
     }
 
@@ -360,7 +367,8 @@ export class Colony {
       if (s.healProg >= 1) { s.healProg = 0; s.sick--; this.msg('Ein Kranker ist wieder gesund.'); }
     }
 
-    if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning) {
+    // neue Siedler kommen nur, wenn genug Muscheln und Wasser für sie da sind
+    if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning && this.rates[MUSCHELN] > 2 && this.rates[WASSER] > 2) {
       s.arriveProg += dt / 25;
       if (s.arriveProg >= 1) { s.arriveProg = 0; s.survivors++; this.msg('Ein Boot legt an: Ein neuer Siedler!'); }
     }

@@ -1243,9 +1243,9 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const k = Math.floor((Date.now() - EPOCH) / WEEK), idx = (k % 4 + 4) % 4;
     return { idx, ...SEASONS[idx], left: (EPOCH + (k + 1) * WEEK - Date.now()) / 1e3 };
   }
-  var PASS_XP = 150;
+  var PASS_XP = 800;
   var PASS_TIERS = 30;
-  var XP = { build: 10, train: 1, gather: 0.05, win: 25, bot: 30, exp: 10, trade: 15, heal: 2, daily: 50, treasure: 8 };
+  var XP = { build: 6, train: 0.5, gather: 0.01, win: 25, bot: 30, exp: 10, trade: 15, heal: 2, daily: 50, treasure: 8 };
   var monthKey = () => {
     const d = /* @__PURE__ */ new Date();
     return `${d.getFullYear()}-${d.getMonth() + 1}`;
@@ -1299,8 +1299,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     }
     if ((c.tideSin || 0) > -0.4) return;
     s.treasureT = (s.treasureT || 8) - dt;
-    if (s.treasureT > 0 || s.treasures.length >= 2) return;
-    s.treasureT = 18 + Math.random() * 25;
+    if (s.treasureT > 0 || s.treasures.length >= 1) return;
+    s.treasureT = 90 + Math.random() * 150;
     const a = (Math.random() < 0.5 ? 1 : -1) * (0.4 + Math.random() * 2.4), r = c.areaRadius + 3 + 15 + Math.random() * 14;
     s.treasureSeq = (s.treasureSeq || 0) + 1;
     s.treasures.push({ id: s.treasureSeq, x: Math.sin(a) * r, z: Math.cos(a) * r });
@@ -1312,13 +1312,13 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const roll = Math.random(), f = 1 + 0.25 * (c.towerLevel - 1);
     s.items = s.items || {};
     let txt;
-    if (roll < 0.45) {
+    if (roll < 0.35) {
       s.items.sp1 = (s.items.sp1 || 0) + 1;
       txt = "\u26A1 Beschleuniger 1 Min.";
-    } else if (roll < 0.7) {
+    } else if (roll < 0.5) {
       s.items.sp5 = (s.items.sp5 || 0) + 1;
       txt = "\u26A1 Beschleuniger 5 Min.";
-    } else if (roll < 0.75) {
+    } else if (roll < 0.53) {
       s.items.sp15 = (s.items.sp15 || 0) + 1;
       txt = "\u26A1 Beschleuniger 15 Min.!";
     } else {
@@ -1342,7 +1342,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var SPEED_KEYS = ["sp1", "sp5", "sp15", "sp60", "sp180"];
   var SHIP_NAMES = ["Schwarze M\xF6we", "Rostiger Anker", "Seeteufel", "Krakenfaust", "Nebelhai", "Sturmkr\xE4he", "Blutige Auster", "Wattwolf", "Grauer Hering", "Knochenkiel"];
   function botArmy(L) {
-    const n = Math.round(5 * Math.pow(1.12, L - 1) + L), fav = (L - 1) % 5;
+    const n = Math.round(5 * Math.pow(1.14, L - 1) + L), fav = (L - 1) % 5;
     const w = [1, 1, 1, 1, 1];
     w[fav] = 3;
     if (L >= 6) w[(fav + 2) % 5] = 2;
@@ -1411,8 +1411,24 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     s.bots = out;
   }
   var botTravel = (b, u, c, cap) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u) * (c ? mods(c).travel * fleetSpeed(c, u) * capSpeed(c, cap) : 1);
+  var STAM_MAX = 10;
+  var STAM_SEC = 1200;
+  function stamina(c) {
+    const s = c.s, now = Date.now();
+    if (!s.stam) s.stam = { n: STAM_MAX, t: now };
+    if (s.stam.n >= STAM_MAX) s.stam.t = now;
+    else {
+      const k = Math.floor((now - s.stam.t) / (STAM_SEC * 1e3));
+      if (k > 0) {
+        s.stam.n = Math.min(STAM_MAX, s.stam.n + k);
+        s.stam.t += k * STAM_SEC * 1e3;
+      }
+    }
+    return { n: s.stam.n, next: s.stam.n >= STAM_MAX ? 0 : (s.stam.t + STAM_SEC * 1e3 - now) / 1e3 };
+  }
   function botBlocker(c, id, u) {
     const b = c.s.bots.find((x) => x.id === id);
+    if (stamina(c).n <= 0) return "Keine Ausdauer \u2013 alle 20 Minuten kommt ein Punkt zur\xFCck";
     if (!b) return "Schiff ist weg";
     if (uSum(u) <= 0) return "Keine Truppen ausgew\xE4hlt";
     if (u.some((v, i) => v > c.s.troops[i])) return "So viele Truppen hast du nicht zu Hause";
@@ -1424,6 +1440,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
     const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u, c, cap);
     if (cap) capSend(c, cap, tt);
     c.s.troops = uSub(c.s.troops, u);
+    c.s.stam.n--;
     c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: "out", cap: cap || null, loot: capLoot(c, cap) * fleetLoot(c, u) });
     c.msg(`\u2694\uFE0F Angriff auf das Piratenschiff \u201E${b.name}\u201C (Stufe ${b.level})!`);
     return true;
@@ -1531,7 +1548,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   var T = { TURM: 0, TREIBHOLZ: 1, MUSCHEL: 2, REGEN: 3, TAUCHER: 4, HAUS: 5, HEILER: 6, RAUCH: 7, KUECHE: 8, KASERNE: 9, WACHTURM: 10, LAGER: 11, MAUER: 12, ABWEHR: 13, DAMM: 14, HARPHOF: 15, WACHSTUBE: 16, ENTERHALLE: 17, SCHLEUDER: 18, WATTHUETTE: 19, LAZARETT: 20, AKADEMIE: 21, WERFT: 22, WAHRZEICHEN: 23 };
   var DEFS = [
     { name: "Gezeitenturm", short: "Herz der Stadt", desc: "Leuchtturm und Pfahlwerk. Jede Stufe hebt alle Plattformen der Stadt h\xF6her \xFCber das Wasser.", cost: [220, 0, 0, 60], prod: -1, rate: 0, workers: 0, build: 15 },
-    { name: "Treibholzsammler", short: "+Holz", desc: "Fischt angeschwemmtes Holz aus dem Wasser.", cost: [40, 0, 0, 0], prod: HOLZ, rate: 0.9, workers: 2, build: 6 },
+    { name: "Treibholzsammler", short: "+Holz", desc: "Fischt angeschwemmtes Holz aus dem Wasser.", cost: [40, 0, 0, 0], prod: HOLZ, rate: 1.2, workers: 2, build: 6 },
     { name: "Muschelzucht", short: "+Muscheln, stark bei Ebbe", desc: "Muschelpf\xE4hle im Watt. Bei Ebbe wird viel geerntet, bei Flut wenig.", cost: [60, 0, 0, 0], prod: MUSCHELN, rate: 0.75, workers: 2, build: 6 },
     { name: "Regenf\xE4nger", short: "+Wasser, stark bei Sturm", desc: "Segeltrichter und F\xE4sser sammeln Regen. Bei Sturmflut f\xE4llt besonders viel.", cost: [70, 0, 0, 5], prod: WASSER, rate: 0.6, workers: 1, build: 6 },
     { name: "Wracktaucher", short: "+Altmetall, stark bei Flut", desc: "Taucher bergen Metall aus alten Wracks. Bei hohem Wasser kommen sie besser heran.", cost: [120, 40, 0, 0], prod: METALL, rate: 0.25, workers: 3, build: 6 },
@@ -1646,10 +1663,19 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
   }
   var travelTime = (t) => 20 + Math.hypot(t.x, t.y) * 22;
   var MAX_LEVEL = 20;
-  var costFor = (t, lvl) => DEFS[t].cost.map((c) => Math.round(c * Math.pow(1.55, Math.min(lvl, 10) - 1) * Math.pow(1.3, Math.max(0, lvl - 10))));
-  var buildTime = (t, lvl) => DEFS[t].build * Math.pow(lvl, 1.5);
+  var costFor = (t, lvl) => {
+    const f = Math.pow(1.55, Math.min(lvl, 10) - 1) * Math.pow(1.3, Math.max(0, lvl - 10));
+    const c = DEFS[t].cost.map((v) => Math.round(v * f));
+    if (lvl >= 6) {
+      const w = DEFS[t].cost[0] * f * Math.min(0.6, 0.12 * (lvl - 5));
+      c[1] += Math.round(w * 0.6);
+      c[2] += Math.round(w * 0.5);
+    }
+    return c;
+  };
+  var buildTime = (t, lvl) => DEFS[t].build * (lvl <= 1 ? 1 : 2 * Math.pow(lvl, 1.8));
   var rateAt = (t, lvl) => lvl <= 0 ? 0 : DEFS[t].rate * lvl * (1 + 0.1 * (lvl - 1));
-  var deckFor = (lvl) => 2.2 + 0.55 * Math.max(1, Math.min(lvl, 10)) + 0.2 * Math.max(0, lvl - 10);
+  var deckFor = (lvl) => 2.65 + 0.55 * Math.max(1, Math.min(lvl, 10)) + 0.2 * Math.max(0, lvl - 10);
   var beaconWood = (lvl) => 0.04 + 0.04 * lvl;
   var DAMM = 52;
   var _T = { L: 11, H: 5, K: 8, HE: 6, KA: 9, W: 10, R: 7, TH: 1, MU: 2, RE: 3, TA: 4, HP: 15, WS: 16, EN: 17, SL: 18, WL: 19 };
@@ -1988,6 +2014,8 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const pm = mods(this).prod;
       for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh * pm;
       r[MUSCHELN] -= this.upkeep / 60;
+      r[MUSCHELN] += 0.25;
+      r[WASSER] += 0.25;
       r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
       r[WASSER] -= s.survivors * 0.03;
       if (s.beaconOn) r[HOLZ] -= beaconWood(this.towerLevel);
@@ -2020,7 +2048,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const s = this.s;
       const wet = this.freeboard < 0, starving = this.starving;
       if (wet || starving) {
-        const sev = (wet ? -this.freeboard * 1.2 : 0) + (starving ? 1 : 0);
+        const sev = (wet ? -this.freeboard * 0.6 : 0) + (starving ? 0.25 : 0);
         s.sickProg += dt * sev * this.healthy / 120;
         while (s.sickProg >= 1 && s.sick < s.survivors) {
           s.sickProg -= 1;
@@ -2029,7 +2057,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
         }
       } else s.sickProg = Math.max(0, s.sickProg - dt * 0.01);
       if (s.sick > 0 && s.survivors > 1 && (this.freeboard < -1.2 || starving)) {
-        s.deathProg += dt * s.sick / 240;
+        s.deathProg += dt * Math.min(s.sick, 10) / 900;
         if (s.deathProg >= 1) {
           s.deathProg = 0;
           s.sick--;
@@ -2047,7 +2075,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
           this.msg("Ein Kranker ist wieder gesund.");
         }
       }
-      if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning) {
+      if (s.survivors < this.capacity && !wet && !starving && this.beaconBurning && this.rates[MUSCHELN] > 2 && this.rates[WASSER] > 2) {
         s.arriveProg += dt / 25;
         if (s.arriveProg >= 1) {
           s.arriveProg = 0;
@@ -5746,6 +5774,7 @@ void main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float d = dot(p,p); if (d > 1.0
       const def = Math.round(armyStr(b.u, uSum(f) ? f : null, false, tide)), att = Math.round(armyStr(f, b.u, true, tide));
       let out = this.head(`\u{1F3F4}\u200D\u2620\uFE0F ${b.name} \xB7 Stufe ${b.level}`) + `<div class="desc">Piratenschiff. Jede Stufe ist etwas st\xE4rker \u2013 versenke es f\xFCr Beschleuniger und Beute. Fahrt ${fmtTime(tt)}</div>
        <div class="inf">Mannschaft: ${troopStr(b.u)}</div>
+       <div class="sm">\u26A1 Ausdauer: <b>${stamina(c).n}/${STAM_MAX}</b>${stamina(c).next ? " \xB7 +1 in " + fmtTime(stamina(c).next) : ""}</div>
        <div class="sm">Beute: ${itemStr(r.items)} \xB7 ${r.res.map((v, i) => v ? `${RES_IC[i]} ${v}` : "").filter(Boolean).join(" ")}${uSum(r.u) ? " \xB7 \xDCberl\xE4ufer " + troopStr(r.u) : ""}${r.big ? ' \xB7 <b style="color:#ffd27a">Schatztruhe!</b>' : ""}</div>`;
       out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm("Entern!", true, botBlocker(c, b.id, f), this.attackInfo(att, def) + `<div class="sm">${this.tideLine(tt)}</div>`, "sendBot");
       return out;

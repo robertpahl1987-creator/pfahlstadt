@@ -15,7 +15,7 @@ const SHIP_NAMES = ['Schwarze Möwe', 'Rostiger Anker', 'Seeteufel', 'Krakenfaus
 
 /// Mannschaft eines Piratenschiffs: wächst je Stufe um etwa 12 %, eine Kriegerart ist jeweils stärker vertreten
 export function botArmy(L) {
-  const n = Math.round(5 * Math.pow(1.12, L - 1) + L), fav = (L - 1) % 5;
+  const n = Math.round(5 * Math.pow(1.14, L - 1) + L), fav = (L - 1) % 5;
   const w = [1, 1, 1, 1, 1]; w[fav] = 3; if (L >= 6) w[(fav + 2) % 5] = 2;
   const sw = w.reduce((a, b) => a + b, 0), u = w.map((x) => Math.floor((n * x) / sw));
   u[fav] += n - uSum(u);
@@ -67,8 +67,18 @@ function makeBots(c) {
 }
 export const botTravel = (b, u, c, cap) => (18 + Math.hypot(b.dx, b.dy) * 22) * speedFactor(u) * (c ? mods(c).travel * fleetSpeed(c, u) * capSpeed(c, cap) : 1);
 
+export const STAM_MAX = 10, STAM_SEC = 1200;
+/// Ausdauer für Piratenschiff-Angriffe: 10 Punkte, alle 20 Minuten einer zurück
+export function stamina(c) {
+  const s = c.s, now = Date.now();
+  if (!s.stam) s.stam = { n: STAM_MAX, t: now };
+  if (s.stam.n >= STAM_MAX) s.stam.t = now;
+  else { const k = Math.floor((now - s.stam.t) / (STAM_SEC * 1000)); if (k > 0) { s.stam.n = Math.min(STAM_MAX, s.stam.n + k); s.stam.t += k * STAM_SEC * 1000; } }
+  return { n: s.stam.n, next: s.stam.n >= STAM_MAX ? 0 : (s.stam.t + STAM_SEC * 1000 - now) / 1000 };
+}
 export function botBlocker(c, id, u) {
   const b = c.s.bots.find((x) => x.id === id);
+  if (stamina(c).n <= 0) return 'Keine Ausdauer – alle 20 Minuten kommt ein Punkt zurück';
   if (!b) return 'Schiff ist weg';
   if (uSum(u) <= 0) return 'Keine Truppen ausgewählt';
   if (u.some((v, i) => v > c.s.troops[i])) return 'So viele Truppen hast du nicht zu Hause';
@@ -80,6 +90,7 @@ export function sendToBot(c, id, u, cap) {
   const b = c.s.bots.find((x) => x.id === id), tt = botTravel(b, u, c, cap);
   if (cap) capSend(c, cap, tt);
   c.s.troops = uSub(c.s.troops, u);
+  c.s.stam.n--;
   c.s.botMarches.push({ bot: { ...b }, u: u.slice(), left: tt, total: tt, phase: 'out', cap: cap || null, loot: capLoot(c, cap) * fleetLoot(c, u) });
   c.msg(`⚔️ Angriff auf das Piratenschiff „${b.name}“ (Stufe ${b.level})!`);
   return true;

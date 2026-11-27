@@ -2,7 +2,7 @@
 import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, beaconWood, fmtTime, EXP_FOOD, EXP_TIME, EBB, PLOTS, INNER, RING3, WALL, TOWERS, DAMM, damTopFor, LAYOUT, OUTER_LEVEL, CITY_TYPES, UNITS, unitCost, travelTime, zeroU, uSum, armyStr, troopStr, speedFactor, carryOf, TIDE_MUL, TIDE_NAME, lazSave, lazBeds } from './game.js';
 import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
-import { ITEMS, SPEED_KEYS, botReward, botBlocker, sendToBot, botTravel, useSpeed, itemStr, speedCount } from './bots.js';
+import { stamina, STAM_MAX, ITEMS, SPEED_KEYS, botReward, botBlocker, sendToBot, botTravel, useSpeed, itemStr, speedCount } from './bots.js';
 import { season, passState, passReward, claimPass, PASS_TIERS, PASS_XP, collectTreasure } from './features.js';
 import { capAtk, capSpeed, fleetSpeed } from './progress.js';
 import { capSend } from './progress.js';
@@ -764,6 +764,7 @@ export class UI {
     let out = this.head(`🏴‍☠️ ${b.name} · Stufe ${b.level}`) +
       `<div class="desc">Piratenschiff. Jede Stufe ist etwas stärker – versenke es für Beschleuniger und Beute. Fahrt ${fmtTime(tt)}</div>
        <div class="inf">Mannschaft: ${troopStr(b.u)}</div>
+       <div class="sm">⚡ Ausdauer: <b>${stamina(c).n}/${STAM_MAX}</b>${stamina(c).next ? ' · +1 in ' + fmtTime(stamina(c).next) : ''}</div>
        <div class="sm">Beute: ${itemStr(r.items)} · ${r.res.map((v, i) => (v ? `${RES_IC[i]} ${v}` : '')).filter(Boolean).join(' ')}${uSum(r.u) ? ' · Überläufer ' + troopStr(r.u) : ''}${r.big ? ' · <b style="color:#ffd27a">Schatztruhe!</b>' : ''}</div>`;
     out += `<div class="sub2">Angriffstrupp</div>` + this.troopForm('Entern!', true, botBlocker(c, b.id, f), this.attackInfo(att, def) + `<div class="sm">${this.tideLine(tt)}</div>`, 'sendBot');
     return out;
