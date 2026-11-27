@@ -1,6 +1,7 @@
 // Die 3D-Welt: Watt, Pfahlwerk, Gebäude, Siedler, Möwen, Wetter, Licht und Kamera.
 import { Builder, frustum } from './geo.js';
 import * as M from './models.js';
+import { season } from './features.js';
 import { C } from './models.js';
 import { PLOTS, INNER, RING3, WALL, TOWERS, DAMM, T, deckFor, damTopFor, uSum } from './game.js';
 import { trs, mul, perspective, lookAt, invert, normalMat, clamp, clamp01, lerp, lerpC, mulC, moveTowards, rng, noise1, D2R, project } from './math.js';
@@ -147,6 +148,7 @@ export class World {
     this.nodeMeshes = [0, 1, 2, 3].map((t) => { const b = new Builder(); M.resourceNode(b, t); return r.upload(b); });
     B = new Builder(); M.basket(B); this.basketMesh = r.upload(B);
     B = new Builder(); M.traderShip(B); this.shipMesh = r.upload(B);
+    B = new Builder(); B.add('cube', [0, 0.25, 0], [0.9, 0.5, 0.6], [0.45, 0.3, 0.15]); B.add('cylinder', [0, 0.5, 0], [0.9, 0.3, 0.6], [0.5, 0.33, 0.16], { rot: [0, 0, 90] }); B.add('cube', [0, 0.35, 0.31], [0.2, 0.2, 0.04], [1, 0.85, 0.3], { e: 2 }); B.add('sphere', [0, 0.75, 0], [0.5, 0.5, 0.5], [1, 0.9, 0.5], { e: 3 }); this.chestMesh = r.upload(B);
     B = new Builder(); B.add('cylinder', [0, 0, 0], [0.06, 0.4, 0.06], [0.3, 0.2, 0.12]); B.add('sphere', [0, 0.48, 0], [0.22, 0.32, 0.22], [1, 0.6, 0.2], { e: 3 }); this.torchMesh = r.upload(B);
     this.columns = []; this.seenMarch = new Set();
     B = new Builder(); B.add('cylinder', [0, 0, 0], [1, 0.03, 1], [0.3, 0.85, 1], { e: 2 }); this.ringMesh = r.upload(B);
@@ -549,6 +551,7 @@ export class World {
     {
       // Sammelstellen liegen tiefer: Strahl auf Bodenhöhe schneiden
       const s0 = (0.3 - a[1]) / dir[1], gx = a[0] + dir[0] * s0, gz = a[2] + dir[2] * s0;
+      for (const t of this.c.s.treasures || []) if (Math.hypot(gx - t.x, gz - t.z) < 4) return -3000 - t.id;
       for (const n of this.c.s.nodes) if (Math.hypot(gx - n.x, gz - n.z) < 4.5) return -1000 - n.id;
     }
     for (let i = 1; i < PLOTS; i++) {
@@ -585,7 +588,9 @@ export class World {
     fog = lerpC(fog, mulC([0.45, 0.5, 0.55], lerp(0.3, 1, day)), sb);
     const zenith = lerpC(lerpC([0.02, 0.03, 0.08], [0.32, 0.52, 0.78], day), mulC([0.35, 0.38, 0.42], lerp(0.25, 1, day)), sb);
     const horizon = lerpC(lerpC([0.08, 0.1, 0.17], [0.78, 0.83, 0.88], day), fog, sb);
-    const waterDeep = lerpC([0.01, 0.03, 0.08], [0.02, 0.17, 0.38], day);
+    const winter = season().idx === 3;
+    this.snow = lerp(this.snow || 0, winter ? 0.85 : 0, 0.02);
+    const waterDeep = lerpC([0.01, 0.03, 0.08], winter ? [0.06, 0.18, 0.3] : [0.02, 0.17, 0.38], day);
     const waterShallow = lerpC([0.02, 0.06, 0.1], [0.08, 0.5, 0.58], day);
 
     const burn = c.beaconBurning;
@@ -634,6 +639,10 @@ export class World {
       st.amp = walking ? Math.min(1, st.amp + this.dtNow * 4) : Math.max(0, st.amp - this.dtNow * 4);
       this.person(draws, st.look, [x, y, z], yaw, st.ph, st.amp, g.phase === 'work' ? 'work' : 'walk', false, g.load > 0 || g.phase === 'work', g.d * 7.3);
     }
+    for (const tr of c2.s.treasures || []) {
+      const y = this.groundAt(tr.x, tr.z), p = 0.6 + 0.4 * Math.sin(this.time * 5 + tr.id);
+      draws.push({ mesh: this.chestMesh, model: trs([tr.x, y + 0.1, tr.z], [0, this.time * 40 + tr.id * 50, 0], [1.4, 1.4, 1.4]), emis: p, noShadow: true });
+    }
     if (c2.s.trader && c2.s.trader.left > 0) {
       const zr = -(damRadius() + 12), arrive = Math.min(1, (150 - c2.s.trader.left) / 8), leave = Math.min(1, c2.s.trader.left / 8);
       const off = (1 - Math.min(arrive, leave)) * 40;
@@ -681,7 +690,7 @@ export class World {
       view: cam.view, proj: cam.proj, camPos: cam.pos, fov: cam.fov, time: this.time,
       sunDir, sunCol, ambSky: mulC(lerpC([0.1, 0.12, 0.22], [0.62, 0.7, 0.8], day), gloom),
       ambGround: mulC(lerpC([0.05, 0.05, 0.08], [0.4, 0.38, 0.33], day), gloom),
-      fogCol: fog, fogDen: lerp(0.0045, 0.022, sb), zenith, horizon, cloud: sb, night: 1 - day,
+      fogCol: fog, fogDen: lerp(0.0045, 0.022, sb), zenith, horizon, cloud: sb, night: 1 - day, snow: this.snow,
       cloudCol: lerpC(lerpC([0.12, 0.13, 0.18], [0.95, 0.95, 0.97], day), mulC([0.4, 0.42, 0.46], lerp(0.3, 1, day)), sb),
       plPos: this.lampPos || [0, 15, 0], plCol, plRange: 38 + 4 * c.towerLevel,
       draws, waterY: wy, waterDeep: lerpC(waterDeep, [0.12, 0.17, 0.2], sb * 0.6), waterShallow: lerpC(waterShallow, [0.2, 0.26, 0.28], sb * 0.6), storm: sb,

@@ -1,4 +1,4 @@
-import { questEvent, traderTick, queueTick, checkAch } from './features.js';
+import { questEvent, traderTick, queueTick, checkAch, season, treasureTick } from './features.js';
 import { botTick, ensureBots } from './bots.js';
 // Spiellogik: Gezeiten, Rohstoffe, Bauen, Bevölkerung, Speichern, Offline-Fortschritt.
 export const RES = ['Holz', 'Muscheln', 'Wasser', 'Altmetall'];
@@ -120,6 +120,7 @@ const KEY = 'pfahlstadt_save_v1';
 
 export function fmtTime(s) {
   const t = Math.ceil(s);
+  if (t >= 86400) return `${Math.floor(t / 86400)} T ${Math.floor((t % 86400) / 3600)} Std`;
   if (t >= 3600) return `${Math.floor(t / 3600)}h ${String(Math.floor((t % 3600) / 60)).padStart(2, '0')}m`;
   if (t >= 60) return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
   return t + 's';
@@ -150,6 +151,32 @@ export class Colony {
     if (this.online && this.online.active) return uAdd(a, this.online.troopsAway());
     for (const m of this.s.marches) a = uAdd(a, m.u); for (const t of this.s.terr) a = uAdd(a, t.gu); return a;
   }
+  /// Muscheln pro Minute für die Krieger: Besatzungen auf Inseln brauchen nur die Hälfte
+  get upkeep() {
+    const o = this.online;
+    let gar = 0;
+    if (o && o.active) { if (o.world && o.me) for (const t of o.world.territories) if (t.owner === o.me.id) gar += uSum(t.gu || zeroU()); }
+    else for (const t of this.s.terr) gar += uSum(t.gu);
+    return (this.troopTotal - 0.5 * gar) * UPKEEP * 60;
+  }
+  /// Krieger entlassen: 25 % der Ausbildungskosten zurück
+  dismiss(u, n) {
+    const s = this.s; n = Math.min(n, s.troops[u]); if (n <= 0) return 0;
+    s.troops[u] -= n;
+    unitCost(u, n).forEach((v, i) => v && this.addRes(i, Math.floor(v * 0.25)));
+    this.msg(`${n}× ${UNITS[u].name} entlassen (25 % der Kosten zurück).`);
+    return n;
+  }
+  summerTick(dt) {
+    if (season().idx !== 1 || this.s.res[MUSCHELN] < 60) return;
+    this.s.summerT = (this.s.summerT || 200) - dt;
+    if (this.s.summerT > 0) return;
+    this.s.summerT = 180 + Math.random() * 120;
+    const mu = Math.round(Math.min(this.s.res[MUSCHELN] * 0.05, 40 + 10 * this.towerLevel)), me = Math.round(mu * 0.6);
+    this.s.res[MUSCHELN] -= mu; this.addRes(METALL, me);
+    this.msg(`☀️ Badegäste kaufen ${mu} Muscheln und zahlen ${me} Altmetall.`);
+  }
+
   get troopTotal() { return uSum(this.s.troops) + uSum(this.troopsAway); }
   get defense() {
     const base = armyStr(this.s.troops, null, false) + this.healthy * 2 + 40 * this.levels(T.ABWEHR);
@@ -183,7 +210,7 @@ export class Colony {
       if (s.stormLeft <= 0) { s.stormLeft = 0; s.stormTimer = 300 + Math.random() * 180; this.msg('Die Sturmflut zieht ab.'); }
     } else {
       const before = s.stormTimer;
-      s.stormTimer -= dt;
+      s.stormTimer -= dt * (season().idx === 2 ? 1.4 : 1);
       if (before >= 30 && s.stormTimer < 30) this.msg('Warnung: Eine Sturmflut zieht auf!');
       if (s.stormTimer <= 0) { s.stormLeft = STORM_LEN; this.msg('STURMFLUT! Das Wasser steigt!'); }
     }
@@ -199,6 +226,8 @@ export class Colony {
     this.military(dt, false);
     this.gathering(dt, false);
     traderTick(this, dt);
+    treasureTick(this, dt);
+    this.summerTick(dt);
     botTick(this, dt);
     this.healTick(dt);
     if (this.eventStorm && this.freeboard < 0) { for (let i = 0; i < 4; i++) s.res[i] *= 1 - 0.03 * dt / 60; this.floodWarnT = (this.floodWarnT || 0) - dt; if (this.floodWarnT <= 0) { this.floodWarnT = 30; this.msg('🌊 Die Sturmflut spült Vorräte weg! Damm oder Gezeitenturm ausbauen!'); } }
@@ -256,6 +285,11 @@ export class Colony {
       if (p.type === T.MUSCHEL) f = 1 - 0.5 * tide;
       if (p.type === T.TAUCHER) f = 1 + 0.5 * tide;
       if (p.type === T.REGEN && this.storm && !offline) f = 2.5;
+      const se = season().idx;
+      if (se === 0 && p.type === T.REGEN) f *= 1.2;
+      if (se === 1 && p.type === T.MUSCHEL) f *= 1.15;
+      if (se === 2 && p.type === T.TREIBHOLZ) f *= 1.25;
+      if (se === 3 && p.type === T.MUSCHEL) f *= 0.8;
       r[d.prod] += rateAt(p.type, p.level) * this.efficiency * flood * f;
     }
     const kitchen = 1 + Math.min(0.6, 0.06 * this.levels(T.KUECHE));
@@ -264,7 +298,7 @@ export class Colony {
     for (const t of owned) terrBonus[t.res] += t.pct / 100;
     const lh = this.online && this.online.active && this.online.lh && this.online.lh.bonus ? 1.2 : 1;
     for (let i = 0; i < 4; i++) if (r[i] > 0) r[i] *= kitchen * terrBonus[i] * lh;
-    r[MUSCHELN] -= this.troopTotal * UPKEEP;
+    r[MUSCHELN] -= this.upkeep / 60;
     r[MUSCHELN] -= s.survivors * 0.035 * (1 - Math.min(0.5, 0.08 * smoke));
     r[WASSER] -= s.survivors * 0.03;
     if (s.beaconOn) r[HOLZ] -= beaconWood(this.towerLevel);
@@ -403,7 +437,7 @@ export class Colony {
   startExpedition() {
     if (this.expeditionBlocker()) return false;
     this.s.res[MUSCHELN] -= EXP_FOOD;
-    this.s.expLeft = EXP_TIME;
+    this.s.expLeft = EXP_TIME * (season().idx === 3 ? 1.5 : 1);
     this.s.expSurprised = false;
     this.msg('Eine Gruppe wandert ins Watt hinaus.');
     return true;
@@ -416,6 +450,7 @@ export class Colony {
     const holz = r(40, 90), mu = r(30, 70), me = r(6, 22);
     this.addRes(HOLZ, holz); this.addRes(MUSCHELN, mu); this.addRes(METALL, me);
     questEvent(this, 'exp', 1);
+    if (season().idx === 3 && Math.random() < 0.25 && this.healthy > 1) { this.s.sick++; this.msg('❄️ Eisgang: Ein Wattwanderer hat sich erkältet.'); }
     this.msg(`Wattwanderung zurück: +${holz} Holz, +${mu} Muscheln, +${me} Altmetall`);
     if (!s.expSurprised && Math.random() < 0.3 && s.survivors < this.capacity) {
       s.survivors++;
@@ -477,7 +512,7 @@ export class Colony {
   healTick(dt) {
     const s = this.s, L = this.levels(T.LAZARETT);
     if (L <= 0 || !uSum(s.wounded)) return;
-    s.healT = (s.healT || 0) + dt * L;
+    s.healT = (s.healT || 0) + dt * L * (season().idx === 0 ? 1.5 : 1);
     while (s.healT >= 8) {
       const k = s.wounded.findIndex((v) => v > 0); if (k < 0) break;
       const cost = [0, Math.ceil(UNITS[k].cost[1] * 0.3), Math.ceil(UNITS[k].cost[0] * 0.2), 0];

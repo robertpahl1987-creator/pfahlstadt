@@ -18,7 +18,7 @@ void main(){
 const LIT_FS = HEAD + `precision highp sampler2DShadow;
 in vec3 vPos; in vec3 vNrm; in vec3 vCol; in vec2 vMat; in vec4 vSh;
 uniform vec3 uSunDir, uSunCol, uSkyAmb, uGroundAmb, uCam, uFogCol, uPLPos, uPLCol, uTint;
-uniform float uFogDen, uPLRange, uShadowOn, uTexel, uEmis;
+uniform float uFogDen, uPLRange, uShadowOn, uTexel, uEmis, uSnow;
 uniform sampler2DShadow uShadow;
 out vec4 o;
 ` + GAMMA + `
@@ -35,6 +35,7 @@ float shadowAt(){
 void main(){
   vec3 n = normalize(vNrm);
   vec3 base = vCol * uTint;
+  base = mix(base, vec3(0.9, 0.93, 0.97), uSnow * smoothstep(0.55, 0.85, n.y) * (1.0 - clamp(vMat.x, 0.0, 1.0)));
   float ndl = max(dot(n, uSunDir), 0.0);
   float sh = uShadowOn > 0.5 ? shadowAt() : 1.0;
   vec3 v = normalize(uCam - vPos);
@@ -347,6 +348,7 @@ export class Renderer {
     gl.uniform3fv(lu.uCam, s.camPos); gl.uniform3fv(lu.uFogCol, fogL); gl.uniform1f(lu.uFogDen, s.fogDen);
     gl.uniform3fv(lu.uPLPos, s.plPos); gl.uniform3fv(lu.uPLCol, s.plCol); gl.uniform1f(lu.uPLRange, s.plRange);
     gl.uniform1f(lu.uShadowOn, this.shadowSize ? 1 : 0);
+    gl.uniform1f(lu.uSnow, s.snow || 0);
     gl.uniform1f(lu.uTexel, this.shadowSize ? 1 / this.shadowSize : 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.shadowTex || null);

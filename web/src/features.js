@@ -27,6 +27,7 @@ export function claimDaily(c) {
   r.res.forEach((v, i) => v && c.addRes(i, v));
   c.s.troops = c.s.troops.map((v, i) => v + (r.u[i] || 0));
   c.s.daily = { last: today(), streak: st.day + 1 };
+  questEvent(c, 'daily', 1);
   return r;
 }
 
@@ -61,6 +62,7 @@ export function questEvent(c, id, n) {
   }
   s.stats = s.stats || {};
   s.stats[id] = (s.stats[id] || 0) + n;
+  addXp(c, id, n);
 }
 export function claimQuest(c, k) {
   const list = questsToday(c), q = list[k];
@@ -177,3 +179,82 @@ export function trade(c, k) {
   return null;
 }
 export { UNITS, uSum, costFor };
+
+// ---------- Jahreszeiten (wechseln jede echte Woche, für alle gleich) ----------
+export const SEASONS = [
+  { name: 'Frühling', ic: '🌸', text: 'Regenfänger +20 %, Verwundete heilen schneller' },
+  { name: 'Sommer', ic: '☀️', text: 'Muscheln +15 %, Badegäste kaufen Muscheln gegen Altmetall' },
+  { name: 'Herbst', ic: '🍂', text: 'Treibholz +25 %, häufiger Sturmfluten' },
+  { name: 'Winter', ic: '❄️', text: 'Eisgang: Muscheln −20 %, Wattwanderungen dauern länger und sind gefährlich' },
+];
+const WEEK = 7 * 86400000, EPOCH = Date.UTC(2026, 10, 23); // Montag
+export function season() {
+  const k = Math.floor((Date.now() - EPOCH) / WEEK), idx = ((k % 4) + 4) % 4;
+  return { idx, ...SEASONS[idx], left: (EPOCH + (k + 1) * WEEK - Date.now()) / 1000 };
+}
+
+// ---------- Kostenloser Saison-Pass (pro Monat, 30 Stufen) ----------
+export const PASS_XP = 150, PASS_TIERS = 30;
+const XP = { build: 10, train: 1, gather: 0.05, win: 25, bot: 30, exp: 10, trade: 15, heal: 2, daily: 50, treasure: 8 };
+const monthKey = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}`; };
+export function passState(c) {
+  const s = c.s;
+  if (!s.pass || s.pass.m !== monthKey()) s.pass = { m: monthKey(), xp: 0, got: [] };
+  const tier = Math.min(PASS_TIERS, Math.floor(s.pass.xp / PASS_XP));
+  return { xp: s.pass.xp, tier, got: s.pass.got, into: s.pass.xp - tier * PASS_XP };
+}
+export function passReward(c, t) {
+  const f = 1 + 0.3 * (c.towerLevel - 1);
+  const big = t % 5 === 0, last = t === PASS_TIERS;
+  const r = { res: [0, 0, 0, 0], items: {}, u: [0, 0, 0, 0, 0] };
+  if (last) { r.items = { sp60: 2, sp180: 1 }; r.res = [3000, 2000, 2000, 600].map((v) => Math.round(v * f)); r.u = [10, 10, 10, 5, 10]; }
+  else if (big) { r.items = { [t >= 15 ? 'sp60' : 'sp15']: 1 }; r.u[(t / 5) % 5] = 5 + t; }
+  else if (t % 3 === 0) r.items = { [t >= 12 ? 'sp15' : 'sp5']: 2 };
+  else r.res[t % 4] = Math.round((200 + t * 40) * f);
+  return r;
+}
+export function claimPass(c, t) {
+  const st = passState(c);
+  if (t > st.tier || st.got.includes(t)) return false;
+  const r = passReward(c, t);
+  r.res.forEach((v, i) => v && c.addRes(i, v));
+  c.s.items = c.s.items || {};
+  for (const k in r.items) c.s.items[k] = (c.s.items[k] || 0) + r.items[k];
+  c.s.troops = c.s.troops.map((v, i) => v + (r.u[i] || 0));
+  c.s.pass.got.push(t);
+  return true;
+}
+function addXp(c, id, n) {
+  const st = passState(c), before = st.tier;
+  c.s.pass.xp += (XP[id] || 0) * n;
+  const after = passState(c).tier;
+  if (after > before) c.msg(`🎫 Saison-Pass Stufe ${after} erreicht – Belohnung unter 🎁 abholen!`);
+}
+
+// ---------- Schatzsuche im Watt ----------
+export function treasureTick(c, dt) {
+  const s = c.s;
+  if (!s.treasures) s.treasures = [];
+  if ((c.tideSin || 0) > 0.15) { if (s.treasures.length) s.treasures = []; return; }
+  if ((c.tideSin || 0) > -0.4) return;
+  s.treasureT = (s.treasureT || 8) - dt;
+  if (s.treasureT > 0 || s.treasures.length >= 2) return;
+  s.treasureT = 18 + Math.random() * 25;
+  const a = (Math.random() < 0.5 ? 1 : -1) * (0.4 + Math.random() * 2.4), r = c.areaRadius + 3 + 15 + Math.random() * 14;
+  s.treasureSeq = (s.treasureSeq || 0) + 1;
+  s.treasures.push({ id: s.treasureSeq, x: Math.sin(a) * r, z: Math.cos(a) * r });
+}
+export function collectTreasure(c, id) {
+  const s = c.s, k = (s.treasures || []).findIndex((t) => t.id === id);
+  if (k < 0) return;
+  s.treasures.splice(k, 1);
+  const roll = Math.random(), f = 1 + 0.25 * (c.towerLevel - 1);
+  s.items = s.items || {};
+  let txt;
+  if (roll < 0.45) { s.items.sp1 = (s.items.sp1 || 0) + 1; txt = '⚡ Beschleuniger 1 Min.'; }
+  else if (roll < 0.7) { s.items.sp5 = (s.items.sp5 || 0) + 1; txt = '⚡ Beschleuniger 5 Min.'; }
+  else if (roll < 0.75) { s.items.sp15 = (s.items.sp15 || 0) + 1; txt = '⚡ Beschleuniger 15 Min.!'; }
+  else { const v = Math.round((40 + Math.random() * 120) * f); c.addRes(3, v); txt = `${v} Altmetall`; }
+  c.msg(`✨ Schatz im Watt gefunden: ${txt}`);
+  questEvent(c, 'treasure', 1);
+}

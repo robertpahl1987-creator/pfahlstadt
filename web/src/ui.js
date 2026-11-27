@@ -3,6 +3,7 @@ import { RES, RES_COL, DEFS, T, MAX_LEVEL, costFor, buildTime, rateAt, deckFor, 
 import { plotPos } from './world.js';
 import { towerHeight } from './models.js';
 import { ITEMS, SPEED_KEYS, botReward, botBlocker, sendToBot, botTravel, useSpeed, itemStr, speedCount } from './bots.js';
+import { season, passState, passReward, claimPass, PASS_TIERS, PASS_XP, collectTreasure } from './features.js';
 import { dailyState, dailyReward, claimDaily, DAILY, questsToday, claimQuest, ACH, achCount, TUT, tutStep, queueAdd, MAX_QUEUE, trade } from './features.js';
 const QOK = ['Alle Bautrupps beschäftigt', 'Zu wenig Rohstoffe'];
 import { TIERS } from './gfx.js';
@@ -105,6 +106,7 @@ export class UI {
 
   select(i, keepMenu) {
     if (this.view === 'map' && i !== -1) return;
+    if (i <= -3000) { collectTreasure(this.c, -3000 - i); return; }
     this.selected = i; this.w.selected = i; this.confirm = null; this.panelKey = null;
     if (i !== -1 && !keepMenu) { this.menu = false; this.mode = null; this.o.wantChat = false; }
   }
@@ -203,6 +205,9 @@ export class UI {
     else if (a === 'gift') { if (this.mode === 'gift') this.mode = null; else { this.openMode('gift'); this.giftTab = this.giftTab || 'daily'; } }
     else if (a === 'gtab') this.giftTab = ds.t;
     else if (a === 'claimDaily') { const r = claimDaily(c); if (r) c.msg(`🎁 Tagesbelohnung: ${this.rewardStr(r.res, r.u)}`); }
+    else if (a === 'toggleDismiss') { this.showDismiss = !this.showDismiss; }
+    else if (a === 'claimPass') { if (claimPass(c, +ds.t)) c.msg(`🎫 Pass-Belohnung Stufe ${ds.t} erhalten!`); }
+    else if (a === 'dismiss') { c.dismiss(+ds.u, ds.n === 'all' ? c.s.troops[+ds.u] : +ds.n); }
     else if (a === 'claimQuest') { if (claimQuest(c, +ds.k)) c.msg('✅ Belohnung erhalten!'); }
     else if (a === 'trader') { this.openMode('trader'); }
     else if (a === 'trade') { const e = trade(c, +ds.k); c.msg(e || '⛵ Handel abgeschlossen.'); }
@@ -329,7 +334,7 @@ export class UI {
     this.gd.style.left = `${Math.min(97, (c.deck / top) * 100)}%`;
     const fb = c.freeboard, fbCol = fb >= 0.5 ? '#8ef0a0' : fb >= 0 ? '#ffd27a' : '#ff6a6a';
     const tide = c.storm ? '<b style="color:#ff6060">STURMFLUT</b>' : c.water < EBB ? 'Ebbe' : c.rising ? 'Flut ↑' : 'Flut ↓';
-    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${this.o.eventLeft('sturmflut') > 0 ? ` · <b style="color:#ff9a5a">Sturmflut-Event ${fmtTime(this.o.eventLeft('sturmflut'))}</b>` : ''}${this.o.eventLeft('doppelt') > 0 ? ' · <b style="color:#8ef0a0">🧺 2× Sammeln</b>' : ''}${this.o.lh && this.o.lh.bonus ? ' · 🗼+20 %' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
+    setHTML(this.tl, `${tide} · <b style="color:${fbCol}">${fb >= 0 ? '+' : ''}${fb.toFixed(1)} m</b>${c.damHolds ? ' · <span style="color:#8ef0a0">🌊 Damm hält</span>' : ''}${' · ' + season().ic}${this.o.eventLeft('sturmflut') > 0 ? ` · <b style="color:#ff9a5a">Sturmflut-Event ${fmtTime(this.o.eventLeft('sturmflut'))}</b>` : ''}${this.o.eventLeft('doppelt') > 0 ? ' · <b style="color:#8ef0a0">🧺 2× Sammeln</b>' : ''}${this.o.lh && this.o.lh.bonus ? ' · 🗼+20 %' : ''}${c.stormWarning ? ' · <span style="color:#ffc060">Sturm naht</span>' : ''}${c.raidIn !== null && c.raidIn < 30 ? ' · <b style="color:#ff6060">Piraten!</b>' : ''}`);
     let st = `👥 <b>${s.survivors}</b>/${c.capacity}${s.sick ? ` 🤒${s.sick}` : ''} · ⚔ <b>${uSum(s.troops)}</b> · ${clock(s.dayTime)}`;
     if (this.o.active) st += this.o.incoming ? ` · <b style="color:#ff6060">⚠ Angriff!</b>` : this.o.status === 'online' ? ' <span style="color:#8ef0a0">●</span>' : ' <span style="color:#ffb070">●</span>';
     setHTML(this.st, st);
@@ -362,8 +367,9 @@ export class UI {
     if (nw) { setHTML(this.newsEl, `<div class="nh">📢 Nachricht vom Spielleiter</div><div>${String(nw.text).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]))}</div><div class="btns"><button class="btn" data-a="newsOk"><b>OK</b></button></div>`); this.newsEl.style.display = ''; }
     else this.newsEl.style.display = 'none';
     const ds = dailyState(c), qs = questsToday(c), qready = qs.some((q) => !q.done && q.have >= q.n);
-    btn(this.bGift, '🎁', 'Belohn.', ds.can || qready ? '<i class="dot"></i>' : '');
-    this.bGift.classList.toggle('on', ds.can || qready);
+    const gready = ds.can || qready || this.passReady();
+    btn(this.bGift, '🎁', 'Belohn.', gready ? '<i class="dot"></i>' : '');
+    this.bGift.classList.toggle('on', gready);
     const ts = tutStep(c);
     if (ts < TUT.length && this.view === 'city' && this.panel.style.display === 'none') { setHTML(this.tutEl, `<span class="tn">Tipp ${ts + 1}/${TUT.length}</span> ${TUT[ts].text}<button class="tx" data-a="tutSkip">✕</button>`); this.tutEl.style.display = ''; }
     else this.tutEl.style.display = 'none';
@@ -549,7 +555,8 @@ export class UI {
 
   barracksHtml() {
     const c = this.c, s = c.s;
-    let out = `<div class="sub2">Zu Hause: ${troopStr(s.troops)}</div>`;
+    let out = `<div class="sub2">Zu Hause: ${troopStr(s.troops)}</div>
+      <div class="sm">🦪 Unterhalt: ${Math.round(c.upkeep).toLocaleString('de-DE')} Muscheln/min (Besatzungen auf Inseln brauchen nur die Hälfte) · <a data-a="toggleDismiss" style="text-decoration:underline">${this.showDismiss ? 'Entlassen ausblenden' : 'Krieger entlassen'}</a></div>`;
     if (s.train.length) {
       const q = s.train[0];
       out += `<div class="sm">In Ausbildung: ${s.train.map((t) => `${t.n}× ${UNITS[t.u].name}`).join(', ')} · nächster in ${fmtTime(q.left)} (${c.queued()}/${c.trainSlots()})</div>`;
@@ -562,7 +569,8 @@ export class UI {
         ${lv > 0 ? `<div class="sm">je ${this.costStr(unitCost(k, 1))}</div>` : `<div class="warn">Braucht ${DEFS[u.b].name} (${B_IC[u.b]})</div>`}</div>
         ${lv > 0 ? `<button class="btn sm2" data-a="train" data-u="${k}" data-n="1" ${b1 ? 'disabled' : ''}>+1</button>
         <button class="btn sm2" data-a="train" data-u="${k}" data-n="5" ${b5 ? 'disabled' : ''}>+5</button>
-        <button class="btn sm2" data-a="train" data-u="${k}" data-n="10" ${b10 ? 'disabled' : ''}>+10</button>` : ''}</div>`;
+        <button class="btn sm2" data-a="train" data-u="${k}" data-n="10" ${b10 ? 'disabled' : ''}>+10</button>` : ''}</div>
+        ${s.troops[k] > 0 && this.showDismiss ? `<div class="btns" style="margin:-4px 0 6px"><span class="sm">Entlassen:</span><button class="btn sm2 ghost" data-a="dismiss" data-u="${k}" data-n="10">−10</button><button class="btn sm2 ghost" data-a="dismiss" data-u="${k}" data-n="100">−100</button><button class="btn sm2 ghost" data-a="dismiss" data-u="${k}" data-n="all">alle</button></div>` : ''}`;
     });
     return out;
   }
@@ -889,6 +897,8 @@ export class UI {
     if (this.troopTab === 'reports' && this.o.active) this.o.sync();
   }
 
+  passReady() { const ps = passState(this.c); for (let t = 1; t <= ps.tier; t++) if (!ps.got.includes(t)) return true; return false; }
+
   rewardStr(res, u) {
     const parts = [];
     (res || []).forEach((v, i) => v && parts.push(`${RES_IC[i]} ${v}`));
@@ -899,8 +909,8 @@ export class UI {
   giftHtml() {
     const c = this.c, tab = this.giftTab || 'daily';
     const ds = dailyState(c), qs = questsToday(c);
-    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['items', '⚡', `Items ${speedCount(c)}`], ['ach', '🏅', `Erfolge ${achCount(c)}/${ACH.length}`]];
-    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(4,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
+    const tabs = [['daily', '📅', 'Täglich' + (ds.can ? ' •' : '')], ['quests', '✅', 'Aufgaben' + (qs.some((q) => !q.done && q.have >= q.n) ? ' •' : '')], ['pass', '🎫', 'Pass' + (this.passReady() ? ' •' : '')], ['items', '⚡', `Items ${speedCount(c)}`], ['ach', '🏅', `${achCount(c)}/${ACH.length}`]];
+    let out = this.head('Belohnungen') + `<div class="tabs" style="grid-template-columns:repeat(5,1fr)">${tabs.map(([k, ic, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-a="gtab" data-t="${k}"><span>${ic}</span>${l}</button>`).join('')}</div><div class="tabbody">`;
     if (tab === 'daily') {
       out += '<div class="desc">Schau jeden Tag vorbei! Wer einen Tag auslässt, fängt wieder bei Tag 1 an. Tag 7 ist der große Schatz.</div><div class="daily">';
       for (let d = 0; d < 7; d++) {
@@ -915,6 +925,15 @@ export class UI {
           <div class="bar"><div style="width:${Math.round(100 * Math.min(1, q.have / q.n))}%"></div></div></div>
           <button class="btn sm2" data-a="claimQuest" data-k="${k}" ${q.done || q.have < q.n ? 'disabled' : ''}>${q.done ? 'Erledigt' : 'Abholen'}</button></div>`;
       });
+    } else if (tab === 'pass') {
+      const ps = passState(c), mon = new Date().toLocaleString('de-DE', { month: 'long' });
+      out += `<div class="desc">🎫 Saison-Pass ${mon} – kostenlos! Erfahrung gibt es für Bauen, Ausbilden, Sammeln, Kämpfe, Piratenschiffe, Handel, Schätze und die Tagesbelohnung. Jeden Monat beginnt ein neuer Pass.</div>
+        <div class="inf">Stufe <b>${ps.tier}/${PASS_TIERS}</b> · ${ps.tier < PASS_TIERS ? `${Math.floor(ps.into)}/${PASS_XP} EP bis Stufe ${ps.tier + 1}` : 'Alles geschafft!'}</div><div class="bar big"><div style="width:${Math.round(100 * Math.min(1, ps.into / PASS_XP))}%"></div></div>`;
+      for (let t = 1; t <= PASS_TIERS; t++) {
+        const r = passReward(c, t), got = ps.got.includes(t), can = t <= ps.tier && !got;
+        out += `<div class="row ${t % 5 === 0 ? 'meRow' : ''}"><div class="ri"><b>Stufe ${t}</b> <span class="sh">${[this.rewardStr(r.res, r.u), itemStr(r.items)].filter(Boolean).join(' · ')}</span></div>
+          <button class="btn sm2" data-a="claimPass" data-t="${t}" ${can ? '' : 'disabled'}>${got ? '✔' : t <= ps.tier ? 'Abholen' : '🔒'}</button></div>`;
+      }
     } else if (tab === 'items') {
       out += this.itemsHtml();
     } else {
@@ -1030,6 +1049,7 @@ export class UI {
       <div class="inf">Unterwegs/Besatzung: ${troopStr(away)}</div>`;
     if (c.raidIn !== null) out += `<div class="sm">Nächster Piratenüberfall in etwa ${fmtTime(c.raidIn)}</div>`;
     out += this.tideBox();
+    { const se = season(); out += `<div class="sm">${se.ic} <b>${se.name}</b>: ${se.text} · noch ${fmtTime(se.left)}</div>`; }
     if (uSum(s.wounded || zeroU())) out += `<div class="inf">🩹 Im Lazarett: ${troopStr(s.wounded)} – werden nach und nach gesund.</div>` + this.speedBtns('heal', 0);
     else if (c.levels(T.LAZARETT) <= 0) out += '<div class="sm">Tipp: Ein 🩹 Lazarett rettet einen Teil der gefallenen Krieger.</div>';
     if (c.levels(T.KASERNE) > 0) out += this.barracksHtml();
