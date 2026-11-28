@@ -14,8 +14,9 @@ public class UnityUpdater : MonoBehaviour
     static UnityUpdater inst;
     string status;          // null = nichts anzeigen
     float progress = -1f;   // < 0 = kein Balken
-    bool needPermission, waitingForPermission, failed;
+    bool needPermission, waitingForPermission, failed, ready;
     string pageUrl, detail;
+    bool later;   // "Später" gewählt: beim nächsten Öffnen der App wieder anbieten
     string apkPath;
     GUIStyle box, label, button;
 
@@ -86,8 +87,8 @@ public class UnityUpdater : MonoBehaviour
             yield return new WaitForSeconds(4f); status = null; yield break;
         }
         progress = 1f;
-        status = $"Version {best} ist bereit.";
-        TryInstall();
+        status = $"Neue Version {best} ist geladen.";
+        ready = true;   // Spieler tippt selbst auf "Jetzt aktualisieren"
     }
 
     static string Java(string method, params object[] args)
@@ -102,6 +103,7 @@ public class UnityUpdater : MonoBehaviour
 
     void TryInstall()
     {
+        ready = false;
         string r = Java("start", apkPath);
         if (r == "PERM") { needPermission = true; return; }
         needPermission = false;
@@ -114,6 +116,7 @@ public class UnityUpdater : MonoBehaviour
 
     void OnApplicationFocus(bool focus)
     {
+        if (focus && later && apkPath != null && File.Exists(apkPath) && status == null) { later = false; ready = true; progress = 1f; status = "Neue Version ist geladen."; }
         if (focus && waitingForPermission) { waitingForPermission = false; TryInstall(); }
     }
 
@@ -131,7 +134,7 @@ public class UnityUpdater : MonoBehaviour
         }
         label.fontSize = Mathf.RoundToInt(22 * s);
         button.fontSize = Mathf.RoundToInt(22 * s);
-        float w = Screen.width * 0.86f, h = (needPermission ? 210f : failed ? 250f : 130f) * s;
+        float w = Screen.width * 0.86f, h = (needPermission ? 210f : failed ? 250f : ready ? 220f : 130f) * s;
         var r = new Rect((Screen.width - w) / 2f, Screen.height * 0.4f, w, h);
         GUI.Box(r, GUIContent.none, box);
         GUI.Label(new Rect(r.x + 16 * s, r.y + 12 * s, r.width - 32 * s, 44 * s), status, label);
@@ -142,6 +145,11 @@ public class UnityUpdater : MonoBehaviour
             var fill = new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(progress), bar.height);
             var old = GUI.color; GUI.color = new Color(0.35f, 0.8f, 0.45f); GUI.DrawTexture(fill, Texture2D.whiteTexture); GUI.color = old;
             GUI.Label(bar, Mathf.RoundToInt(progress * 100f) + " %", label);
+        }
+        if (ready)
+        {
+            if (GUI.Button(new Rect(r.x + 16 * s, r.y + 116 * s, r.width * 0.62f - 24 * s, 86 * s), "<b>Jetzt aktualisieren</b>", button)) TryInstall();
+            if (GUI.Button(new Rect(r.x + r.width * 0.62f, r.y + 116 * s, r.width * 0.38f - 16 * s, 86 * s), "Später", button)) { status = null; ready = false; later = true; }
         }
         if (failed)
         {
