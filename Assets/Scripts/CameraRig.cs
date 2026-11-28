@@ -4,7 +4,7 @@ namespace Pfahlstadt
 {
     /// Kamera wie bei Whiteout Survival: fester Blickwinkel, ein Finger schiebt die Karte
     /// (vor, zurück, links, rechts – der Boden klebt am Finger und gleitet beim Loslassen aus),
-    /// zwei Finger zoomen zum Punkt zwischen den Fingern. Tippen wählt einen Bauplatz.
+    /// zwei Finger zoomen zum Punkt zwischen den Fingern und drehen die Ansicht (Finger im Kreis bewegen). Tippen wählt einen Bauplatz.
     /// Am PC: linke Maustaste ziehen, Mausrad zoomen, Klick wählt.
     public class CameraRig : MonoBehaviour
     {
@@ -13,7 +13,8 @@ namespace Pfahlstadt
         public Vector3 Target = new Vector3(0, 3f, -3f);
         public float Dist = 52f;
 
-        const float MinDist = 16f, MaxDist = 140f, MaxPan = 75f, Yaw = 0f;
+        const float MinDist = 16f, MaxDist = 140f, MaxPan = 75f;
+        float yaw;
         Vector2 start, lastMouse;
         bool dragging, startOverUI, multi;
         Vector3 glide;
@@ -59,7 +60,7 @@ namespace Pfahlstadt
         {
             // weiter weg = steiler von oben, nah dran = flacher (wie in Aufbauspielen üblich)
             float pitch = Mathf.Lerp(40f, 58f, (Mathf.Clamp(Dist, MinDist, MaxDist) - MinDist) / (MaxDist - MinDist));
-            var rot = Quaternion.Euler(pitch, Yaw, 0f);
+            var rot = Quaternion.Euler(pitch, yaw, 0f);
             Cam.transform.SetPositionAndRotation(Target - rot * Vector3.forward * Dist, rot);
         }
 
@@ -102,6 +103,8 @@ namespace Pfahlstadt
                 float d0 = (pa - pb).magnitude, d1 = (a.position - b.position).magnitude;
                 bool ok = Ground(m0, out var g0);
                 if (d0 > 1f && d1 > 1f) { Dist = Mathf.Clamp(Dist * d0 / d1, MinDist, MaxDist); Place(); }
+                // Drehen: Finger im Kreis bewegen dreht die Ansicht nach links/rechts
+                if (d0 > 40f && d1 > 40f) { yaw += Vector2.SignedAngle(pb - pa, b.position - a.position); Place(); }
                 if (ok && Ground(m1, out var g1)) { var step = g0 - g1; step.y = 0f; Target += step; Place(); }
                 return;
             }
