@@ -2,8 +2,9 @@ using UnityEngine;
 
 namespace Pfahlstadt
 {
-    /// Kamera: ein Finger ziehen verschiebt, ein Finger kurz halten und dann ziehen dreht (links/rechts)
-    /// und neigt (hoch/runter), zwei Finger zoomen. Tippen wählt einen Bauplatz.
+    /// Kamera wie bei Whiteout Survival: fester Blickwinkel, ein Finger schiebt die Karte
+    /// (vor, zurück, links, rechts – der Boden klebt am Finger und gleitet beim Loslassen aus),
+    /// zwei Finger zoomen zum Punkt zwischen den Fingern. Tippen wählt einen Bauplatz.
     /// Am PC: linke Maustaste ziehen, Mausrad zoomen, Klick wählt.
     public class CameraRig : MonoBehaviour
     {
@@ -12,16 +13,10 @@ namespace Pfahlstadt
         public Vector3 Target = new Vector3(0, 3f, -3f);
         public float Dist = 52f;
 
-        const float MinDist = 16f, MaxDist = 140f, MaxPan = 75f;
-        float yaw;
+        const float MinDist = 16f, MaxDist = 140f, MaxPan = 75f, Yaw = 0f;
         Vector2 start, lastMouse;
-        bool dragging, startOverUI;
-        float lastPinch, tilt, downTime;
-        bool rotating, multi;
-        Vector2 fingerPos;
-        GUIStyle hintStyle;
-        Texture2D hintTex;
-        const float HoldTime = 0.38f;
+        bool dragging, startOverUI, multi;
+        Vector3 glide;
 
         void Awake()
         {
@@ -40,27 +35,55 @@ namespace Pfahlstadt
 
         void LateUpdate()
         {
-            HandleTouch();
-            HandleMouse();
-            Dist = Mathf.Clamp(Dist, MinDist, MaxDist);
-            var flat = new Vector2(Target.x, Target.z);
-            if (flat.magnitude > MaxPan) { flat = flat.normalized * MaxPan; Target.x = flat.x; Target.z = flat.y; }
             if (Colony.I != null) Target.y = Colony.I.DeckHeight;
             Place();
+            HandleTouch();
+            HandleMouse();
+            if (Input.touchCount == 0 && !Input.GetMouseButton(0) && glide.sqrMagnitude > 0.01f)
+            {
+                Target += glide * Time.unscaledDeltaTime;
+                glide *= Mathf.Exp(-5f * Time.unscaledDeltaTime);
+            }
+            Clamp();
+            Place();
+        }
+
+        void Clamp()
+        {
+            Dist = Mathf.Clamp(Dist, MinDist, MaxDist);
+            var flat = new Vector2(Target.x, Target.z);
+            if (flat.magnitude > MaxPan) { flat = flat.normalized * MaxPan; Target.x = flat.x; Target.z = flat.y; glide = Vector3.zero; }
         }
 
         void Place()
         {
-            float pitch = Mathf.Clamp(Mathf.Lerp(38f, 60f, (Dist - MinDist) / (MaxDist - MinDist)) + tilt, 15f, 85f);
-            var rot = Quaternion.Euler(pitch, yaw, 0f);
+            // weiter weg = steiler von oben, nah dran = flacher (wie in Aufbauspielen üblich)
+            float pitch = Mathf.Lerp(40f, 58f, (Mathf.Clamp(Dist, MinDist, MaxDist) - MinDist) / (MaxDist - MinDist));
+            var rot = Quaternion.Euler(pitch, Yaw, 0f);
             Cam.transform.SetPositionAndRotation(Target - rot * Vector3.forward * Dist, rot);
         }
 
-        void Pan(Vector2 delta)
+        /// Punkt auf der Deck-Ebene unter einer Bildschirmposition
+        bool Ground(Vector2 sp, out Vector3 p)
         {
-            float k = Dist / Mathf.Max(1, Screen.height) * 1.9f;
-            var rot = Quaternion.Euler(0f, yaw, 0f);
-            Target -= (rot * Vector3.right * delta.x + rot * Vector3.forward * delta.y) * k;
+            var ray = Cam.ScreenPointToRay(sp);
+            p = Vector3.zero;
+            if (ray.direction.y > -0.02f) return false;
+            float t = (Target.y - ray.origin.y) / ray.direction.y;
+            p = ray.origin + ray.direction * t;
+            return true;
+        }
+
+        /// Karte so verschieben, dass der Boden unter "from" danach unter "to" liegt
+        Vector3 Drag(Vector2 from, Vector2 to)
+        {
+            if (Ground(from, out var a) && Ground(to, out var b))
+            {
+                var step = a - b; step.y = 0f;
+                Target += step; Place();
+                return step;
+            }
+            return Vector3.zero;
         }
 
         float TapThreshold => Mathf.Max(12f, Screen.height * 0.012f);
@@ -69,79 +92,48 @@ namespace Pfahlstadt
         {
             if (Input.touchCount >= 2)
             {
-                // Zwei Finger: nur zoomen
+                // Zwei Finger: zoomen zum Punkt zwischen den Fingern
                 var a = Input.GetTouch(0);
                 var b = Input.GetTouch(1);
-                float d = Vector2.Distance(a.position, b.position);
-                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began || lastPinch <= 0f) lastPinch = d;
-                else
-                {
-                    Dist *= lastPinch / Mathf.Max(1f, d);
-                    lastPinch = d;
-                }
-                dragging = true; multi = true; rotating = false;
+                dragging = true; multi = true; glide = Vector3.zero;
+                if (a.phase == TouchPhase.Began || b.phase == TouchPhase.Began) return;
+                Vector2 pa = a.position - a.deltaPosition, pb = b.position - b.deltaPosition;
+                Vector2 m0 = (pa + pb) * 0.5f, m1 = (a.position + b.position) * 0.5f;
+                float d0 = (pa - pb).magnitude, d1 = (a.position - b.position).magnitude;
+                bool ok = Ground(m0, out var g0);
+                if (d0 > 1f && d1 > 1f) { Dist = Mathf.Clamp(Dist * d0 / d1, MinDist, MaxDist); Place(); }
+                if (ok && Ground(m1, out var g1)) { var step = g0 - g1; step.y = 0f; Target += step; Place(); }
                 return;
             }
-            lastPinch = 0f;
-            if (Input.touchCount != 1) { rotating = false; if (Input.touchCount == 0) multi = false; return; }
+            if (Input.touchCount != 1) { if (Input.touchCount == 0) multi = false; return; }
 
             var t = Input.GetTouch(0);
-            fingerPos = t.position;
             switch (t.phase)
             {
                 case TouchPhase.Began:
                     start = t.position;
-                    dragging = false; rotating = false;
-                    downTime = Time.unscaledTime;
+                    dragging = false; glide = Vector3.zero;
                     startOverUI = GameUI.IsOverUI(t.position);
                     break;
-                case TouchPhase.Stationary:
                 case TouchPhase.Moved:
                     if (startOverUI || multi) break;
-                    // Finger ruhig gehalten → Dreh-Modus
-                    if (!dragging && !rotating && Time.unscaledTime - downTime >= HoldTime && (t.position - start).magnitude < TapThreshold * 0.7f)
-                    {
-                        rotating = true;
-#if UNITY_ANDROID && !UNITY_EDITOR
-                        Handheld.Vibrate();
-#endif
-                    }
-                    if (t.phase != TouchPhase.Moved) break;
-                    if (rotating)
-                    {
-                        float px = 1f / Mathf.Max(1, Screen.height);
-                        yaw += t.deltaPosition.x * px * 200f;
-                        tilt = Mathf.Clamp(tilt - t.deltaPosition.y * px * 70f, -25f, 30f);
-                        break;
-                    }
                     if (!dragging && (t.position - start).magnitude > TapThreshold) dragging = true;
-                    if (dragging) Pan(t.deltaPosition);
+                    if (dragging)
+                    {
+                        var step = Drag(t.position - t.deltaPosition, t.position);
+                        glide = Vector3.Lerp(glide, step / Mathf.Max(0.001f, Time.unscaledDeltaTime), 0.5f);
+                    }
+                    break;
+                case TouchPhase.Stationary:
+                    glide = Vector3.Lerp(glide, Vector3.zero, 0.5f);
                     break;
                 case TouchPhase.Ended:
                 case TouchPhase.Canceled:
-                    if (t.phase == TouchPhase.Ended && !dragging && !rotating && !startOverUI && !multi) Tap(t.position);
-                    rotating = false;
+                    if (t.phase == TouchPhase.Ended && !dragging && !startOverUI && !multi) Tap(t.position);
+                    if (multi) glide = Vector3.zero;
                     if (Input.touchCount <= 1) multi = false;
                     break;
             }
-        }
-
-        // kleiner Hinweis über dem Finger, solange gedreht wird
-        void OnGUI()
-        {
-            if (!rotating) return;
-            if (hintStyle == null)
-            {
-                hintTex = new Texture2D(1, 1) { hideFlags = HideFlags.DontSave };
-                hintTex.SetPixel(0, 0, new Color(0.04f, 0.16f, 0.2f, 0.88f)); hintTex.Apply();
-                hintStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
-                hintStyle.normal.textColor = new Color(0.85f, 1f, 0.97f);
-                hintStyle.normal.background = hintTex;
-            }
-            hintStyle.fontSize = Mathf.RoundToInt(Screen.height * 0.018f);
-            float w = Screen.height * 0.2f, h = Screen.height * 0.035f;
-            var r = new Rect(fingerPos.x - w * 0.5f, Screen.height - fingerPos.y - h - Screen.height * 0.07f, w, h);
-            GUI.Label(r, "Drehen & Neigen", hintStyle);
         }
 
         void HandleMouse()
@@ -152,27 +144,28 @@ namespace Pfahlstadt
             if (Input.GetMouseButtonDown(0))
             {
                 start = lastMouse = mp;
-                dragging = false;
+                dragging = false; glide = Vector3.zero;
                 startOverUI = GameUI.IsOverUI(mp);
             }
             else if (Input.GetMouseButton(0) && !startOverUI)
             {
                 if (!dragging && (mp - start).magnitude > 8f) dragging = true;
-                if (dragging) Pan(mp - lastMouse);
-                lastMouse = mp;
+                if (dragging)
+                {
+                    var step = Drag(lastMouse, mp);
+                    glide = Vector3.Lerp(glide, step / Mathf.Max(0.001f, Time.unscaledDeltaTime), 0.5f);
+                }
             }
             if (Input.GetMouseButtonUp(0) && !dragging && !startOverUI) Tap(mp);
-
-            if (Input.GetMouseButton(1))
-            {
-                Vector2 dm = (Vector2)Input.mousePosition - lastMouse;
-                yaw += dm.x * 0.3f;
-                tilt = Mathf.Clamp(tilt - dm.y * 0.2f, -25f, 30f);
-            }
-            if (!Input.GetMouseButton(0)) lastMouse = mp;
+            lastMouse = mp;
 
             float wheel = Input.mouseScrollDelta.y;
-            if (Mathf.Abs(wheel) > 0.01f && !GameUI.IsOverUI(mp)) Dist *= 1f - wheel * 0.1f;
+            if (Mathf.Abs(wheel) > 0.01f && !GameUI.IsOverUI(mp))
+            {
+                bool ok = Ground(mp, out var g0);
+                Dist = Mathf.Clamp(Dist * (1f - wheel * 0.1f), MinDist, MaxDist); Place();
+                if (ok && Ground(mp, out var g1)) { var step = g0 - g1; step.y = 0f; Target += step; }
+            }
         }
 
         void Tap(Vector2 screenPos)
