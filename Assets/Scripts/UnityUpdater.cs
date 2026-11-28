@@ -14,13 +14,14 @@ public class UnityUpdater : MonoBehaviour
     static UnityUpdater inst;
     string status;          // null = nichts anzeigen
     float progress = -1f;   // < 0 = kein Balken
-    bool needPermission, waitingForPermission;
+    bool needPermission, waitingForPermission, failed;
+    string pageUrl, detail;
     string apkPath;
     GUIStyle box, label, button;
 
     [Serializable] class Manifest { public string buildNumber; }
     [Serializable] class Asset { public string name; public string browser_download_url; public long size; }
-    [Serializable] class Release { public string tag_name; public Asset[] assets; }
+    [Serializable] class Release { public string tag_name, html_url; public Asset[] assets; }
     [Serializable] class ReleaseList { public Release[] items; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -68,7 +69,7 @@ public class UnityUpdater : MonoBehaviour
             int n;
             if (!int.TryParse(r.tag_name.Substring(TagPrefix.Length), out n) || n <= best) continue;
             foreach (var a in r.assets)
-                if (a != null && a.name != null && a.name.EndsWith(".apk") && a.size > 1000000) { best = n; url = a.browser_download_url; break; }
+                if (a != null && a.name != null && a.name.EndsWith(".apk") && a.size > 1000000) { best = n; url = a.browser_download_url; pageUrl = r.html_url; break; }
         }
         if (url == null) yield break;
 
@@ -89,25 +90,26 @@ public class UnityUpdater : MonoBehaviour
         TryInstall();
     }
 
-    void TryInstall()
+    static string Java(string method, params object[] args)
     {
         try
         {
-            using (var up = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-            using (var act = up.GetStatic<AndroidJavaObject>("currentActivity"))
             using (var jc = new AndroidJavaClass("de.robert.updater.ApkInstaller"))
-            {
-                if (!jc.CallStatic<bool>("canInstall", act)) { needPermission = true; return; }
-                needPermission = false;
-                jc.CallStatic("install", act, apkPath);
-                status = null; progress = -1f;
-            }
+                return jc.CallStatic<string>(method, args) ?? "";
         }
-        catch (Exception e)
-        {
-            Debug.LogWarning("Updater: " + e.Message);
-            status = "Installation konnte nicht gestartet werden.";
-        }
+        catch (Exception e) { return e.GetType().Name + ": " + e.Message; }
+    }
+
+    void TryInstall()
+    {
+        string r = Java("start", apkPath);
+        if (r == "PERM") { needPermission = true; return; }
+        needPermission = false;
+        if (r == "") { status = null; progress = -1f; failed = false; return; }
+        Debug.LogWarning("Updater: " + r);
+        failed = true; progress = -1f;
+        status = "Installation konnte nicht gestartet werden.";
+        detail = r.Length > 140 ? r.Substring(0, 140) : r;
     }
 
     void OnApplicationFocus(bool focus)
@@ -124,11 +126,12 @@ public class UnityUpdater : MonoBehaviour
             var tex = new Texture2D(1, 1); tex.SetPixel(0, 0, new Color(0.08f, 0.12f, 0.16f, 0.94f)); tex.Apply();
             box = new GUIStyle { normal = { background = tex } };
             label = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, wordWrap = true, normal = { textColor = Color.white } };
-            button = new GUIStyle(GUI.skin.button);
+            button = new GUIStyle(GUI.skin.button) { richText = true };
+            label.richText = true;
         }
         label.fontSize = Mathf.RoundToInt(22 * s);
         button.fontSize = Mathf.RoundToInt(22 * s);
-        float w = Screen.width * 0.86f, h = (needPermission ? 210f : 130f) * s;
+        float w = Screen.width * 0.86f, h = (needPermission ? 210f : failed ? 250f : 130f) * s;
         var r = new Rect((Screen.width - w) / 2f, Screen.height * 0.4f, w, h);
         GUI.Box(r, GUIContent.none, box);
         GUI.Label(new Rect(r.x + 16 * s, r.y + 12 * s, r.width - 32 * s, 44 * s), status, label);
@@ -140,20 +143,20 @@ public class UnityUpdater : MonoBehaviour
             var old = GUI.color; GUI.color = new Color(0.35f, 0.8f, 0.45f); GUI.DrawTexture(fill, Texture2D.whiteTexture); GUI.color = old;
             GUI.Label(bar, Mathf.RoundToInt(progress * 100f) + " %", label);
         }
+        if (failed)
+        {
+            if (!string.IsNullOrEmpty(detail)) GUI.Label(new Rect(r.x + 16 * s, r.y + 56 * s, r.width - 32 * s, 70 * s), "<size=" + Mathf.RoundToInt(15 * s) + ">" + detail + "</size>", label);
+            if (pageUrl != null && GUI.Button(new Rect(r.x + 16 * s, r.y + 140 * s, r.width * 0.6f - 24 * s, 80 * s), "Im Browser laden\n<size=" + Mathf.RoundToInt(15 * s) + ">(dann Datei antippen)</size>", button))
+                Application.OpenURL(pageUrl);
+            if (GUI.Button(new Rect(r.x + r.width * 0.6f, r.y + 140 * s, r.width * 0.4f - 16 * s, 80 * s), "Schließen", button)) { status = null; failed = false; }
+        }
         if (needPermission)
         {
             GUI.Label(new Rect(r.x + 16 * s, r.y + 98 * s, r.width - 32 * s, 40 * s), "Einmalig erlauben: Updates installieren", label);
             if (GUI.Button(new Rect(r.x + r.width / 2f - 150 * s, r.y + 144 * s, 300 * s, 54 * s), "Erlauben", button))
             {
-                try
-                {
-                    using (var up = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                    using (var act = up.GetStatic<AndroidJavaObject>("currentActivity"))
-                    using (var jc = new AndroidJavaClass("de.robert.updater.ApkInstaller"))
-                        jc.CallStatic("openInstallSettings", act);
-                    waitingForPermission = true;
-                }
-                catch (Exception e) { Debug.LogWarning("Updater: " + e.Message); }
+                string res = Java("openSettings");
+                if (res == "") waitingForPermission = true; else { needPermission = false; failed = true; status = "Einstellungen ließen sich nicht öffnen."; detail = res; }
             }
         }
     }

@@ -19,6 +19,10 @@ public class ApkProvider extends ContentProvider {
     @Override public String getType(Uri uri) { return "application/vnd.android.package-archive"; }
 
     @Override public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+        if (file == null || !file.exists()) {
+            File[] dirs = { getContext().getExternalCacheDir(), getContext().getCacheDir() };
+            for (File d : dirs) if (d != null && new File(d, "update.apk").exists()) { file = new File(d, "update.apk"); break; }
+        }
         if (file == null || !file.exists()) throw new FileNotFoundException("Keine Update-Datei");
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
