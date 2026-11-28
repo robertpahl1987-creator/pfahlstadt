@@ -117,9 +117,13 @@ namespace Pfahlstadt
         {
             var t = new GameObject("Sammler").transform;
             t.SetParent(root, false);
-            Visuals.Prim(PrimitiveType.Capsule, t, new Vector3(0, 0.55f, 0), new Vector3(0.55f, 0.55f, 0.55f), coat);
-            Visuals.Prim(PrimitiveType.Sphere, t, new Vector3(0, 1.25f, 0), Vector3.one * 0.38f, skin);
-            Visuals.Prim(PrimitiveType.Cylinder, t, new Vector3(0, 0.75f, -0.32f), new Vector3(0.4f, 0.2f, 0.4f), basket);
+            if (Creatures.MatMaker == null) Creatures.MatMaker = (col, g) => MatLib.Lit(col, g);
+            var look = HumanLook.Random();
+            look.shirt = Creatures.Hex(new[] { "#e6b422", "#c8642a", "#3f5f7a", "#5d6b45" }[Random.Range(0, 4)]);
+            look.boots = true; look.hat = Random.value < 0.5f ? "suedwester" : ""; look.hatColor = Creatures.Hex("#e6b422");
+            HumanFigure.Create(t, look, look.height * 0.95f);
+            // Kiepe (Rückentrage) für die Ladung
+            Visuals.Prim(PrimitiveType.Cylinder, t, new Vector3(0, 1.15f, -0.28f), new Vector3(0.38f, 0.22f, 0.3f), basket);
             return t;
         }
 
@@ -179,10 +183,10 @@ namespace Pfahlstadt
                 if (!paths.TryGetValue(n.id, out var pts)) { pts = c.GatherPath(n, out _); paths[n.id] = pts; }
                 var p = Colony.PathPoint(pts, g.d);
                 float yaw = p.z * Mathf.Rad2Deg + (g.phase == "back" ? 180f : 0f);
-                float bob = g.phase == "work" ? Mathf.Abs(Mathf.Sin(Time.time * 6f + i)) * 0.25f : Mathf.Abs(Mathf.Sin(Time.time * 9f + i)) * 0.12f;
+                float bob = g.phase == "work" ? Mathf.Abs(Mathf.Sin(Time.time * 6f + i)) * 0.08f : 0f;
                 w.position = new Vector3(p.x, GroundAt(c, p.x, p.y) + bob, p.y);
                 w.rotation = Quaternion.Euler(g.phase == "work" ? 25f : 0f, yaw, 0);
-                w.GetChild(2).gameObject.SetActive(g.load > 0 || g.phase == "work");
+                w.GetChild(1).gameObject.SetActive(g.load > 0 || g.phase == "work");
             }
         }
     }

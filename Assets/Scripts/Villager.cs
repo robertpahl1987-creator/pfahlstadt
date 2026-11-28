@@ -13,8 +13,7 @@ namespace Pfahlstadt
         };
 
         Transform vis;
-        Renderer bodyR;
-        Material coat, sickMat;
+        HumanFigure figure;
         readonly Queue<Vector3> path = new Queue<Vector3>();
         int spoke = -1;          // -1 = Mittelplattform
         float wait, speed, phase;
@@ -31,16 +30,21 @@ namespace Pfahlstadt
 
         void Build()
         {
+            if (Creatures.MatMaker == null) Creatures.MatMaker = (col, g) => MatLib.Lit(col, g);
             vis = new GameObject("Figur").transform;
             vis.SetParent(transform, false);
-            coat = MatLib.Lit(Coats[Random.Range(0, Coats.Length)], 0.3f);   // Ölzeug glänzt leicht
-            sickMat = MatLib.Lit(new Color(0.45f, 0.58f, 0.42f), 0.1f);
-            bodyR = Visuals.Prim(PrimitiveType.Capsule, vis, new Vector3(0, 0.55f, 0), new Vector3(0.55f, 0.55f, 0.55f), coat).GetComponent<Renderer>();
-            Visuals.Prim(PrimitiveType.Sphere, vis, new Vector3(0, 1.25f, 0), Vector3.one * 0.38f, MatLib.Lit(new Color(0.9f, 0.72f, 0.6f)));
-            // Südwester-Hut
-            Visuals.Prim(PrimitiveType.Cylinder, vis, new Vector3(0, 1.42f, -0.04f), new Vector3(0.55f, 0.04f, 0.6f), MatLib.Lit(new Color(0.9f, 0.75f, 0.2f), 0.4f));
-            Visuals.Prim(PrimitiveType.Sphere, vis, new Vector3(0, 1.48f, 0), new Vector3(0.36f, 0.2f, 0.36f), MatLib.Lit(new Color(0.9f, 0.75f, 0.2f), 0.4f));
-            speed = Random.Range(1.5f, 2.1f);
+            // Fischer und Siedlerinnen in Ölzeug, Strickpulli oder Arbeitsjacke
+            var look = HumanLook.Random();
+            look.shirt = Random.value < 0.55f ? Coats[Random.Range(0, Coats.Length)] : Creatures.Hex(new[] { "#3d4a5c", "#6b5d4f", "#2f4a3a", "#7a2e2a", "#c8c2b4" }[Random.Range(0, 5)]);
+            look.pants = Creatures.Hex(new[] { "#2b3140", "#3a3328", "#4a4f57", "#2d3b2f" }[Random.Range(0, 4)]);
+            look.shoes = Creatures.Hex(new[] { "#1f1a16", "#2b2a28", "#3a2a1c" }[Random.Range(0, 3)]);
+            look.boots = Random.value < 0.7f;
+            float h = Random.value;
+            if (h < 0.4f) { look.hat = "suedwester"; look.hatColor = Creatures.Hex("#e6b422"); }
+            else if (h < 0.6f) { look.hat = "cap"; look.hatColor = Creatures.Hex(new[] { "#2a3550", "#5a3a2a", "#3d3d3d" }[Random.Range(0, 3)]); }
+            else if (h < 0.7f && look.female) { look.hat = "scarf"; look.hatColor = Creatures.Hex(new[] { "#8a2f3c", "#3f5f7a", "#c9a227" }[Random.Range(0, 3)]); }
+            figure = HumanFigure.Create(vis, look, look.height * 0.95f);
+            speed = Random.Range(1.1f, 1.5f);
             phase = Random.value * 10f;
             transform.position = HubPoint();
             wait = Random.Range(0f, 2f);
@@ -50,7 +54,7 @@ namespace Pfahlstadt
         {
             if (s == sick) return;
             sick = s;
-            bodyR.sharedMaterial = s ? sickMat : coat;
+            figure.SetSick(s);
         }
 
         static Vector3 Polar(float angle, float radius) => new Vector3(Mathf.Sin(angle), 0, Mathf.Cos(angle)) * radius;
@@ -95,7 +99,6 @@ namespace Pfahlstadt
 
             if (path.Count == 0)
             {
-                vis.localPosition = Vector3.zero;
                 wait -= dt;
                 if (wait <= 0f) PlanRoute();
                 transform.position = pos;
@@ -123,7 +126,6 @@ namespace Pfahlstadt
             }
             transform.position = pos;
             transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), dt * 8f);
-            vis.localPosition = new Vector3(0, Mathf.Abs(Mathf.Sin((Time.time + phase) * 9f)) * 0.07f, 0);
         }
     }
 }
