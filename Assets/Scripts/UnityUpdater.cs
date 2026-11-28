@@ -91,12 +91,48 @@ public class UnityUpdater : MonoBehaviour
         ready = true;   // Spieler tippt selbst auf "Jetzt aktualisieren"
     }
 
+    /// Installation direkt über Android-Klassen (ohne eigene Java-Klasse, die Unity nicht immer findet).
+    /// Rückgabe: "" = gestartet, "PERM" = Erlaubnis fehlt, sonst Fehlertext.
     static string Java(string method, params object[] args)
     {
         try
         {
-            using (var jc = new AndroidJavaClass("de.robert.updater.ApkInstaller"))
-                return jc.CallStatic<string>(method, args) ?? "";
+            using (var up = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+            using (var act = up.GetStatic<AndroidJavaObject>("currentActivity"))
+            using (var ver = new AndroidJavaClass("android.os.Build$VERSION"))
+            {
+                if (act == null) return "Keine Activity";
+                int sdk = ver.GetStatic<int>("SDK_INT");
+                string pkg = act.Call<string>("getPackageName");
+                using (var uriC = new AndroidJavaClass("android.net.Uri"))
+                {
+                    if (method == "openSettings")
+                    {
+                        using (var uri = uriC.CallStatic<AndroidJavaObject>("parse", "package:" + pkg))
+                        using (var intent = new AndroidJavaObject("android.content.Intent", "android.settings.MANAGE_UNKNOWN_APP_SOURCES", uri))
+                        {
+                            intent.Call<AndroidJavaObject>("addFlags", 0x10000000);   // FLAG_ACTIVITY_NEW_TASK
+                            act.Call("startActivity", intent);
+                        }
+                        return "";
+                    }
+                    // method == "start"
+                    if (sdk >= 26)
+                        using (var pm = act.Call<AndroidJavaObject>("getPackageManager"))
+                            if (!pm.Call<bool>("canRequestPackageInstalls")) return "PERM";
+                    string path = args.Length > 0 ? args[0] as string : null;
+                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) return "Update-Datei fehlt";
+                    // Der ApkProvider (im Manifest eingetragen) sucht update.apk im Cache-Ordner der App
+                    using (var uri = uriC.CallStatic<AndroidJavaObject>("parse", "content://" + pkg + ".apkprovider/update.apk"))
+                    using (var intent = new AndroidJavaObject("android.content.Intent", "android.intent.action.VIEW"))
+                    {
+                        intent.Call<AndroidJavaObject>("setDataAndType", uri, "application/vnd.android.package-archive");
+                        intent.Call<AndroidJavaObject>("addFlags", 0x00000001 | 0x10000000);   // GRANT_READ_URI | NEW_TASK
+                        act.Call("startActivity", intent);
+                    }
+                    return "";
+                }
+            }
         }
         catch (Exception e) { return e.GetType().Name + ": " + e.Message; }
     }
