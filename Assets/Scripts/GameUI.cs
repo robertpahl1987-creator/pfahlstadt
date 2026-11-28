@@ -271,12 +271,12 @@ namespace Pfahlstadt
                 if (k == 2) sub = o == null || !o.Active ? "offline" : o.HelpOpen > 0 ? $"<color=#8EF0A0>Hilfe {o.HelpOpen}</color>" : o.War != null ? "<color=#FF9A5A>Krieg</color>" : "";
                 if (k == 3) sub = RewardsReady(c) > 0 ? $"<color=#8EF0A0>{RewardsReady(c)} bereit</color>" : "";
                 if (k == 4) sub = c.TraderHere ? "<color=#FFD27A>Händler!</color>" : c.S2.researchIdx >= 0 ? "forscht" : "";
-                bool on = k == 5 ? menu : panel == keys[k];
+                bool on = k == 5 ? panel == "set" : panel == keys[k];
                 string label = (on ? "<color=#FFE08A>" : "") + $"<size=19><b>{names[k]}</b></size>" + (on ? "</color>" : "") + (sub != "" ? $"\n<size=15>{sub}</size>" : "");
                 if (Btn(new Rect(x0 + step * k, y + 14, bw, 92), label))
                 {
-                    if (k == 5) { menu = !menu; confirmNew = false; panel = null; if (menu) Selected = -1; }
-                    else OpenPanel(on ? null : keys[k]);
+                    confirmNew = false;
+                    OpenPanel(on ? null : k == 5 ? "set" : keys[k]);
                 }
             }
         }

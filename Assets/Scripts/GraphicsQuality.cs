@@ -63,6 +63,17 @@ namespace Pfahlstadt
             Apply();
         }
 
+        /// Feste Stufe wählen oder Automatik einschalten (aus dem Einstellungsmenü)
+        public void Set(bool auto, QTier tier)
+        {
+            Auto = auto;
+            Tier = auto ? Detect() : tier;
+            PlayerPrefs.SetInt("gfx_auto", Auto ? 1 : 0);
+            PlayerPrefs.SetInt("gfx_tier", (int)Tier);
+            PlayerPrefs.Save();
+            Apply();
+        }
+
         public void Apply()
         {
             int t = (int)Tier;

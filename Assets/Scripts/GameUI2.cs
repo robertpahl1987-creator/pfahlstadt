@@ -69,7 +69,7 @@ namespace Pfahlstadt
         void OpenPanel(string key)
         {
             panel = key; scrollY = 0; Selected = -1; menu = false; confirmKey = null;
-            tab = key == "troops" ? "train" : key == "rewards" ? "daily" : key == "city" ? "tech" : key == "ally" ? "main" : key == "admin" ? "msg" : "";
+            tab = key == "troops" ? "train" : key == "rewards" ? "daily" : key == "city" ? "tech" : key == "ally" ? "main" : key == "admin" ? "msg" : key == "set" ? "game" : "";
             if (key == "map") { mapTerr = -1; mapBot = -1; mapSel = null; }
             OnTab();
             System.Array.Clear(form, 0, 5);
@@ -82,12 +82,13 @@ namespace Pfahlstadt
             float x = VW / 2f - 352f, w = 704f, y0 = top + 166f, y1 = VH - bottom - 128f;
             var r = Panel(new Rect(x, y0, w, y1 - y0));
             bool on = Online.I != null && Online.I.Active;
-            string title = panel == "troops" ? "Truppen" : panel == "map" ? "Seekarte" : panel == "rewards" ? "Belohnungen" : panel == "ally" ? "Allianz" : panel == "admin" ? "Spielleiter" : panel == "acc" ? "Online & Konto" : "Stadt";
+            string title = panel == "troops" ? "Truppen" : panel == "map" ? "Seekarte" : panel == "rewards" ? "Belohnungen" : panel == "ally" ? "Allianz" : panel == "admin" ? "Spielleiter" : panel == "acc" ? "Online & Konto" : panel == "set" ? "Menü" : "Stadt";
             if (Header(r, title)) { panel = null; return; }
             float ty = r.y + 70f;
             string[][] tabs = panel == "troops" ? (on ? new[] { new[] { "train", "Truppen" }, new[] { "form", "Aufst." }, new[] { "caps", "Kapitäne" }, new[] { "laz", "Lazarett" }, new[] { "arena", "Arena" }, new[] { "rep", "Berichte" } }
                     : new[] { new[] { "train", "Truppen" }, new[] { "form", "Aufstellung" }, new[] { "caps", "Kapitäne" }, new[] { "laz", "Lazarett" }, new[] { "rep", "Berichte" } })
                 : panel == "ally" ? (on && Online.I.InAlliance ? new[] { new[] { "main", "Allianz" }, new[] { "help", "Hilfe" }, new[] { "garr", "Burg" }, new[] { "res", "Forschung" }, new[] { "war", "Krieg" }, new[] { "rally", "Sammeln" } } : new string[0][])
+                : panel == "set" ? new[] { new[] { "game", "Spiel" }, new[] { "gfx", "Grafik" }, new[] { "acc", "Konto" }, new[] { "help", "Hilfe" } }
                 : panel == "admin" ? new[] { new[] { "msg", "Nachricht" }, new[] { "codes", "Codes" }, new[] { "players", "Spieler" }, new[] { "av", "Bilder" } }
                 : panel == "rewards" ? new[] { new[] { "daily", "Täglich" }, new[] { "quest", "Aufgaben" }, new[] { "pass", "Pass" }, new[] { "vip", "VIP" }, new[] { "items", "Lager" }, new[] { "ach", "Erfolge" } }
                 : panel == "city" ? (on ? new[] { new[] { "tech", "Forschung" }, new[] { "yard", "Werft" }, new[] { "trade", "Händler" }, new[] { "queue", "Schlange" }, new[] { "rank", "Rang" }, new[] { "season", "Saison" } }
@@ -132,6 +133,7 @@ namespace Pfahlstadt
                 case "ally": y = AllyContent(c, y); break;
                 case "admin": y = AdminContent(c, y); break;
                 case "acc": y = AccountContent(c, y); break;
+                case "set": y = SettingsContent(c, y); break;
             }
             contentH = y + scrollY + 20f;
             GUI.EndGroup();
